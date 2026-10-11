@@ -36,6 +36,15 @@ export const categories = pgTable("categories", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// 3a. Subcategories Table
+export const subCategories = pgTable("sub_categories", {
+  id: text("id").primaryKey(),
+  categoryId: text("category_id").notNull(),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // 4. Units Table
 export const units = pgTable("units", {
   id: text("id").primaryKey(),
@@ -54,6 +63,7 @@ export const products = pgTable("products", {
   name: text("name").notNull(),
   imageUrl: text("image_url"),
   categoryId: text("category_id").notNull(),
+  subCategoryId: text("sub_category_id"),
   zoneId: text("zone_id"),
   unitId: text("unit_id").notNull(),
   costPrice: doublePrecision("cost_price").default(0),

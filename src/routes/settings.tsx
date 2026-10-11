@@ -28,7 +28,7 @@ import {
   UserPlus,
   Users,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { PermissionGuard } from "@/components/auth/PermissionGuard";
@@ -95,6 +95,7 @@ import {
   type CategoryItem,
   type LineUserFollower,
   type ProductItem,
+  type SubCategoryItem,
   type UnitItem,
   type ZoneItem,
 } from "@/lib/store";
@@ -131,6 +132,16 @@ function isCategoryItem(value: unknown): value is CategoryItem {
   );
 }
 
+function isSubCategoryItem(value: unknown): value is SubCategoryItem {
+  return (
+    isRecord(value) &&
+    typeof value["id"] === "string" &&
+    typeof value["categoryId"] === "string" &&
+    typeof value["name"] === "string" &&
+    typeof value["code"] === "string"
+  );
+}
+
 function isZoneItem(value: unknown): value is ZoneItem {
   return (
     isRecord(value) &&
@@ -153,6 +164,7 @@ function isProductItem(value: unknown): value is ProductItem {
     typeof value["name"] === "string" &&
     isOptionalString(value["imageUrl"]) &&
     typeof value["categoryId"] === "string" &&
+    isOptionalString(value["subCategoryId"]) &&
     isOptionalString(value["zoneId"]) &&
     typeof value["unitId"] === "string" &&
     typeof value["costPrice"] === "number" &&
@@ -220,6 +232,14 @@ function SettingsPage() {
   const [catForm, setCatForm] = useState({ name: "", code: "" });
   const [isCodeManuallyEdited, setIsCodeManuallyEdited] = useState(false);
 
+  // Subcategory State
+  const [subCategories, setSubCategories] = useState<SubCategoryItem[]>([]);
+  const [subCategoryModalOpen, setSubCategoryModalOpen] = useState(false);
+  const [editingSubCategory, setEditingSubCategory] = useState<SubCategoryItem | null>(null);
+  const [subCategoryForm, setSubCategoryForm] = useState({ categoryId: "", name: "", code: "" });
+  const [isSubCategoryCodeManuallyEdited, setIsSubCategoryCodeManuallyEdited] = useState(false);
+  const pendingDeletedSubCategoryIds = useRef<string[]>([]);
+
   // Unit State
   const [units, setUnits] = useState<UnitItem[]>([]);
   const [unitModalOpen, setUnitModalOpen] = useState(false);
@@ -265,6 +285,7 @@ function SettingsPage() {
   const reloadData = useCallback(() => {
     setZones(MasterStore.getZones());
     setCategories(MasterStore.getCategories());
+    setSubCategories(MasterStore.getSubCategories());
     setUnits(MasterStore.getUnits());
     setFollowers(MasterStore.getFollowers());
   }, []);
@@ -273,6 +294,7 @@ function SettingsPage() {
     setIsSyncing(true);
     let lineSyncError = "";
     let lineSyncCount = 0;
+    const deletedSubCategoryIds = pendingDeletedSubCategoryIds.current;
     try {
       if (syncLiveLineFollowers) {
         const lineResult = await syncLineFollowersFn();
@@ -303,6 +325,8 @@ function SettingsPage() {
         data: {
           products: MasterStore.getProducts(),
           categories: MasterStore.getCategories(),
+          subCategories: MasterStore.getSubCategories(),
+          ...(deletedSubCategoryIds.length > 0 ? { deletedSubCategoryIds } : {}),
           zones: MasterStore.getZones(),
           units: MasterStore.getUnits(),
           receives: MasterStore.getReceives(),
@@ -313,9 +337,13 @@ function SettingsPage() {
       });
 
       if (isRecord(res) && res["success"] === true && isRecord(res["data"])) {
+        pendingDeletedSubCategoryIds.current = pendingDeletedSubCategoryIds.current.filter(
+          (id) => !deletedSubCategoryIds.includes(id),
+        );
         const data = res["data"];
         const syncedUnits = data["units"];
         const syncedCategories = data["categories"];
+        const syncedSubCategories = data["subCategories"];
         const syncedZones = data["zones"];
         const syncedProducts = data["products"];
         const syncedFollowers = data["followers"];
@@ -327,6 +355,10 @@ function SettingsPage() {
         if (isArrayOf(syncedCategories, isCategoryItem) && syncedCategories.length > 0) {
           MasterStore.saveCategories(syncedCategories);
           setCategories(syncedCategories);
+        }
+        if (isArrayOf(syncedSubCategories, isSubCategoryItem)) {
+          MasterStore.saveSubCategories(syncedSubCategories);
+          setSubCategories(syncedSubCategories);
         }
         if (isArrayOf(syncedZones, isZoneItem) && syncedZones.length > 0) {
           MasterStore.saveZones(syncedZones);
@@ -465,11 +497,109 @@ function SettingsPage() {
   };
 
   const handleDeleteCategory = (id: string) => {
+    if (subCategories.some((item) => item.categoryId === id)) {
+      toast.error("ลบหมวดหมู่หลักไม่ได้ เนื่องจากยังมีหมวดหมู่ย่อยผูกอยู่");
+      return;
+    }
     if (confirm("ต้องการลบหมวดหมู่นี้ใช่หรือไม่?")) {
       MasterStore.deleteCategory(id);
       reloadData();
       void syncWithCentralServer();
     }
+  };
+
+  // Subcategory CRUD
+  const handleOpenAddSubCategory = () => {
+    setEditingSubCategory(null);
+    setIsSubCategoryCodeManuallyEdited(false);
+    setSubCategoryForm({ categoryId: categories[0]?.id || "", name: "", code: "" });
+    setSubCategoryModalOpen(true);
+  };
+
+  const handleEditSubCategory = (item: SubCategoryItem) => {
+    setEditingSubCategory(item);
+    setIsSubCategoryCodeManuallyEdited(true);
+    setSubCategoryForm({ categoryId: item.categoryId, name: item.name, code: item.code });
+    setSubCategoryModalOpen(true);
+  };
+
+  const handleSubCategoryNameChange = (name: string) => {
+    if (!isSubCategoryCodeManuallyEdited) {
+      const code = generateCategoryCode(name, subCategories, editingSubCategory?.id);
+      setSubCategoryForm((previous) => ({ ...previous, name, code }));
+      return;
+    }
+    setSubCategoryForm((previous) => ({ ...previous, name }));
+  };
+
+  const handleSaveSubCategory = () => {
+    const name = subCategoryForm.name.trim();
+    const categoryId = subCategoryForm.categoryId;
+    if (!name || !categoryId) return;
+
+    const duplicateName = subCategories.some(
+      (item) =>
+        item.id !== editingSubCategory?.id &&
+        item.categoryId === categoryId &&
+        item.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase(),
+    );
+    if (duplicateName) {
+      toast.error("หมวดหมู่ย่อยชื่อนี้มีอยู่แล้วในหมวดหมู่หลักนี้");
+      return;
+    }
+
+    if (
+      editingSubCategory &&
+      editingSubCategory.categoryId !== categoryId &&
+      MasterStore.getProducts().some((product) => product.subCategoryId === editingSubCategory.id)
+    ) {
+      toast.error("ย้ายหมวดหมู่หลักไม่ได้ เนื่องจากมีสินค้าใช้หมวดหมู่ย่อยนี้อยู่");
+      return;
+    }
+
+    const cleanCode = subCategoryForm.code.trim();
+    const code =
+      cleanCode && cleanCode !== "-" && cleanCode !== "—"
+        ? cleanCode.toUpperCase()
+        : generateCategoryCode(name, subCategories, editingSubCategory?.id);
+    const duplicateCode = subCategories.some(
+      (item) =>
+        item.id !== editingSubCategory?.id &&
+        item.categoryId === categoryId &&
+        item.code.trim().toUpperCase() === code,
+    );
+    if (duplicateCode) {
+      toast.error("รหัสหมวดหมู่ย่อยนี้ถูกใช้แล้วในหมวดหมู่หลักนี้");
+      return;
+    }
+
+    const updates = { categoryId, name, code };
+    if (editingSubCategory) {
+      MasterStore.updateSubCategory(editingSubCategory.id, updates);
+      toast.success(`อัปเดตหมวดหมู่ย่อย “${name}” เรียบร้อย`);
+    } else {
+      MasterStore.addSubCategory(updates);
+      toast.success(`เพิ่มหมวดหมู่ย่อย “${name}” สำเร็จ`);
+    }
+    setSubCategoryModalOpen(false);
+    setEditingSubCategory(null);
+    setSubCategoryForm({ categoryId: categories[0]?.id || "", name: "", code: "" });
+    setIsSubCategoryCodeManuallyEdited(false);
+    reloadData();
+    void syncWithCentralServer();
+  };
+
+  const handleDeleteSubCategory = (id: string) => {
+    if (MasterStore.getProducts().some((product) => product.subCategoryId === id)) {
+      toast.error("ลบไม่ได้ เนื่องจากมีสินค้าใช้หมวดหมู่ย่อยนี้อยู่ กรุณาแก้ข้อมูลสินค้าก่อน");
+      return;
+    }
+    if (!confirm("ต้องการลบหมวดหมู่ย่อยนี้ใช่หรือไม่?")) return;
+
+    MasterStore.deleteSubCategory(id);
+    reloadData();
+    pendingDeletedSubCategoryIds.current = [...pendingDeletedSubCategoryIds.current, id];
+    void syncWithCentralServer();
   };
 
   const missingCategoryCodeCount = categories.filter(
@@ -753,7 +883,7 @@ function SettingsPage() {
       <div className="space-y-4 sm:space-y-6 pb-12">
         <PageHeader
           title="ตั้งค่าระบบ & ฐานข้อมูล"
-          description="จัดการข้อมูลหลัก โซนสินค้า หมวดหมู่ หน่วยนับ ผู้ใช้งาน/ผู้ติดตาม LINE Bot และแม่แบบ Flex Message"
+          description="จัดการข้อมูลหลัก โซนสินค้า หมวดหมู่ หมวดหมู่ย่อย หน่วยนับ ผู้ใช้งาน/ผู้ติดตาม LINE Bot และแม่แบบ Flex Message"
         />
 
         {syncStatusMsg ? (
@@ -766,7 +896,7 @@ function SettingsPage() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           {/* Responsive Mobile Tabs Grid */}
-          <TabsList className="grid grid-cols-2 sm:grid-cols-8 h-auto p-1.5 rounded-2xl bg-muted gap-1">
+          <TabsList className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 h-auto p-1.5 rounded-2xl bg-muted gap-1">
             <TabsTrigger
               value="rbac"
               className="h-10 text-xs sm:text-sm gap-1.5 rounded-xl font-medium"
@@ -796,6 +926,12 @@ function SettingsPage() {
             </TabsTrigger>
             <TabsTrigger value="categories" className="h-10 text-xs sm:text-sm gap-1.5 rounded-xl">
               <FolderTree className="size-4" /> หมวดหมู่
+            </TabsTrigger>
+            <TabsTrigger
+              value="subcategories"
+              className="h-10 text-xs sm:text-sm gap-1.5 rounded-xl"
+            >
+              <FolderTree className="size-4" /> หมวดหมู่ย่อย
             </TabsTrigger>
             <TabsTrigger value="units" className="h-10 text-xs sm:text-sm gap-1.5 rounded-xl">
               <Scale className="size-4" /> หน่วยนับ
@@ -1354,6 +1490,150 @@ function SettingsPage() {
                           </TableCell>
                         </TableRow>
                       ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* TAB: SUBCATEGORIES */}
+          <TabsContent value="subcategories" className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+              <div>
+                <h2 className="text-base sm:text-lg font-bold text-foreground">หมวดหมู่ย่อย</h2>
+                <p className="text-xs text-muted-foreground">
+                  กำหนดหมวดหมู่ย่อยและผูกกับหมวดหมู่หลักสำหรับเลือกในข้อมูลสินค้า
+                </p>
+              </div>
+              <Button
+                className="h-11 sm:h-10 font-semibold gap-1.5 rounded-xl active:scale-95 shadow-sm"
+                onClick={handleOpenAddSubCategory}
+                disabled={categories.length === 0}
+              >
+                <Plus className="size-4" /> เพิ่มหมวดหมู่ย่อย
+              </Button>
+            </div>
+
+            {subCategories.length === 0 ? (
+              <Card className="rounded-2xl border-dashed">
+                <CardContent className="flex flex-col items-center justify-center gap-2 py-10 text-center">
+                  <FolderTree className="size-8 text-muted-foreground" />
+                  <p className="text-sm font-semibold">ยังไม่มีหมวดหมู่ย่อย</p>
+                  <p className="text-xs text-muted-foreground">
+                    เพิ่มรายการที่ร้านใช้งานจริงได้จากปุ่มด้านบน
+                    ไม่มีข้อมูลตัวอย่างถูกเพิ่มให้อัตโนมัติ
+                  </p>
+                  {categories.length === 0 ? (
+                    <p className="text-xs text-amber-700 dark:text-amber-400">
+                      กรุณาเพิ่มหมวดหมู่หลักก่อน
+                    </p>
+                  ) : null}
+                </CardContent>
+              </Card>
+            ) : null}
+
+            <div className="block md:hidden space-y-2">
+              {subCategories.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between rounded-2xl border bg-card p-3.5 shadow-sm"
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="font-mono text-xs">
+                        {item.code || "—"}
+                      </Badge>
+                      <span className="font-semibold text-sm text-foreground truncate">
+                        {item.name}
+                      </span>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {categories.find((category) => category.id === item.categoryId)?.name ||
+                        "ไม่พบหมวดหมู่หลัก"}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0 ml-2">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-9 rounded-lg active:scale-90"
+                      onClick={() => handleEditSubCategory(item)}
+                      aria-label={`แก้ไขหมวดหมู่ย่อย ${item.name}`}
+                    >
+                      <Pencil className="size-4 text-muted-foreground" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-9 rounded-lg active:scale-90"
+                      onClick={() => handleDeleteSubCategory(item.id)}
+                      aria-label={`ลบหมวดหมู่ย่อย ${item.name}`}
+                    >
+                      <Trash2 className="size-4 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <Card className="hidden md:block rounded-2xl">
+              <CardContent className="pt-4">
+                <div className="rounded-xl border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-28">รหัสย่อ</TableHead>
+                        <TableHead>ชื่อหมวดหมู่ย่อย</TableHead>
+                        <TableHead>หมวดหมู่หลัก</TableHead>
+                        <TableHead className="w-28 text-right">จัดการ</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {subCategories.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="py-8 text-center text-muted-foreground">
+                            ยังไม่มีหมวดหมู่ย่อย
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        subCategories.map((item) => (
+                          <TableRow key={item.id}>
+                            <TableCell className="font-mono">
+                              <Badge variant="secondary">{item.code || "—"}</Badge>
+                            </TableCell>
+                            <TableCell className="font-medium text-foreground">
+                              {item.name}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {categories.find((category) => category.id === item.categoryId)
+                                ?.name || "ไม่พบหมวดหมู่หลัก"}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-8"
+                                  onClick={() => handleEditSubCategory(item)}
+                                  aria-label={`แก้ไขหมวดหมู่ย่อย ${item.name}`}
+                                >
+                                  <Pencil className="size-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-8 text-destructive"
+                                  onClick={() => handleDeleteSubCategory(item.id)}
+                                  aria-label={`ลบหมวดหมู่ย่อย ${item.name}`}
+                                >
+                                  <Trash2 className="size-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -2110,6 +2390,100 @@ function SettingsPage() {
                 disabled={!catForm.name.trim()}
               >
                 {editingCat ? "บันทึกการแก้ไข" : "บันทึกหมวดหมู่"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* SUBCATEGORY MODAL */}
+        <Dialog open={subCategoryModalOpen} onOpenChange={setSubCategoryModalOpen}>
+          <DialogContent className="w-[94vw] max-w-md rounded-2xl p-4 sm:p-6">
+            <DialogHeader>
+              <DialogTitle className="text-base sm:text-lg">
+                {editingSubCategory ? "แก้ไขหมวดหมู่ย่อย" : "เพิ่มหมวดหมู่ย่อยใหม่"}
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                เลือกหมวดหมู่หลักและกำหนดชื่อหมวดหมู่ย่อยสำหรับข้อมูลสินค้าจริง
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3.5 py-2">
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">หมวดหมู่หลัก *</Label>
+                <Select
+                  value={subCategoryForm.categoryId}
+                  onValueChange={(categoryId) =>
+                    setSubCategoryForm((previous) => ({ ...previous, categoryId }))
+                  }
+                >
+                  <SelectTrigger className="h-10 rounded-xl">
+                    <SelectValue placeholder="เลือกหมวดหมู่หลัก" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {categories.map((category) => (
+                      <SelectItem key={category.id} value={category.id}>
+                        {category.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">ชื่อหมวดหมู่ย่อย *</Label>
+                <Input
+                  placeholder="เช่น น้ำดื่ม, บะหมี่, ผงซักฟอก"
+                  className="h-10 rounded-xl"
+                  value={subCategoryForm.name}
+                  onChange={(event) => handleSubCategoryNameChange(event.target.value)}
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold">รหัสหมวดหมู่ย่อย</Label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const code = generateCategoryCode(
+                        subCategoryForm.name,
+                        subCategories,
+                        editingSubCategory?.id,
+                      );
+                      setIsSubCategoryCodeManuallyEdited(false);
+                      setSubCategoryForm((previous) => ({ ...previous, code }));
+                    }}
+                    className="text-[11px] text-primary hover:underline flex items-center gap-1 font-medium"
+                  >
+                    <RefreshCw className="size-3" /> สร้างรหัสอัตโนมัติ
+                  </button>
+                </div>
+                <Input
+                  placeholder="ระบบสร้างให้อัตโนมัติ หรือกรอกเอง"
+                  className="h-10 rounded-xl font-mono uppercase"
+                  value={subCategoryForm.code}
+                  onChange={(event) => {
+                    setIsSubCategoryCodeManuallyEdited(true);
+                    setSubCategoryForm((previous) => ({
+                      ...previous,
+                      code: event.target.value.toUpperCase(),
+                    }));
+                  }}
+                />
+              </div>
+            </div>
+            <DialogFooter className="gap-2 pt-2 border-t">
+              <Button
+                variant="outline"
+                className="h-11 rounded-xl w-full sm:w-auto"
+                onClick={() => setSubCategoryModalOpen(false)}
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                className="h-11 rounded-xl w-full sm:w-auto font-semibold"
+                onClick={handleSaveSubCategory}
+                disabled={!subCategoryForm.categoryId || !subCategoryForm.name.trim()}
+              >
+                {editingSubCategory ? "บันทึกการแก้ไข" : "บันทึกหมวดหมู่ย่อย"}
               </Button>
             </DialogFooter>
           </DialogContent>

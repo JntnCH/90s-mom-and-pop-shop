@@ -257,7 +257,7 @@ function ReorderPage() {
     targetStock: number;
     categoryId: string;
     categoryName: string;
-    subCategoryId?: string;
+    subCategoryId?: string | undefined;
     zoneId?: string;
     zoneName: string;
   } | null>(null);

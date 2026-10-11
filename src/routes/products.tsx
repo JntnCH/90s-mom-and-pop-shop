@@ -1027,7 +1027,8 @@ function ProductsPage() {
                             </span>
                             <span className="text-[10px] text-muted-foreground">
                               (เตือน: {product.minStock} / เป้า:{" "}
-                              {product.targetStock || product.reorderQuantity})
+                              {product.targetStock || product.reorderQuantity}{" "}
+                              {getUnitName(product.unitId)})
                             </span>
                           </div>
                         </TableCell>
@@ -1422,18 +1423,28 @@ function ProductsPage() {
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs text-muted-foreground">เป้าหมายในสต็อก</Label>
-                <Input
-                  type="number"
-                  min="0"
-                  placeholder="0"
-                  className="h-10 rounded-xl"
-                  value={formTargetStock}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setFormTargetStock(val);
-                    setFormReorderQty(val);
-                  }}
-                />
+                <div className="relative">
+                  <Input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    className="h-10 rounded-xl pr-16"
+                    value={formTargetStock}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setFormTargetStock(val);
+                      setFormReorderQty(val);
+                    }}
+                  />
+                  {formUnit ? (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+                      {units.find((unit) => unit.id === formUnit)?.name || "หน่วย"}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  ใช้หน่วยเดียวกับหน่วยนับของสินค้า
+                </p>
               </div>
             </div>
 

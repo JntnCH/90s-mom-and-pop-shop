@@ -12,6 +12,7 @@ import type {
   ProductItem,
   PurchaseOrderRecord,
   ReceiveItem,
+  SubCategoryItem,
   StockMovementLog,
   UnitItem,
   ZoneItem,
@@ -39,6 +40,8 @@ export interface ServerSyncPayload {
   lastUpdated?: string | undefined;
   products?: ProductItem[] | undefined;
   categories?: CategoryItem[] | undefined;
+  subCategories?: SubCategoryItem[] | undefined;
+  deletedSubCategoryIds?: string[] | undefined;
   zones?: ZoneItem[] | undefined;
   units?: UnitItem[] | undefined;
   receives?: ReceiveItem[] | undefined;
@@ -59,6 +62,7 @@ const globalServerDatabase: {
   lastUpdated: string;
   products?: ProductItem[] | DatabaseSnapshot["products"] | undefined;
   categories?: CategoryItem[] | DatabaseSnapshot["categories"] | undefined;
+  subCategories?: SubCategoryItem[] | DatabaseSnapshot["subCategories"] | undefined;
   zones?: ZoneItem[] | DatabaseSnapshot["zones"] | undefined;
   units?: UnitItem[] | DatabaseSnapshot["units"] | undefined;
   receives?: ReceiveItem[] | DatabaseSnapshot["receives"] | undefined;
@@ -67,6 +71,7 @@ const globalServerDatabase: {
   purchaseOrders?: PurchaseOrderRecord[] | SnapshotPurchaseOrder[] | undefined;
 } = {
   lastUpdated: new Date().toISOString(),
+  subCategories: [],
   followers: [],
 };
 
@@ -145,6 +150,19 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
             : {
                 categories: data.categories.map(({ id, code, name }) => ({ id, code, name })),
               }),
+          ...(data.subCategories === undefined
+            ? {}
+            : {
+                subCategories: data.subCategories.map(({ id, categoryId, code, name }) => ({
+                  id,
+                  categoryId,
+                  code,
+                  name,
+                })),
+              }),
+          ...(data.deletedSubCategoryIds === undefined
+            ? {}
+            : { deletedSubCategoryIds: data.deletedSubCategoryIds }),
           ...(data.zones === undefined
             ? {}
             : {
@@ -218,6 +236,7 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
 
         globalServerDatabase.products = sqlSnapshot.products;
         globalServerDatabase.categories = sqlSnapshot.categories;
+        globalServerDatabase.subCategories = sqlSnapshot.subCategories;
         globalServerDatabase.zones = sqlSnapshot.zones;
         globalServerDatabase.units = sqlSnapshot.units;
         globalServerDatabase.receives = sqlSnapshot.receives;
@@ -243,6 +262,19 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
     }
     if (data.categories && Array.isArray(data.categories)) {
       globalServerDatabase.categories = data.categories;
+    }
+    if (data.subCategories && Array.isArray(data.subCategories) && data.subCategories.length > 0) {
+      const merged = new Map(
+        (globalServerDatabase.subCategories || []).map((item) => [item.id, item]),
+      );
+      data.subCategories.forEach((item) => merged.set(item.id, item));
+      globalServerDatabase.subCategories = [...merged.values()];
+    }
+    if (data.deletedSubCategoryIds && data.deletedSubCategoryIds.length > 0) {
+      const deletedIds = new Set(data.deletedSubCategoryIds);
+      globalServerDatabase.subCategories = (globalServerDatabase.subCategories || []).filter(
+        (item) => !deletedIds.has(item.id),
+      );
     }
     if (data.zones && Array.isArray(data.zones)) {
       globalServerDatabase.zones = data.zones;

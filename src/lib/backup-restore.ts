@@ -28,6 +28,7 @@ import {
   type ProductItem,
   type PurchaseOrderRecord,
   type ReceiveItem,
+  type SubCategoryItem,
   type StockMovementLog,
   type UnitItem,
   type ZoneItem,
@@ -53,6 +54,7 @@ export interface BackupMetadata {
 export interface BackupDataPayload {
   products: ProductItem[];
   categories: CategoryItem[];
+  subCategories?: SubCategoryItem[];
   units: UnitItem[];
   zones: ZoneItem[];
   movements: StockMovementLog[];
@@ -191,6 +193,7 @@ export const BackupService = {
     const data: BackupDataPayload = {
       products,
       categories: MasterStore.getCategories(),
+      subCategories: MasterStore.getSubCategories(),
       units: MasterStore.getUnits(),
       zones: MasterStore.getZones(),
       movements,
@@ -305,6 +308,7 @@ export const BackupService = {
         // Overwrite Master Collections
         localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(data.products || []));
         localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(data.categories || []));
+        localStorage.setItem(STORAGE_KEYS.SUBCATEGORIES, JSON.stringify(data.subCategories || []));
         localStorage.setItem(STORAGE_KEYS.UNITS, JSON.stringify(data.units || []));
         localStorage.setItem(STORAGE_KEYS.ZONES, JSON.stringify(data.zones || []));
         localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(data.movements || []));
@@ -352,6 +356,18 @@ export const BackupService = {
           }
         });
         localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(mergedCats));
+
+        // Merge Subcategories by ID so older backup packages remain supported.
+        const currentSubCategories = MasterStore.getSubCategories();
+        const subCategoryIds = new Set(currentSubCategories.map((item) => item.id));
+        const mergedSubCategories = [...currentSubCategories];
+        (data.subCategories || []).forEach((item) => {
+          if (!subCategoryIds.has(item.id)) {
+            mergedSubCategories.push(item);
+            subCategoryIds.add(item.id);
+          }
+        });
+        localStorage.setItem(STORAGE_KEYS.SUBCATEGORIES, JSON.stringify(mergedSubCategories));
 
         // Merge Units
         const currentUnits = MasterStore.getUnits();

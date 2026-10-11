@@ -154,50 +154,7 @@ export const DEFAULT_CATEGORIES: CategoryItem[] = [
   { id: "cat-general", code: "GEN", name: "สินค้าเบ็ดเตล็ด" },
 ];
 
-export const DEFAULT_SUBCATEGORIES: SubCategoryItem[] = [
-  // เครื่องดื่ม (cat-beverage)
-  { id: "sub-bev-soft", categoryId: "cat-beverage", code: "SOFT", name: "น้ำอัดลม/น้ำหวาน" },
-  { id: "sub-bev-water", categoryId: "cat-beverage", code: "WAT", name: "น้ำดื่ม/น้ำแร่" },
-  { id: "sub-bev-milk", categoryId: "cat-beverage", code: "MLK", name: "นม/โยเกิร์ต" },
-  { id: "sub-bev-coffee", categoryId: "cat-beverage", code: "COF", name: "กาแฟ/ชาพร้อมดื่ม" },
-  { id: "sub-bev-alc", categoryId: "cat-beverage", code: "ALC", name: "เบียร์/สุรา/แอลกอฮอล์" },
-
-  // ขนมขบเคี้ยว (cat-snack)
-  { id: "sub-snk-potato", categoryId: "cat-snack", code: "POT", name: "มันฝรั่งทอด/ขนมกรอบ" },
-  { id: "sub-snk-biscuit", categoryId: "cat-snack", code: "BIS", name: "บิสกิต/คุกกี้/เวเฟอร์" },
-  { id: "sub-snk-candy", categoryId: "cat-snack", code: "CND", name: "ลูกอม/หมากฝรั่ง" },
-  { id: "sub-snk-bakery", categoryId: "cat-snack", code: "BKY", name: "ขนมปัง/เบเกอรี่" },
-
-  // อาหารสำเร็จรูปและแห้ง (cat-food)
-  { id: "sub-fod-noodle", categoryId: "cat-food", code: "NDL", name: "บะหมี่/เส้นกึ่งสำเร็จรูป" },
-  { id: "sub-fod-canned", categoryId: "cat-food", code: "CAN", name: "ปลากระป๋อง/อาหารกระป๋อง" },
-  { id: "sub-fod-sauce", categoryId: "cat-food", code: "SAU", name: "เครื่องปรุงรส/ซอส" },
-  { id: "sub-fod-rice", categoryId: "cat-food", code: "RIC", name: "ข้าวสาร/อาหารแห้ง" },
-
-  // ของใช้ในครัวเรือน (cat-household)
-  {
-    id: "sub-hsh-detergent",
-    categoryId: "cat-household",
-    code: "DET",
-    name: "น้ำยาซักผ้า/ผงซักฟอก",
-  },
-  {
-    id: "sub-hsh-cleaning",
-    categoryId: "cat-household",
-    code: "CLN",
-    name: "น้ำยาล้างจาน/ทำความสะอาด",
-  },
-  { id: "sub-hsh-tissue", categoryId: "cat-household", code: "TIS", name: "กระดาษทิชชู่/ถุงขยะ" },
-
-  // ของใช้ส่วนตัว (cat-personal)
-  { id: "sub-per-soap", categoryId: "cat-personal", code: "SOAP", name: "สบู่/ครีมอาบน้ำ" },
-  { id: "sub-per-shampoo", categoryId: "cat-personal", code: "SHMP", name: "ยาสระผม/ครีมนวด" },
-  { id: "sub-per-oral", categoryId: "cat-personal", code: "ORAL", name: "ยาสีฟัน/แปรงสีฟัน" },
-
-  // สินค้าเบ็ดเตล็ด (cat-general)
-  { id: "sub-gen-tobacco", categoryId: "cat-general", code: "TOB", name: "บุหรี่/ยาสูบ" },
-  { id: "sub-gen-misc", categoryId: "cat-general", code: "MSC", name: "ของใช้เบ็ดเตล็ดทั่วไป" },
-];
+export const DEFAULT_SUBCATEGORIES: SubCategoryItem[] = [];
 
 export const DEFAULT_UNITS: UnitItem[] = [
   { id: "unit-piece", name: "ชิ้น", shortName: "ชิ้น" },
@@ -297,7 +254,6 @@ export const DEFAULT_PRODUCTS: ProductItem[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1612927601601-6638404737ce?w=150&auto=format&fit=crop&q=60",
     categoryId: "cat-food",
-    subCategoryId: "sub-fod-noodle",
     zoneId: "zone-b",
     unitId: "unit-bag",
     costPrice: 6.0,
@@ -320,7 +276,6 @@ export const DEFAULT_PRODUCTS: ProductItem[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=150&auto=format&fit=crop&q=60",
     categoryId: "cat-beverage",
-    subCategoryId: "sub-bev-soft",
     zoneId: "zone-c",
     unitId: "unit-can",
     costPrice: 12.0,
@@ -343,7 +298,6 @@ export const DEFAULT_PRODUCTS: ProductItem[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=150&auto=format&fit=crop&q=60",
     categoryId: "cat-snack",
-    subCategoryId: "sub-snk-potato",
     zoneId: "zone-a",
     unitId: "unit-bag",
     costPrice: 17.5,
@@ -366,7 +320,6 @@ export const DEFAULT_PRODUCTS: ProductItem[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1559839914-17aae19cec71?w=150&auto=format&fit=crop&q=60",
     categoryId: "cat-beverage",
-    subCategoryId: "sub-bev-water",
     zoneId: "zone-c",
     unitId: "unit-pack",
     costPrice: 48.0,
@@ -389,7 +342,6 @@ export const DEFAULT_PRODUCTS: ProductItem[] = [
     imageUrl:
       "https://images.unsplash.com/photo-1583947215259-38e31be8751f?w=150&auto=format&fit=crop&q=60",
     categoryId: "cat-household",
-    subCategoryId: "sub-hsh-detergent",
     zoneId: "zone-d",
     unitId: "unit-bag",
     costPrice: 72.0,
@@ -529,6 +481,21 @@ export const MasterStore = {
   },
   saveSubCategories(items: SubCategoryItem[]) {
     safeSet(STORAGE_KEYS.SUBCATEGORIES, items);
+  },
+  addSubCategory(item: Omit<SubCategoryItem, "id">) {
+    const list = this.getSubCategories();
+    const newItem: SubCategoryItem = { ...item, id: `sub-${Date.now()}` };
+    this.saveSubCategories([...list, newItem]);
+    return newItem;
+  },
+  updateSubCategory(id: string, updates: Partial<SubCategoryItem>) {
+    const list = this.getSubCategories().map((item) =>
+      item.id === id ? { ...item, ...updates } : item,
+    );
+    this.saveSubCategories(list);
+  },
+  deleteSubCategory(id: string) {
+    this.saveSubCategories(this.getSubCategories().filter((item) => item.id !== id));
   },
   getSubCategoryName(subIdOrName?: string): string {
     if (!subIdOrName) return "-";

@@ -1,4 +1,4 @@
-import { eq, desc } from "drizzle-orm";
+import { desc, eq, inArray } from "drizzle-orm";
 import { db } from "./index.ts";
 import {
   categories,
@@ -6,6 +6,7 @@ import {
   products,
   purchaseOrders,
   receives,
+  subCategories,
   stockMovements,
   units,
   users,
@@ -21,6 +22,7 @@ export interface DBProductItem {
   name: string;
   imageUrl?: string | undefined;
   categoryId: string;
+  subCategoryId?: string | undefined;
   zoneId?: string | undefined;
   unitId: string;
   costPrice: number;
@@ -52,6 +54,7 @@ export async function getDatabaseSnapshot() {
     const [
       allUnits,
       allCategories,
+      allSubCategories,
       allZones,
       allProducts,
       allPOs,
@@ -61,6 +64,7 @@ export async function getDatabaseSnapshot() {
     ] = await Promise.all([
       db.select().from(units),
       db.select().from(categories),
+      db.select().from(subCategories),
       db.select().from(zones),
       db.select().from(products),
       db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt)),
@@ -94,6 +98,7 @@ export async function getDatabaseSnapshot() {
       reorderQuantity: p.reorderQuantity ?? 15,
       isActive: p.isActive ?? true,
       imageUrl: p.imageUrl ?? undefined,
+      subCategoryId: p.subCategoryId ?? undefined,
       zoneId: p.zoneId ?? undefined,
       createdAt: p.createdAt ?? undefined,
       updatedAt: p.updatedAt ?? undefined,
@@ -103,6 +108,7 @@ export async function getDatabaseSnapshot() {
     return {
       units: allUnits,
       categories: allCategories,
+      subCategories: allSubCategories,
       zones: allZones,
       products: formattedProducts,
       purchaseOrders: formattedPOs,
@@ -119,6 +125,8 @@ export async function getDatabaseSnapshot() {
 export async function syncDatabasePayload(payload: {
   units?: { id: string; name: string; shortName: string }[];
   categories?: { id: string; code: string; name: string }[];
+  subCategories?: { id: string; categoryId: string; code: string; name: string }[];
+  deletedSubCategoryIds?: string[];
   zones?: { id: string; code: string; name: string; description?: string }[];
   products?: DBProductItem[];
   purchaseOrders?: DBPurchaseOrder[];
@@ -196,6 +204,33 @@ export async function syncDatabasePayload(payload: {
       }
     }
 
+    // 2a. Sync Subcategories
+    if (payload.subCategories && payload.subCategories.length > 0) {
+      for (const item of payload.subCategories) {
+        await db
+          .insert(subCategories)
+          .values({
+            id: item.id,
+            categoryId: item.categoryId,
+            code: item.code,
+            name: item.name,
+          })
+          .onConflictDoUpdate({
+            target: subCategories.id,
+            set: {
+              categoryId: item.categoryId,
+              code: item.code,
+              name: item.name,
+            },
+          });
+      }
+    }
+    if (payload.deletedSubCategoryIds && payload.deletedSubCategoryIds.length > 0) {
+      await db
+        .delete(subCategories)
+        .where(inArray(subCategories.id, payload.deletedSubCategoryIds));
+    }
+
     // 3. Sync Zones
     if (payload.zones && payload.zones.length > 0) {
       for (const z of payload.zones) {
@@ -232,6 +267,7 @@ export async function syncDatabasePayload(payload: {
             name: p.name,
             imageUrl: p.imageUrl || null,
             categoryId: p.categoryId,
+            subCategoryId: p.subCategoryId || null,
             zoneId: p.zoneId || null,
             unitId: p.unitId,
             costPrice: p.costPrice ?? 0,
@@ -254,6 +290,7 @@ export async function syncDatabasePayload(payload: {
               name: p.name,
               imageUrl: p.imageUrl || null,
               categoryId: p.categoryId,
+              subCategoryId: p.subCategoryId || null,
               zoneId: p.zoneId || null,
               unitId: p.unitId,
               costPrice: p.costPrice ?? 0,
