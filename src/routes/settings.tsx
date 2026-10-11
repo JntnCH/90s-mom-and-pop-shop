@@ -69,6 +69,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createDailySummaryFlexBubble,
   createMiniAppPortalFlexBubble,
+  createPurchaseOrderFlexBubble,
   createStockAlertFlexBubble,
   DEFAULT_STORE_NAME,
   getSystemStoreName,
@@ -573,8 +574,33 @@ function SettingsPage() {
       setPreviewFlexTitle("ใบสั่งซื้อสินค้า (JSON ล่าสุดจาก LINE Simulator)");
       setPreviewFlexJson(getLatestPurchaseOrderFlexMessage());
       setPreviewFlexModalOpen(true);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error));
+    } catch {
+      const bubble = createPurchaseOrderFlexBubble(
+        [
+          {
+            name: "มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง",
+            quantity: 30,
+            unitName: "ซอง",
+            costPrice: 6.0,
+          },
+          {
+            name: "โค้ก น้ำอัดลม ออริจินัล 325ml",
+            quantity: 48,
+            unitName: "กระป๋อง",
+            costPrice: 12.0,
+          },
+          {
+            name: "เลย์ มันฝรั่งทอดกรอบ รสคลาสสิค",
+            quantity: 20,
+            unitName: "ซอง",
+            costPrice: 17.5,
+          },
+        ],
+        { storeName: getSystemStoreName(), note: "ใบสั่งซื้อสินค้าประจำวัน (ตัวอย่าง)" },
+      );
+      setPreviewFlexTitle("ใบสั่งซื้อสินค้า (purchase-order-flex.ts)");
+      setPreviewFlexJson(bubble);
+      setPreviewFlexModalOpen(true);
     }
   };
 

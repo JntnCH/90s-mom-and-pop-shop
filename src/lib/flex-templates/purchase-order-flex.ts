@@ -18,29 +18,29 @@ export interface FlexOrderItem extends ItemWithCategoryAndZone {
   name: string;
   quantity: number;
   unitName: string;
-  costPrice?: number;
-  barcode?: string;
-  categoryId?: string;
-  categoryName?: string;
-  zoneId?: string;
-  zoneName?: string;
+  costPrice?: number | undefined;
+  barcode?: string | undefined;
+  categoryId?: string | undefined;
+  categoryName?: string | undefined;
+  zoneId?: string | undefined;
+  zoneName?: string | undefined;
 }
 
 export interface PurchaseOrderFlexOptions {
-  storeName?: string;
-  note?: string;
-  supplierName?: string;
-  orderNumber?: string;
-  dateStr?: string;
-  timeStr?: string;
-  themeColor?: string;
-  liffId?: string;
-  customBaseUrl?: string;
-  groupBy?: FlexItemGroupBy;
-  showGroupHeaders?: boolean;
-  fontSize?: "large" | "medium";
-  separateQuantityUnit?: boolean;
-  includeZone?: boolean;
+  storeName?: string | undefined;
+  note?: string | undefined;
+  supplierName?: string | undefined;
+  orderNumber?: string | undefined;
+  dateStr?: string | undefined;
+  timeStr?: string | undefined;
+  themeColor?: string | undefined;
+  liffId?: string | undefined;
+  customBaseUrl?: string | undefined;
+  groupBy?: FlexItemGroupBy | undefined;
+  showGroupHeaders?: boolean | undefined;
+  fontSize?: ("large" | "medium") | undefined;
+  separateQuantityUnit?: boolean | undefined;
+  includeZone?: boolean | undefined;
 }
 
 /**

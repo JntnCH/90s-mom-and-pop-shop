@@ -115,7 +115,7 @@ describe("Flex Message Template Customization (Separated Qty/Unit & Large Font)"
     expect(requiredAt(productRow.contents, 2).size).toBe("md");
   });
 
-  it("enforces strictly 3 columns (รายการสินค้า, จำนวน, หน่วยนับ) with no 2-column fallback", () => {
+  it("always enforces 3 columns (รายการสินค้า, จำนวน, หน่วยนับ) without 2 columns", () => {
     const flex = createPurchaseOrderFlexBubble(
       [
         {
@@ -125,6 +125,7 @@ describe("Flex Message Template Customization (Separated Qty/Unit & Large Font)"
         },
       ],
       {
+        separateQuantityUnit: false,
         fontSize: "medium",
       },
     );
@@ -137,6 +138,7 @@ describe("Flex Message Template Customization (Separated Qty/Unit & Large Font)"
     expect(requiredAt(tableHeader.contents, 0).text).toBe("รายการสินค้า");
     expect(requiredAt(tableHeader.contents, 1).text).toBe("จำนวน");
     expect(requiredAt(tableHeader.contents, 2).text).toBe("หน่วยนับ");
+    expect(requiredAt(tableHeader.contents, 0).size).toBe("xs");
   });
 
   it("does not include zone in the Flex Message headers by default", () => {

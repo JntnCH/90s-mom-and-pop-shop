@@ -8,6 +8,7 @@ import type { Liff } from "@line/liff";
 import { MasterStore, type ProductItem } from "./store";
 import {
   createDailySummaryFlexBubble,
+  createPurchaseOrderFlexBubble,
   createStockAlertFlexBubble,
   DEFAULT_STORE_NAME,
   type FlexItemGroupBy,
@@ -259,8 +260,8 @@ export async function getLineStatus(): Promise<LineConfigStatus> {
 }
 
 /**
- * Reads the active purchase-order Flex payload from the latest JSON saved by the LINE Simulator box.
- * Order-message contents are never regenerated from the cart or product database.
+ * Generates LINE Flex Message payload for Daily Purchase Order.
+ * Specifications: จัดกลุ่มหมวดหมู่/โซน -> รายการ -> จำนวน -> หน่วยนับ
  */
 export function buildOrderFlexMessage(
   orders: LineOrderItem[],
@@ -268,21 +269,35 @@ export function buildOrderFlexMessage(
   storeName: string = DEFAULT_STORE_NAME,
   options?: Partial<PurchaseOrderFlexOptions>,
 ) {
-  const templateItems: OrderFlexItem[] = orders.map((order) => ({
-    name: order.product.name,
-    quantity: order.quantity,
-    unitName: order.unitName,
-    barcode: order.product.barcode,
-    costPrice: order.product.costPrice,
-    categoryId: order.product.categoryId,
-    categoryName: MasterStore.getCategoryName(order.product.categoryId),
-    zoneId: order.product.zoneId,
-    zoneName: MasterStore.getZoneName(order.product.zoneId),
-    priceEstimate: order.quantity * order.product.costPrice,
-  }));
-  return formatDailyOrderFlexMessage(templateItems, options?.dateStr, storeName, {
+  const items: FlexOrderItem[] = orders.map((o) => {
+    const catName = o.product.categoryId
+      ? MasterStore.getCategoryName(o.product.categoryId)
+      : undefined;
+    const zName = o.product.zoneId ? MasterStore.getZoneName(o.product.zoneId) : undefined;
+    return {
+      name: o.product.name,
+      quantity: o.quantity,
+      unitName: o.unitName,
+      costPrice: o.product.costPrice,
+      barcode: o.product.barcode,
+      categoryId: o.product.categoryId,
+      categoryName: catName,
+      zoneId: o.product.zoneId,
+      zoneName: zName,
+    };
+  });
+
+  const liffId = getClientLiffId() || undefined;
+  const resolvedStoreName = getSystemStoreName(storeName);
+
+  return createPurchaseOrderFlexBubble(items, {
+    storeName: resolvedStoreName,
+    note,
+    liffId,
+    groupBy: options?.groupBy || "category",
+    showGroupHeaders: options?.showGroupHeaders,
+    includeZone: options?.includeZone ?? false,
     ...options,
-    note: options?.note ?? note,
   });
 }
 
@@ -670,7 +685,7 @@ function productFromOrderItem(item: OrderFlexItem, timestamp: string): ProductIt
   };
 }
 
-/** Use the latest Simulator JSON for layout and the current order items for message data. */
+/** Format order flex message using custom simulator JSON if available, or standard layout */
 export function formatDailyOrderFlexMessage(
   items: OrderFlexItem[],
   dateStr?: string,
@@ -700,16 +715,32 @@ export function formatDailyOrderFlexMessage(
   const totalQuantity = templateItems.reduce((sum, item) => sum + item.quantity, 0);
   const totalCost = templateItems.reduce((sum, item) => sum + (item.total ?? 0), 0);
 
-  return populatePurchaseOrderFlexTemplate(getLatestPurchaseOrderFlexMessage(), {
-    orderNumber: options?.orderNumber ?? "DRAFT",
-    orderDate: resolvedDate,
-    storeName: getSystemStoreName(options?.storeName ?? storeName),
-    supplierName: options?.supplierName ?? "ซัพพลายเออร์ทั่วไป",
-    items: templateItems,
-    totalQuantity,
-    totalCost,
-    ...(options?.note === undefined ? {} : { note: options.note }),
-  });
+  try {
+    const customTemplate = getLatestPurchaseOrderFlexMessage();
+    return populatePurchaseOrderFlexTemplate(customTemplate, {
+      orderNumber: options?.orderNumber ?? "DRAFT",
+      orderDate: resolvedDate,
+      storeName: getSystemStoreName(options?.storeName ?? storeName),
+      supplierName: options?.supplierName ?? "ซัพพลายเออร์ทั่วไป",
+      items: templateItems,
+      totalQuantity,
+      totalCost,
+      ...(options?.note === undefined ? {} : { note: options.note }),
+    });
+  } catch {
+    const nowStr = new Date().toISOString();
+    const lineOrders: LineOrderItem[] = items.map((i) => ({
+      product: productFromOrderItem(i, nowStr),
+      quantity: i.quantity,
+      unitName: i.unitName,
+    }));
+    return buildOrderFlexMessage(
+      lineOrders,
+      `ใบสั่งซื้อประจำวัน (${resolvedDate})`,
+      getSystemStoreName(storeName),
+      options,
+    );
+  }
 }
 
 export function formatOrderPlainText(

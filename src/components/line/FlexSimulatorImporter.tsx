@@ -44,10 +44,9 @@ interface FlexSimulatorImporterProps {
 export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
   const currentStoreName = getSystemStoreName();
 
-  const [isSeparateQtyUnit, setIsSeparateQtyUnit] = useState<boolean>(true);
   const [isLargeFont, setIsLargeFont] = useState<boolean>(true);
 
-  const getCustomPOFlex = (separate = isSeparateQtyUnit, large = isLargeFont) =>
+  const getCustomPOFlex = (large = isLargeFont) =>
     createPurchaseOrderFlexBubble(
       [
         {
@@ -75,16 +74,16 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
       {
         storeName: currentStoreName,
         fontSize: large ? "large" : "medium",
-        separateQuantityUnit: separate,
+        separateQuantityUnit: true,
         includeZone: false,
       },
     );
 
-  const [rawJson, setRawJson] = useState<string>("");
-  const [parsedFlex, setParsedFlex] = useState<unknown>(null);
-  const [parseError, setParseError] = useState<string | null>(
-    "กรุณาวาง JSON จาก LINE Flex Message Simulator ในกล่องก่อน",
-  );
+  const defaultPOFlex = getCustomPOFlex(true);
+
+  const [rawJson, setRawJson] = useState<string>(() => JSON.stringify(defaultPOFlex, null, 2));
+  const [parsedFlex, setParsedFlex] = useState<unknown>(defaultPOFlex);
+  const [parseError, setParseError] = useState<string | null>(null);
   const [isCustomSaved, setIsCustomSaved] = useState<boolean>(false);
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
@@ -92,24 +91,29 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
   useEffect(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem(FLEX_SIMULATOR_JSON_STORAGE_KEY) || "";
-      setRawJson(saved);
       if (!saved.trim()) {
-        setParsedFlex(null);
-        setParseError("กรุณาวาง JSON จาก LINE Flex Message Simulator ในกล่องก่อน");
+        const fallback = getCustomPOFlex(true);
+        setRawJson(JSON.stringify(fallback, null, 2));
+        setParsedFlex(fallback);
+        setParseError(null);
         setIsCustomSaved(false);
         return;
       }
 
       try {
+        setRawJson(saved);
         setParsedFlex(parseFlexSimulatorJson(saved));
         setParseError(null);
         setIsCustomSaved(true);
       } catch (error: unknown) {
-        setParsedFlex(null);
+        const fallback = getCustomPOFlex(true);
+        setRawJson(JSON.stringify(fallback, null, 2));
+        setParsedFlex(fallback);
         setParseError(error instanceof Error ? error.message : String(error));
         setIsCustomSaved(false);
       }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleJsonChange = (val: string) => {
@@ -170,11 +174,10 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
 
   const handleResetToDefault = () => {
     if (confirm("ต้องการคืนค่าเป็นแม่แบบมาตรฐานของระบบใช่หรือไม่?")) {
-      const freshPO = getCustomPOFlex(true, true);
+      const freshPO = getCustomPOFlex(true);
       handleJsonChange(JSON.stringify(freshPO, null, 2));
-      setIsSeparateQtyUnit(true);
       setIsLargeFont(true);
-      toast.success("คืนค่าแม่แบบมาตรฐาน (แยกจำนวน/หน่วยนับ - ตัวหนังสือใหญ่) เรียบร้อยแล้ว");
+      toast.success("คืนค่าแม่แบบมาตรฐาน 3 คอลัมน์ (รายการสินค้า, จำนวน, หน่วยนับ) เรียบร้อยแล้ว");
       window.dispatchEvent(new CustomEvent("minimark_store_change"));
       if (onSaved) onSaved();
     }
@@ -189,13 +192,12 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
     }
   };
 
-  const handleApplyLayoutConfig = (newSeparate: boolean, newLarge: boolean) => {
-    setIsSeparateQtyUnit(newSeparate);
+  const handleApplyFontConfig = (newLarge: boolean) => {
     setIsLargeFont(newLarge);
-    const newPO = getCustomPOFlex(newSeparate, newLarge);
+    const newPO = getCustomPOFlex(newLarge);
     handleJsonChange(JSON.stringify(newPO, null, 2));
     toast.success(
-      `ปรับเลย์เอาต์เป็น: ${newSeparate ? "แยกคอลัมน์ จำนวน/หน่วยนับ (3 คอลัมน์)" : "รวมจำนวน+หน่วยนับ (2 คอลัมน์)"} + ${newLarge ? "ตัวอักษรขนาดใหญ่" : "ตัวอักษรขนาดปกติ"} เรียบร้อย`,
+      `ปรับขนาดตัวอักษรเป็น: ${newLarge ? "ตัวอักษรขนาดใหญ่" : "ตัวอักษรขนาดปกติ"} (3 คอลัมน์: รายการสินค้า, จำนวน, หน่วยนับ) เรียบร้อย`,
     );
   };
 
@@ -203,7 +205,7 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
     let presetObj: unknown;
     switch (presetName) {
       case "PO":
-        presetObj = getCustomPOFlex(isSeparateQtyUnit, isLargeFont);
+        presetObj = getCustomPOFlex(isLargeFont);
         break;
       case "ALERT":
         presetObj = createStockAlertFlexBubble(
@@ -233,7 +235,7 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
           {
             storeName: currentStoreName,
             fontSize: isLargeFont ? "large" : "medium",
-            separateQuantityUnit: isSeparateQtyUnit,
+            separateQuantityUnit: true,
           },
         );
         break;
@@ -370,18 +372,9 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
             <Sparkles className="size-3.5 text-primary" /> ปรับแต่งเลย์เอาต์ด่วน:
           </span>
 
-          <Button
-            size="sm"
-            variant={isSeparateQtyUnit ? "default" : "outline"}
-            className={`h-7 text-xs rounded-lg px-2.5 gap-1 ${
-              isSeparateQtyUnit ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""
-            }`}
-            onClick={() => handleApplyLayoutConfig(!isSeparateQtyUnit, isLargeFont)}
-          >
-            {isSeparateQtyUnit
-              ? "✓ แยก 3 คอลัมน์ (จำนวน / หน่วยนับ)"
-              : "รวม 2 คอลัมน์ (จำนวน+หน่วย)"}
-          </Button>
+          <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-600/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
+            ✓ 3 คอลัมน์ (รายการสินค้า, จำนวน, หน่วยนับ)
+          </span>
 
           <Button
             size="sm"
@@ -389,7 +382,7 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
             className={`h-7 text-xs rounded-lg px-2.5 gap-1 ${
               isLargeFont ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""
             }`}
-            onClick={() => handleApplyLayoutConfig(isSeparateQtyUnit, !isLargeFont)}
+            onClick={() => handleApplyFontConfig(!isLargeFont)}
           >
             {isLargeFont ? "✓ ฟอนต์ใหญ่ (Large Font)" : "ฟอนต์ปกติ (Regular)"}
           </Button>

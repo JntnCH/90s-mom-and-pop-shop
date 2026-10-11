@@ -20,6 +20,7 @@ export default defineConfig({
   },
   nitro: {
     preset: process.env["NITRO_PRESET"] || (isCloudflare ? "cloudflare-module" : "node-server"),
+    renderer: false,
   },
   vite: {
     plugins: [],
