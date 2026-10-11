@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { MasterStore, type CategoryItem, type UnitItem, type ZoneItem } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 interface SelectProps {
   value?: string | undefined;
@@ -36,15 +37,29 @@ export function CategorySelect({
     return () => window.removeEventListener("minimark_store_change", load);
   }, []);
 
+  const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
+
   return (
     <Select value={value || ""} onValueChange={onChange} disabled={Boolean(disabled)}>
-      <SelectTrigger className={className}>
+      <SelectTrigger
+        className={cn(
+          "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
+          cleanClassName,
+          "text-base",
+        )}
+      >
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
         {categories.map((c) => (
-          <SelectItem key={c.id} value={c.id}>
-            {c.name} ({c.code})
+          <SelectItem
+            key={c.id}
+            value={c.id}
+            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
+          >
+            <span className="truncate block max-w-full">
+              {c.name} ({c.code})
+            </span>
           </SelectItem>
         ))}
       </SelectContent>
@@ -69,15 +84,27 @@ export function ZoneSelect({
     return () => window.removeEventListener("minimark_store_change", load);
   }, []);
 
+  const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
+
   return (
     <Select value={value || ""} onValueChange={onChange} disabled={Boolean(disabled)}>
-      <SelectTrigger className={className}>
+      <SelectTrigger
+        className={cn(
+          "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
+          cleanClassName,
+          "text-base",
+        )}
+      >
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
         {zones.map((z) => (
-          <SelectItem key={z.id} value={z.id}>
-            {z.name}
+          <SelectItem
+            key={z.id}
+            value={z.id}
+            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
+          >
+            <span className="truncate block max-w-full">{z.name}</span>
           </SelectItem>
         ))}
       </SelectContent>
@@ -102,15 +129,27 @@ export function UnitSelect({
     return () => window.removeEventListener("minimark_store_change", load);
   }, []);
 
+  const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
+
   return (
     <Select value={value || ""} onValueChange={onChange} disabled={Boolean(disabled)}>
-      <SelectTrigger className={className}>
+      <SelectTrigger
+        className={cn(
+          "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
+          cleanClassName,
+          "text-base",
+        )}
+      >
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
         {units.map((u) => (
-          <SelectItem key={u.id} value={u.id}>
-            {u.name}
+          <SelectItem
+            key={u.id}
+            value={u.id}
+            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
+          >
+            <span className="truncate block max-w-full">{u.name}</span>
           </SelectItem>
         ))}
       </SelectContent>

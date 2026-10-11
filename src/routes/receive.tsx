@@ -727,7 +727,7 @@ function ReceiveCheckPage() {
                             {/* 3. เลือกหน่วยนับได้ */}
                             <TableCell className="text-center">
                               <select
-                                className="h-9 px-2 text-xs rounded-lg border border-input bg-background font-medium"
+                                className="h-9 px-2 text-sm sm:text-base rounded-lg border border-input bg-background font-medium truncate"
                                 value={item.unit}
                                 onChange={(e) => handleUpdateUnit(item.id, e.target.value)}
                               >
@@ -938,7 +938,7 @@ function ReceiveCheckPage() {
             <div className="space-y-1">
               <Label className="text-xs font-semibold">เลือกหน่วยนับ</Label>
               <select
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-xs"
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-base font-medium shadow-xs truncate"
                 value={addUnit}
                 onChange={(e) => setAddUnit(e.target.value)}
               >

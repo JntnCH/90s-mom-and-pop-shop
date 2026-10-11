@@ -2258,7 +2258,7 @@ function ReorderPage() {
                         {/* Inline Unit Dropdown */}
                         <div className="col-span-5">
                           <select
-                            className="w-full h-8 rounded-lg border border-input bg-background px-2 text-xs font-semibold shadow-2xs"
+                            className="w-full h-8 rounded-lg border border-input bg-background px-2 text-sm sm:text-base font-semibold shadow-2xs truncate"
                             value={item.unitId}
                             onChange={(e) => handleUpdateUnit(item.product.id, e.target.value)}
                           >
@@ -3349,7 +3349,7 @@ function ReorderPage() {
                 </Badge>
               </div>
               <select
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs sm:text-sm shadow-xs font-medium"
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate"
                 value={addZoneId}
                 onChange={(e) => {
                   const newZoneId = e.target.value;
@@ -3399,7 +3399,7 @@ function ReorderPage() {
                 </Badge>
               </div>
               <select
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs sm:text-sm shadow-xs font-medium"
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate"
                 value={addCatId}
                 onChange={(e) => setAddCatId(e.target.value)}
               >
@@ -3816,7 +3816,7 @@ function ReorderPage() {
                         prev ? { ...prev, categoryId: val, categoryName: getCatName(val) } : null,
                       )
                     }
-                    className="h-9 text-xs rounded-xl"
+                    className="h-10 text-base rounded-xl"
                   />
                 </div>
 
@@ -3835,14 +3835,14 @@ function ReorderPage() {
                           : null,
                       )
                     }
-                    className="h-9 text-xs rounded-xl"
+                    className="h-10 text-base rounded-xl"
                   />
                 </div>
 
                 <div className="space-y-1">
                   <Label className="text-xs font-semibold">หน่วยนับ *</Label>
                   <select
-                    className="w-full h-9 rounded-xl border border-input bg-background px-3 text-xs font-semibold shadow-2xs cursor-pointer focus:ring-1 focus:ring-primary"
+                    className="w-full h-10 rounded-xl border border-input bg-background px-3 text-base font-medium shadow-2xs cursor-pointer focus:ring-1 focus:ring-primary truncate"
                     value={editingCartItem.unitId}
                     onChange={(e) =>
                       setEditingCartItem((prev) =>
@@ -4900,7 +4900,7 @@ function ReorderPage() {
                   value={quickCatId}
                   onChange={setQuickCatId}
                   placeholder="เลือกหมวดหมู่"
-                  className="h-9 text-xs rounded-xl"
+                  className="h-10 text-base rounded-xl"
                 />
               </div>
 
@@ -4910,7 +4910,7 @@ function ReorderPage() {
                   value={quickUnitId}
                   onChange={setQuickUnitId}
                   placeholder="เลือกหน่วยนับ"
-                  className="h-9 text-xs rounded-xl"
+                  className="h-10 text-base rounded-xl"
                 />
               </div>
 
@@ -4920,7 +4920,7 @@ function ReorderPage() {
                   value={quickZoneId}
                   onChange={setQuickZoneId}
                   placeholder="เลือกโซน"
-                  className="h-9 text-xs rounded-xl"
+                  className="h-10 text-base rounded-xl"
                 />
               </div>
             </div>
