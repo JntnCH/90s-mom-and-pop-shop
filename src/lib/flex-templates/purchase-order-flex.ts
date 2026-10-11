@@ -55,7 +55,6 @@ export function createPurchaseOrderFlexBubble(
 ) {
   const storeName = getSystemStoreName(options.storeName);
   const isLargeFont = options.fontSize !== "medium";
-  const separateQuantityUnit = options.separateQuantityUnit !== false;
   const includeZone = options.includeZone === true; // ค่าเริ่มต้น: ไม่ต้องการโซนใน Flex Message
 
   const now = new Date();
@@ -132,73 +131,43 @@ export function createPurchaseOrderFlexBubble(
 
     grp.items.forEach(({ item }) => {
       globalIndex++;
-      if (separateQuantityUnit) {
-        itemRows.push({
-          type: "box",
-          layout: "horizontal",
-          spacing: "sm",
-          margin: "sm",
-          contents: [
-            {
-              type: "text",
-              text: `${globalIndex}. ${item.name}`,
-              size: isLargeFont ? "md" : "sm",
-              color: "#111827",
-              weight: isLargeFont ? "bold" : "regular",
-              flex: 5,
-              wrap: true,
-            },
-            {
-              type: "text",
-              text: `${item.quantity}`,
-              size: isLargeFont ? "lg" : "sm",
-              color: "#059669",
-              weight: "bold",
-              align: "end",
-              flex: 2,
-              wrap: true,
-            },
-            {
-              type: "text",
-              text: item.unitName || "-",
-              size: isLargeFont ? "md" : "sm",
-              color: "#374151",
-              weight: isLargeFont ? "bold" : "regular",
-              align: "end",
-              flex: 2,
-              wrap: true,
-            },
-          ],
-        });
-      } else {
-        itemRows.push({
-          type: "box",
-          layout: "horizontal",
-          spacing: "sm",
-          margin: "sm",
-          contents: [
-            {
-              type: "text",
-              text: `${globalIndex}. ${item.name}`,
-              size: isLargeFont ? "md" : "sm",
-              color: "#111827",
-              weight: isLargeFont ? "bold" : "regular",
-              flex: 6,
-              wrap: true,
-            },
-            {
-              type: "text",
-              text: `${item.quantity} ${item.unitName}`,
-              size: isLargeFont ? "md" : "sm",
-              color: "#059669",
-              weight: "bold",
-              align: "end",
-              flex: 4,
-              wrap: true,
-            },
-          ],
-        });
-      }
+      itemRows.push({
+        type: "box",
+        layout: "horizontal",
+        spacing: "sm",
+        margin: "sm",
+        contents: [
+          {
+            type: "text",
+            text: `${globalIndex}. ${item.name}`,
+            size: isLargeFont ? "md" : "sm",
+            color: "#111827",
+            weight: isLargeFont ? "bold" : "regular",
+            flex: 5,
+            wrap: true,
+          },
+          {
+            type: "text",
+            text: `${item.quantity}`,
+            size: isLargeFont ? "lg" : "sm",
+            color: "#059669",
+            weight: "bold",
+            align: "end",
+            flex: 2,
+            wrap: true,
+          },
+          {
+            type: "text",
+            text: item.unitName || "-",
+            size: isLargeFont ? "md" : "sm",
+            color: "#374151",
+            weight: isLargeFont ? "bold" : "regular",
+            align: "end",
+            flex: 2,
+            wrap: true,
+          },
+        ],
+      });
     });
   });
 
@@ -253,42 +222,41 @@ export function createPurchaseOrderFlexBubble(
         type: "box" as const,
         layout: "vertical" as const,
         contents: [
-          separateQuantityUnit
-            ? {
-                type: "box" as const,
-                layout: "horizontal" as const,
-                contents: [
-                  {
-                    type: "text" as const,
-                    text: "รายการสินค้า",
-                    size: isLargeFont ? ("sm" as const) : ("xs" as const),
-                    color: "#4b5563",
-                    weight: "bold" as const,
-                    flex: 5,
-                    wrap: true,
-                  },
-                  {
-                    type: "text" as const,
-                    text: "จำนวน",
-                    size: isLargeFont ? ("sm" as const) : ("xs" as const),
-                    color: "#4b5563",
-                    weight: "bold" as const,
-                    align: "end" as const,
-                    flex: 2,
-                    wrap: true,
-                  },
-                  {
-                    type: "text" as const,
-                    text: "หน่วยนับ",
-                    size: isLargeFont ? ("sm" as const) : ("xs" as const),
-                    color: "#4b5563",
-                    weight: "bold" as const,
-                    align: "end" as const,
-                    flex: 2,
-                    wrap: true,
-                  },
-                ],
+          {
+            type: "box" as const,
+            layout: "horizontal" as const,
+            contents: [
+              {
+                type: "text" as const,
+                text: "รายการสินค้า",
+                size: isLargeFont ? ("sm" as const) : ("xs" as const),
+                color: "#4b5563",
+                weight: "bold" as const,
+                flex: 5,
+                wrap: true,
               },
+              {
+                type: "text" as const,
+                text: "จำนวน",
+                size: isLargeFont ? ("sm" as const) : ("xs" as const),
+                color: "#4b5563",
+                weight: "bold" as const,
+                align: "end" as const,
+                flex: 2,
+                wrap: true,
+              },
+              {
+                type: "text" as const,
+                text: "หน่วยนับ",
+                size: isLargeFont ? ("sm" as const) : ("xs" as const),
+                color: "#4b5563",
+                weight: "bold" as const,
+                align: "end" as const,
+                flex: 2,
+                wrap: true,
+              },
+            ],
+          },
           {
             type: "separator" as const,
             margin: "sm" as const,
