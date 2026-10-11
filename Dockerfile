@@ -1,14 +1,18 @@
 # Multi-stage build for Node.js / TanStack Start on Cloud Run
-FROM node:22-alpine AS builder
+FROM node:22-slim AS builder
 
 WORKDIR /app
+
+# Install essential certificates and build tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency definition files
 COPY package.json package-lock.json* ./
 
-# Install all dependencies (including devDependencies needed for build)
-RUN npm install
-
+# Install all dependencies (ensuring devDependencies needed for build are present)
+RUN npm install --include=dev
 
 # Copy full application code
 COPY . .
@@ -28,11 +32,12 @@ ENV LINE_CHANNEL_SECRET=$LINE_CHANNEL_SECRET
 ENV LINE_CHANNEL_ID=$LINE_CHANNEL_ID
 ENV LINE_TO_ID=$LINE_TO_ID
 ENV NODE_ENV=production
+ENV NITRO_PRESET=node-server
 
 RUN npm run build
 
-# Runner stage - lightweight production image
-FROM node:22-alpine AS runner
+# Runner stage - lightweight production image with glibc
+FROM node:22-slim AS runner
 
 WORKDIR /app
 

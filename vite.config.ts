@@ -20,11 +20,6 @@ export default defineConfig({
   },
   nitro: {
     preset: process.env["NITRO_PRESET"] || (isCloudflare ? "cloudflare-module" : "node-server"),
-    // Nitro consumes this runtime hook, though the wrapper intentionally exposes only stable options.
-    // @ts-expect-error Nitro renderer is supported at runtime but omitted from the wrapper's narrow type.
-    renderer: {
-      handler: "src/server-renderer.ts",
-    },
   },
   vite: {
     plugins: [],
