@@ -9,7 +9,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { MasterStore, type CategoryItem, type UnitItem, type ZoneItem } from "@/lib/store";
+import {
+  MasterStore,
+  type CategoryItem,
+  type SubCategoryItem,
+  type UnitItem,
+  type ZoneItem,
+} from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 interface SelectProps {
@@ -20,53 +26,9 @@ interface SelectProps {
   className?: string | undefined;
 }
 
-export function CategorySelect({
-  value,
-  onChange,
-  placeholder = "เลือกหมวดหมู่สินค้า",
-  disabled,
-  className,
-}: SelectProps) {
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
-
-  const load = () => setCategories(MasterStore.getCategories());
-
-  useEffect(() => {
-    load();
-    window.addEventListener("minimark_store_change", load);
-    return () => window.removeEventListener("minimark_store_change", load);
-  }, []);
-
-  const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
-
-  return (
-    <Select value={value || ""} onValueChange={onChange} disabled={Boolean(disabled)}>
-      <SelectTrigger
-        className={cn(
-          "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
-          cleanClassName,
-          "text-base",
-        )}
-      >
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
-        {categories.map((c) => (
-          <SelectItem
-            key={c.id}
-            value={c.id}
-            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
-          >
-            <span className="truncate block max-w-full">
-              {c.name} ({c.code})
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
+/**
+ * 1. โซนสินค้า (Zone)
+ */
 export function ZoneSelect({
   value,
   onChange,
@@ -112,6 +74,115 @@ export function ZoneSelect({
   );
 }
 
+/**
+ * 2. หมวดหมู่หลัก (Main Category)
+ */
+export function CategorySelect({
+  value,
+  onChange,
+  placeholder = "เลือกหมวดหมู่หลัก",
+  disabled,
+  className,
+}: SelectProps) {
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+
+  const load = () => setCategories(MasterStore.getCategories());
+
+  useEffect(() => {
+    load();
+    window.addEventListener("minimark_store_change", load);
+    return () => window.removeEventListener("minimark_store_change", load);
+  }, []);
+
+  const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
+
+  return (
+    <Select value={value || ""} onValueChange={onChange} disabled={Boolean(disabled)}>
+      <SelectTrigger
+        className={cn(
+          "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
+          cleanClassName,
+          "text-base",
+        )}
+      >
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
+        {categories.map((c) => (
+          <SelectItem
+            key={c.id}
+            value={c.id}
+            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
+          >
+            <span className="truncate block max-w-full">
+              {c.name} ({c.code})
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+export { CategorySelect as MainCategorySelect };
+
+/**
+ * 3. หมวดหมู่ย่อย (Sub Category)
+ */
+export interface SubCategorySelectProps extends SelectProps {
+  categoryId?: string | undefined;
+}
+
+export function SubCategorySelect({
+  value,
+  onChange,
+  categoryId,
+  placeholder = "เลือกหมวดหมู่ย่อย",
+  disabled,
+  className,
+}: SubCategorySelectProps) {
+  const [subCategories, setSubCategories] = useState<SubCategoryItem[]>([]);
+
+  useEffect(() => {
+    const load = () => setSubCategories(MasterStore.getSubCategories(categoryId));
+    load();
+    window.addEventListener("minimark_store_change", load);
+    return () => window.removeEventListener("minimark_store_change", load);
+  }, [categoryId]);
+
+  const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
+
+  return (
+    <Select value={value || ""} onValueChange={onChange} disabled={Boolean(disabled)}>
+      <SelectTrigger
+        className={cn(
+          "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
+          cleanClassName,
+          "text-base",
+        )}
+      >
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
+        {subCategories.map((s) => (
+          <SelectItem
+            key={s.id}
+            value={s.id}
+            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
+          >
+            <span className="truncate block max-w-full">
+              {s.name} ({s.code})
+            </span>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+/**
+ * 4. หน่วยนับ (Unit)
+ */
 export function UnitSelect({
   value,
   onChange,

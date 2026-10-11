@@ -53,7 +53,13 @@ import {
   type LabelTemplateType,
 } from "@/lib/printer-service";
 import { DEFAULT_STORE_NAME, getSystemStoreName } from "@/lib/flex-templates";
-import { MasterStore, type CategoryItem, type ProductItem, type ZoneItem } from "@/lib/store";
+import {
+  MasterStore,
+  type CategoryItem,
+  type ProductItem,
+  type SubCategoryItem,
+  type ZoneItem,
+} from "@/lib/store";
 
 interface BarcodeLabelSheetProps {
   initialProductId?: string;
@@ -61,17 +67,19 @@ interface BarcodeLabelSheetProps {
 
 export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) {
   const [products, setProducts] = useState<ProductItem[]>([]);
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [zones, setZones] = useState<ZoneItem[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [subCategories, setSubCategories] = useState<SubCategoryItem[]>([]);
 
   // Print Queue Items
   const [itemsToPrint, setItemsToPrint] = useState<LabelItemToPrint[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Search & Filter
+  // Search & Filter (โซนสินค้า > หมวดหมู่หลัก > หมวดหมู่ย่อย)
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [selectedZone, setSelectedZone] = useState("ALL");
+  const [selectedCategory, setSelectedCategory] = useState("ALL");
+  const [selectedSubCategory, setSelectedSubCategory] = useState("ALL");
 
   // Design Options
   const [options, setOptions] = useState<LabelDesignOptions>(DEFAULT_LABEL_OPTIONS);
@@ -82,13 +90,15 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
 
   useEffect(() => {
     const allProds = MasterStore.getProducts();
-    const allCats = MasterStore.getCategories();
     const allZones = MasterStore.getZones();
+    const allCats = MasterStore.getCategories();
+    const allSubCats = MasterStore.getSubCategories();
     const allUnits = MasterStore.getUnits();
 
     setProducts(allProds);
-    setCategories(allCats);
     setZones(allZones);
+    setCategories(allCats);
+    setSubCategories(allSubCats);
 
     const initialItems: LabelItemToPrint[] = allProds.map((p) => {
       const u = allUnits.find((unit) => unit.id === p.unitId)?.name || "ชิ้น";
@@ -128,17 +138,21 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
         if (!matchName && !matchCode && !matchSku) return false;
       }
 
+      if (selectedZone !== "ALL" && p.zoneId !== selectedZone) {
+        return false;
+      }
+
       if (selectedCategory !== "ALL" && p.categoryId !== selectedCategory) {
         return false;
       }
 
-      if (selectedZone !== "ALL" && p.zoneId !== selectedZone) {
+      if (selectedSubCategory !== "ALL" && p.subCategoryId !== selectedSubCategory) {
         return false;
       }
 
       return true;
     });
-  }, [itemsToPrint, products, searchQuery, selectedCategory, selectedZone]);
+  }, [itemsToPrint, products, searchQuery, selectedZone, selectedCategory, selectedSubCategory]);
 
   const selectedItemsToPrint = useMemo(() => {
     return itemsToPrint.filter((i) => selectedIds.has(i.productId) && i.copies > 0);
@@ -295,8 +309,8 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
                 </div>
               </div>
 
-              {/* Filters */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+              {/* Filters (โซนสินค้า > หมวดหมู่หลัก > หมวดหมู่ย่อย) */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-1">
                 <div className="relative">
                   <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -307,20 +321,7 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
                   />
                 </div>
 
-                <Select value={selectedCategory} onValueChange={setSelectedCategory}>
-                  <SelectTrigger className="h-9 text-xs rounded-xl">
-                    <SelectValue placeholder="หมวดหมู่" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ALL">ทุกหมวดหมู่</SelectItem>
-                    {categories.map((c) => (
-                      <SelectItem key={c.id} value={c.id}>
-                        {c.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-
+                {/* 1. โซนสินค้า */}
                 <Select value={selectedZone} onValueChange={setSelectedZone}>
                   <SelectTrigger className="h-9 text-xs rounded-xl">
                     <SelectValue placeholder="โซน / ชั้นวาง" />
@@ -332,6 +333,49 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
                         {z.name}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+
+                {/* 2. หมวดหมู่หลัก */}
+                <Select
+                  value={selectedCategory}
+                  onValueChange={(val) => {
+                    setSelectedCategory(val);
+                    setSelectedSubCategory("ALL");
+                  }}
+                >
+                  <SelectTrigger className="h-9 text-xs rounded-xl">
+                    <SelectValue placeholder="หมวดหมู่หลัก" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">ทุกหมวดหมู่หลัก</SelectItem>
+                    {categories.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {/* 3. หมวดหมู่ย่อย */}
+                <Select value={selectedSubCategory} onValueChange={setSelectedSubCategory}>
+                  <SelectTrigger className="h-9 text-xs rounded-xl">
+                    <SelectValue placeholder="หมวดหมู่ย่อย" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">ทุกหมวดหมู่ย่อย</SelectItem>
+                    {subCategories
+                      .filter(
+                        (s) =>
+                          selectedCategory === "ALL" ||
+                          !s.categoryId ||
+                          s.categoryId === selectedCategory,
+                      )
+                      .map((s) => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
                   </SelectContent>
                 </Select>
               </div>

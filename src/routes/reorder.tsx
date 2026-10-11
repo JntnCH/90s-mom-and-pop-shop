@@ -53,10 +53,11 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
 import {
-  CategorySelect,
-  FormatBadge,
-  UnitSelect,
   ZoneSelect,
+  CategorySelect,
+  SubCategorySelect,
+  UnitSelect,
+  FormatBadge,
 } from "@/components/master/MasterSelects";
 import { OrderExportModal, type ExportOrderPayload } from "@/components/orders/OrderExportModal";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -256,6 +257,7 @@ function ReorderPage() {
     targetStock: number;
     categoryId: string;
     categoryName: string;
+    subCategoryId?: string;
     zoneId?: string;
     zoneName: string;
   } | null>(null);
@@ -343,8 +345,9 @@ function ReorderPage() {
   const [quickName, setQuickName] = useState("");
   const [quickBarcode, setQuickBarcode] = useState("");
   const [quickSku, setQuickSku] = useState("");
-  const [quickCatId, setQuickCatId] = useState("");
   const [quickZoneId, setQuickZoneId] = useState("");
+  const [quickCatId, setQuickCatId] = useState("");
+  const [quickSubCatId, setQuickSubCatId] = useState("");
   const [quickUnitId, setQuickUnitId] = useState("");
   const [quickCostPrice, setQuickCostPrice] = useState<string>("");
   const [quickSellPrice, setQuickSellPrice] = useState<string>("");
@@ -461,8 +464,9 @@ function ReorderPage() {
       codeType: "Barcode",
       format: "EAN_13",
       name: quickName.trim(),
-      categoryId: finalCat,
       zoneId: quickZoneId || undefined,
+      categoryId: finalCat,
+      subCategoryId: quickSubCatId || undefined,
       unitId: finalUnit,
       costPrice: quickCostPrice.trim() === "" ? 0 : Number(quickCostPrice) || 0,
       sellPrice: quickSellPrice.trim() === "" ? 0 : Number(quickSellPrice) || 0,
@@ -714,6 +718,7 @@ function ReorderPage() {
       targetStock: p.targetStock || p.reorderQuantity || 0,
       categoryId: p.categoryId,
       categoryName: getCatName(p.categoryId),
+      subCategoryId: p.subCategoryId,
       zoneId: p.zoneId || "",
       zoneName: zones.find((z) => z.id === p.zoneId)?.name || "โซนทั่วไป",
     });
@@ -757,6 +762,7 @@ function ReorderPage() {
       minStock: Math.max(0, Number(editingCartItem.minStock) || 0),
       unitId: editingCartItem.unitId,
       categoryId: editingCartItem.categoryId,
+      subCategoryId: editingCartItem.subCategoryId || undefined,
       zoneId: editingCartItem.zoneId || undefined,
     });
     setProducts(MasterStore.getProducts());
@@ -2600,10 +2606,10 @@ function ReorderPage() {
                           );
                         }}
                       >
-                        <option value="category">🏷️ ตามหมวดหมู่สินค้า (ไม่แสดงโซน - แนะนำ)</option>
-                        <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
-                        <option value="zone_then_category">📍 โซน ➔ 🏷️ หมวดหมู่</option>
+                        <option value="zone_then_category">📍 โซน ➔ 🏷️ หมวดหมู่สินค้า</option>
                         <option value="zone">📍 ตามโซนจัดวางสินค้า</option>
+                        <option value="category">🏷️ ตามหมวดหมู่สินค้า (ไม่แสดงโซน)</option>
+                        <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
                       </select>
                       <p className="text-[10px] text-muted-foreground leading-relaxed">
                         จัดลำดับสินค้าในหมวดหมู่หรือโซนเดียวกันให้อยู่ติดกันใน LINE Flex
@@ -3805,23 +3811,10 @@ function ReorderPage() {
                 </div>
               </div>
 
-              {/* Category, Zone, Unit */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Dropdowns: โซนสินค้า > หมวดหมู่หลัก > หมวดหมู่ย่อย > หน่วยนับ */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="space-y-1">
-                  <Label className="text-xs font-semibold">หมวดหมู่สินค้า</Label>
-                  <CategorySelect
-                    value={editingCartItem.categoryId}
-                    onChange={(val) =>
-                      setEditingCartItem((prev) =>
-                        prev ? { ...prev, categoryId: val, categoryName: getCatName(val) } : null,
-                      )
-                    }
-                    className="h-10 text-base rounded-xl"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <Label className="text-xs font-semibold">โซนจัดเก็บ</Label>
+                  <Label className="text-xs font-semibold">1. โซนจัดเก็บ</Label>
                   <ZoneSelect
                     value={editingCartItem.zoneId}
                     onChange={(val) =>
@@ -3840,7 +3833,39 @@ function ReorderPage() {
                 </div>
 
                 <div className="space-y-1">
-                  <Label className="text-xs font-semibold">หน่วยนับ *</Label>
+                  <Label className="text-xs font-semibold">2. หมวดหมู่หลัก</Label>
+                  <CategorySelect
+                    value={editingCartItem.categoryId}
+                    onChange={(val) =>
+                      setEditingCartItem((prev) =>
+                        prev
+                          ? {
+                              ...prev,
+                              categoryId: val,
+                              categoryName: getCatName(val),
+                              subCategoryId: undefined,
+                            }
+                          : null,
+                      )
+                    }
+                    className="h-10 text-base rounded-xl"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">3. หมวดหมู่ย่อย</Label>
+                  <SubCategorySelect
+                    categoryId={editingCartItem.categoryId}
+                    value={editingCartItem.subCategoryId}
+                    onChange={(val) =>
+                      setEditingCartItem((prev) => (prev ? { ...prev, subCategoryId: val } : null))
+                    }
+                    className="h-10 text-base rounded-xl"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">4. หน่วยนับ *</Label>
                   <select
                     className="w-full h-10 rounded-xl border border-input bg-background px-3 text-base font-medium shadow-2xs cursor-pointer focus:ring-1 focus:ring-primary truncate"
                     value={editingCartItem.unitId}
@@ -4706,10 +4731,10 @@ function ReorderPage() {
                   value={flexGroupBy}
                   onChange={(e) => handleUpdateFlexGrouping(e.target.value as FlexItemGroupBy)}
                 >
-                  <option value="category">🏷️ ตามหมวดหมู่สินค้า (ไม่แสดงโซน - แนะนำ)</option>
-                  <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
-                  <option value="zone_then_category">📍 โซน ➔ 🏷️ หมวดหมู่</option>
+                  <option value="zone_then_category">📍 โซน ➔ 🏷️ หมวดหมู่สินค้า</option>
                   <option value="zone">📍 ตามโซนจัดวางสินค้า</option>
+                  <option value="category">🏷️ ตามหมวดหมู่สินค้า (ไม่แสดงโซน)</option>
+                  <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
                 </select>
                 <Badge
                   variant="outline"
@@ -4892,34 +4917,48 @@ function ReorderPage() {
               </div>
             </div>
 
-            {/* Category & Unit & Zone */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {/* Dropdowns: โซนสินค้า > หมวดหมู่หลัก > หมวดหมู่ย่อย > หน่วยนับ */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               <div className="space-y-1">
-                <Label className="text-xs font-semibold">หมวดหมู่สินค้า *</Label>
-                <CategorySelect
-                  value={quickCatId}
-                  onChange={setQuickCatId}
-                  placeholder="เลือกหมวดหมู่"
-                  className="h-10 text-base rounded-xl"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">หน่วยนับ *</Label>
-                <UnitSelect
-                  value={quickUnitId}
-                  onChange={setQuickUnitId}
-                  placeholder="เลือกหน่วยนับ"
-                  className="h-10 text-base rounded-xl"
-                />
-              </div>
-
-              <div className="space-y-1">
-                <Label className="text-xs font-semibold">โซนจัดเก็บ</Label>
+                <Label className="text-xs font-semibold">1. โซนจัดเก็บ</Label>
                 <ZoneSelect
                   value={quickZoneId}
                   onChange={setQuickZoneId}
                   placeholder="เลือกโซน"
+                  className="h-10 text-base rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">2. หมวดหมู่หลัก *</Label>
+                <CategorySelect
+                  value={quickCatId}
+                  onChange={(val) => {
+                    setQuickCatId(val);
+                    setQuickSubCatId("");
+                  }}
+                  placeholder="เลือกหมวดหมู่หลัก"
+                  className="h-10 text-base rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">3. หมวดหมู่ย่อย</Label>
+                <SubCategorySelect
+                  categoryId={quickCatId}
+                  value={quickSubCatId}
+                  onChange={setQuickSubCatId}
+                  placeholder="เลือกหมวดหมู่ย่อย"
+                  className="h-10 text-base rounded-xl"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">4. หน่วยนับ *</Label>
+                <UnitSelect
+                  value={quickUnitId}
+                  onChange={setQuickUnitId}
+                  placeholder="เลือกหน่วยนับ"
                   className="h-10 text-base rounded-xl"
                 />
               </div>

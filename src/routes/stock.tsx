@@ -16,7 +16,12 @@ import {
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/layout/PageHeader";
-import { CategorySelect, FormatBadge, ZoneSelect } from "@/components/master/MasterSelects";
+import {
+  CategorySelect,
+  FormatBadge,
+  SubCategorySelect,
+  ZoneSelect,
+} from "@/components/master/MasterSelects";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,8 +87,9 @@ function StockPage() {
 
   // Filtering
   const [search, setSearch] = useState("");
-  const [selectedCat, setSelectedCat] = useState("all");
   const [selectedZone, setSelectedZone] = useState("all");
+  const [selectedCat, setSelectedCat] = useState("all");
+  const [selectedSubCat, setSelectedSubCat] = useState("all");
   const [stockStatusFilter, setStockStatusFilter] = useState<
     "ALL" | "IN_STOCK" | "LOW_STOCK" | "OUT_OF_STOCK"
   >("ALL");
@@ -126,8 +132,9 @@ function StockPage() {
       p.barcode.toLowerCase().includes(query) ||
       (p.sku && p.sku.toLowerCase().includes(query));
 
-    const matchCat = selectedCat === "all" || p.categoryId === selectedCat;
     const matchZone = selectedZone === "all" || p.zoneId === selectedZone;
+    const matchCat = selectedCat === "all" || p.categoryId === selectedCat;
+    const matchSubCat = selectedSubCat === "all" || p.subCategoryId === selectedSubCat;
 
     const isOut = p.stock <= 0;
     const isLow = !isOut && p.stock <= p.minStock;
@@ -237,7 +244,7 @@ function StockPage() {
       <Card className="rounded-2xl border-border/80 shadow-sm">
         <CardContent className="p-3 sm:p-5">
           <div className="grid gap-2.5 sm:grid-cols-12">
-            <div className="relative sm:col-span-4">
+            <div className="relative sm:col-span-3">
               <Search className="absolute left-3 top-3 size-4 text-muted-foreground" />
               <Input
                 placeholder="ค้นหาชื่อ, SKU หรือ บาร์โค้ด..."
@@ -246,15 +253,8 @@ function StockPage() {
                 className="pl-9 h-10 rounded-xl"
               />
             </div>
-            <div className="sm:col-span-3">
-              <CategorySelect
-                value={selectedCat === "all" ? "" : selectedCat}
-                onChange={(val) => setSelectedCat(val || "all")}
-                placeholder="ทุกหมวดหมู่สินค้า"
-                className="h-10 rounded-xl"
-              />
-            </div>
-            <div className="sm:col-span-3">
+            {/* 1. โซนสินค้า */}
+            <div className="sm:col-span-2">
               <ZoneSelect
                 value={selectedZone === "all" ? "" : selectedZone}
                 onChange={(val) => setSelectedZone(val || "all")}
@@ -262,6 +262,29 @@ function StockPage() {
                 className="h-10 rounded-xl"
               />
             </div>
+            {/* 2. หมวดหมู่หลัก */}
+            <div className="sm:col-span-3">
+              <CategorySelect
+                value={selectedCat === "all" ? "" : selectedCat}
+                onChange={(val) => {
+                  setSelectedCat(val || "all");
+                  setSelectedSubCat("all");
+                }}
+                placeholder="ทุกหมวดหมู่หลัก"
+                className="h-10 rounded-xl"
+              />
+            </div>
+            {/* 3. หมวดหมู่ย่อย */}
+            <div className="sm:col-span-2">
+              <SubCategorySelect
+                categoryId={selectedCat}
+                value={selectedSubCat === "all" ? "" : selectedSubCat}
+                onChange={(val) => setSelectedSubCat(val || "all")}
+                placeholder="ทุกหมวดหมู่ย่อย"
+                className="h-10 rounded-xl"
+              />
+            </div>
+            {/* สถานะสต็อก */}
             <div className="sm:col-span-2">
               <Select
                 value={stockStatusFilter}
@@ -401,8 +424,8 @@ function StockPage() {
                 <TableRow>
                   <TableHead className="w-36">บาร์โค้ด</TableHead>
                   <TableHead>ชื่อสินค้า</TableHead>
-                  <TableHead>หมวดหมู่</TableHead>
                   <TableHead>โซนสินค้า</TableHead>
+                  <TableHead>หมวดหมู่</TableHead>
                   <TableHead className="text-right">คงเหลือ</TableHead>
                   <TableHead className="text-right">จุดเตือนขั้นต่ำ</TableHead>
                   <TableHead className="text-right">เป้าหมายสต็อก</TableHead>
@@ -434,10 +457,10 @@ function StockPage() {
                         </TableCell>
                         <TableCell className="font-medium text-foreground">{item.name}</TableCell>
                         <TableCell className="text-muted-foreground text-sm">
-                          {getCatName(item.categoryId)}
+                          {getZoneName(item.zoneId)}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
-                          {getZoneName(item.zoneId)}
+                          {getCatName(item.categoryId)}
                         </TableCell>
                         <TableCell className="text-right">
                           <span

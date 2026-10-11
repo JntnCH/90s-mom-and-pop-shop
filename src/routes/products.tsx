@@ -35,10 +35,11 @@ import { BarcodeDisplay } from "@/components/barcode/BarcodeDisplay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { AuthService } from "@/lib/auth-rbac";
 import {
-  CategorySelect,
-  FormatBadge,
-  UnitSelect,
   ZoneSelect,
+  CategorySelect,
+  SubCategorySelect,
+  UnitSelect,
+  FormatBadge,
 } from "@/components/master/MasterSelects";
 import { ProductImageUploader } from "@/components/products/ProductImageUploader";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -106,8 +107,9 @@ function ProductsPage() {
 
   // Filtering & Searching
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedZone, setSelectedZone] = useState<string>("all");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [selectedSubCategory, setSelectedSubCategory] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
 
   // Modal State
@@ -127,8 +129,9 @@ function ProductsPage() {
   const [formFormat, setFormFormat] = useState<string | undefined>("EAN_13");
   const [formName, setFormName] = useState("");
   const [formImageUrl, setFormImageUrl] = useState("");
-  const [formCategory, setFormCategory] = useState("");
   const [formZone, setFormZone] = useState("");
+  const [formCategory, setFormCategory] = useState("");
+  const [formSubCategory, setFormSubCategory] = useState("");
   const [formUnit, setFormUnit] = useState("");
   const [formCost, setFormCost] = useState<string>("");
   const [formPrice, setFormPrice] = useState<string>("");
@@ -285,8 +288,9 @@ function ProductsPage() {
     setFormFormat("EAN_13");
     setFormName("");
     setFormImageUrl("");
-    setFormCategory(categories[0]?.id || "");
     setFormZone(zones[0]?.id || "");
+    setFormCategory(categories[0]?.id || "");
+    setFormSubCategory("");
     setFormUnit(units[0]?.id || "");
     setFormCost("");
     setFormPrice("");
@@ -330,8 +334,9 @@ function ProductsPage() {
     setFormFormat(product.format);
     setFormName(product.name);
     setFormImageUrl(product.imageUrl || "");
-    setFormCategory(product.categoryId);
     setFormZone(product.zoneId || "");
+    setFormCategory(product.categoryId);
+    setFormSubCategory(product.subCategoryId || "");
     setFormUnit(product.unitId);
     setFormCost(
       product.costPrice !== undefined && product.costPrice !== null
@@ -401,8 +406,9 @@ function ProductsPage() {
         format: formFormat,
         name: formName.trim(),
         imageUrl: formImageUrl.trim() || undefined,
-        categoryId: formCategory || categories[0]?.id || "cat-general",
         zoneId: formZone || undefined,
+        categoryId: formCategory || categories[0]?.id || "cat-general",
+        subCategoryId: formSubCategory || undefined,
         unitId: formUnit || units[0]?.id || "unit-piece",
         costPrice: isNaN(parsedCost) ? 0 : parsedCost,
         sellPrice: isNaN(parsedPrice) ? 0 : parsedPrice,
@@ -421,8 +427,9 @@ function ProductsPage() {
         format: formFormat,
         name: formName.trim(),
         imageUrl: formImageUrl.trim() || undefined,
-        categoryId: formCategory || categories[0]?.id || "cat-general",
         zoneId: formZone || undefined,
+        categoryId: formCategory || categories[0]?.id || "cat-general",
+        subCategoryId: formSubCategory || undefined,
         unitId: formUnit || units[0]?.id || "unit-piece",
         costPrice: isNaN(parsedCost) ? 0 : parsedCost,
         sellPrice: isNaN(parsedPrice) ? 0 : parsedPrice,
@@ -466,15 +473,16 @@ function ProductsPage() {
       p.barcode.toLowerCase().includes(query) ||
       (p.sku && p.sku.toLowerCase().includes(query));
 
-    const matchesCat = selectedCategory === "all" || p.categoryId === selectedCategory;
     const matchesZone = selectedZone === "all" || p.zoneId === selectedZone;
+    const matchesCat = selectedCategory === "all" || p.categoryId === selectedCategory;
+    const matchesSubCat = selectedSubCategory === "all" || p.subCategoryId === selectedSubCategory;
 
     const matchesStatus =
       statusFilter === "ALL" ||
       (statusFilter === "ACTIVE" && p.isActive !== false) ||
       (statusFilter === "INACTIVE" && p.isActive === false);
 
-    return matchesSearch && matchesCat && matchesZone && matchesStatus;
+    return matchesSearch && matchesZone && matchesCat && matchesSubCat && matchesStatus;
   });
 
   const activeCount = products.filter((p) => p.isActive !== false).length;
@@ -508,7 +516,7 @@ function ProductsPage() {
         <CardContent className="p-3 sm:p-5 space-y-3">
           <div className="grid gap-2.5 md:grid-cols-12">
             {/* Search Input with Large Scan Button */}
-            <div className="relative md:col-span-5 flex items-center">
+            <div className="relative md:col-span-3 flex items-center">
               <Search className="absolute left-3 size-4 text-muted-foreground pointer-events-none" />
               <Input
                 placeholder="ค้นหาชื่อ, SKU หรือ ยิงบาร์โค้ด..."
@@ -547,22 +555,36 @@ function ProductsPage() {
               </div>
             </div>
 
-            {/* Category Select */}
-            <div className="md:col-span-3">
-              <CategorySelect
-                value={selectedCategory === "all" ? "" : selectedCategory}
-                onChange={(val) => setSelectedCategory(val || "all")}
-                placeholder="ทุกหมวดหมู่สินค้า"
-                className="h-11 rounded-xl"
-              />
-            </div>
-
-            {/* Zone Select */}
+            {/* 1. โซนสินค้า (Zone Select) */}
             <div className="md:col-span-2">
               <ZoneSelect
                 value={selectedZone === "all" ? "" : selectedZone}
                 onChange={(val) => setSelectedZone(val || "all")}
                 placeholder="ทุกโซนจัดเก็บ"
+                className="h-11 rounded-xl"
+              />
+            </div>
+
+            {/* 2. หมวดหมู่หลัก (Main Category Select) */}
+            <div className="md:col-span-3">
+              <CategorySelect
+                value={selectedCategory === "all" ? "" : selectedCategory}
+                onChange={(val) => {
+                  setSelectedCategory(val || "all");
+                  setSelectedSubCategory("all");
+                }}
+                placeholder="ทุกหมวดหมู่หลัก"
+                className="h-11 rounded-xl"
+              />
+            </div>
+
+            {/* 3. หมวดหมู่ย่อย (Sub Category Select) */}
+            <div className="md:col-span-2">
+              <SubCategorySelect
+                categoryId={selectedCategory}
+                value={selectedSubCategory === "all" ? "" : selectedSubCategory}
+                onChange={(val) => setSelectedSubCategory(val || "all")}
+                placeholder="ทุกหมวดหมู่ย่อย"
                 className="h-11 rounded-xl"
               />
             </div>
@@ -1310,22 +1332,38 @@ function ProductsPage() {
               />
             </div>
 
-            {/* Section 4: Master Dropdowns */}
-            <div className="grid gap-3 sm:grid-cols-3">
+            {/* Section 4: Master Dropdowns (โซนสินค้า > หมวดหมู่หลัก > หมวดหมู่ย่อย > หน่วยนับ) */}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">หมวดหมู่</Label>
+                <Label className="text-xs font-semibold text-muted-foreground">1. โซนสินค้า</Label>
+                <ZoneSelect value={formZone} onChange={setFormZone} className="h-10 rounded-xl" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold text-muted-foreground">
+                  2. หมวดหมู่หลัก
+                </Label>
                 <CategorySelect
                   value={formCategory}
-                  onChange={setFormCategory}
+                  onChange={(val) => {
+                    setFormCategory(val);
+                    setFormSubCategory("");
+                  }}
                   className="h-10 rounded-xl"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">โซนจัดเก็บ</Label>
-                <ZoneSelect value={formZone} onChange={setFormZone} className="h-10 rounded-xl" />
+                <Label className="text-xs font-semibold text-muted-foreground">
+                  3. หมวดหมู่ย่อย
+                </Label>
+                <SubCategorySelect
+                  categoryId={formCategory}
+                  value={formSubCategory}
+                  onChange={setFormSubCategory}
+                  className="h-10 rounded-xl"
+                />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">หน่วยนับ</Label>
+                <Label className="text-xs font-semibold text-muted-foreground">4. หน่วยนับ</Label>
                 <UnitSelect value={formUnit} onChange={setFormUnit} className="h-10 rounded-xl" />
               </div>
             </div>
