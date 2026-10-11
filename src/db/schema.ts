@@ -118,3 +118,17 @@ export const lineFollowers = pgTable("line_followers", {
   followedAt: text("followed_at"),
   lastInteractionAt: text("last_interaction_at"),
 });
+
+// 10. Store Configuration Table (centralized shop name / receipt config)
+export const storeConfig = pgTable("store_config", {
+  id: text("id").primaryKey().default("default"),
+  storeName: text("store_name").notNull(),
+  branchName: text("branch_name"),
+  taxId: text("tax_id"),
+  address: text("address"),
+  phone: text("phone"),
+  headerMessage: text("header_message"),
+  footerMessage: text("footer_message"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  updatedBy: text("updated_by"),
+});
