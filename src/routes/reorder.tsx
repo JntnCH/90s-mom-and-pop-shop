@@ -96,6 +96,7 @@ import {
   getSystemStoreName,
   groupAndSortFlexItems,
 } from "@/lib/flex-templates";
+import { formatPurchaseOrderSentAt } from "@/lib/flex-templates/order-timestamp";
 import { FlexMessageVisualizer } from "@/components/line/FlexMessageVisualizer";
 import { FlexSimulatorImporter } from "@/components/line/FlexSimulatorImporter";
 import { getLineServerConfigFn, sendLineMessagingApiFn } from "@/lib/line-server-fn";
@@ -1189,7 +1190,7 @@ function ReorderPage() {
   const handlePreviewOrderFlex = (overrideGroupBy?: FlexItemGroupBy) => {
     if (fullItems.length === 0) return;
     const gb = overrideGroupBy || flexGroupBy;
-    const orderDateStr = new Date().toLocaleDateString("th-TH");
+    const orderDateStr = formatPurchaseOrderSentAt();
     try {
       const flexMsg = formatDailyOrderFlexMessage(
         fullItems,
@@ -1245,7 +1246,7 @@ function ReorderPage() {
     if (!flexPreviewSource) return;
 
     if (flexPreviewSource.type === "order" && flexPreviewSource.orderItems) {
-      const orderDateStr = new Date().toLocaleDateString("th-TH");
+      const orderDateStr = formatPurchaseOrderSentAt();
       const flexMsg = formatDailyOrderFlexMessage(
         flexPreviewSource.orderItems,
         orderDateStr,
@@ -1351,10 +1352,12 @@ function ReorderPage() {
           toast.error("ไม่มีรายการสินค้าในใบสั่งซื้อ");
           return;
         }
-        const orderDateStr = new Date().toLocaleDateString("th-TH");
+        const sentAt = new Date();
+        const orderDateStr = sentAt.toLocaleDateString("th-TH");
+        const flexDateTimeStr = formatPurchaseOrderSentAt(sentAt);
         flexMsg = formatDailyOrderFlexMessage(
           fullItems,
-          orderDateStr,
+          flexDateTimeStr,
           currentStoreName,
           currentOrderFlexOptions(),
         );
@@ -1498,10 +1501,12 @@ function ReorderPage() {
         setPushModalOpen(false);
       } else {
         if (fullItems.length === 0) return;
-        const orderDateStr = new Date().toLocaleDateString("th-TH");
+        const sentAt = new Date();
+        const orderDateStr = sentAt.toLocaleDateString("th-TH");
+        const flexDateTimeStr = formatPurchaseOrderSentAt(sentAt);
         const flexMsg = formatDailyOrderFlexMessage(
           fullItems,
-          orderDateStr,
+          flexDateTimeStr,
           currentStoreName,
           currentOrderFlexOptions(),
         );

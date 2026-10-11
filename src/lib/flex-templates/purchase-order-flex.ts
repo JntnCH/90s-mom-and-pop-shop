@@ -288,6 +288,31 @@ export function createPurchaseOrderFlexBubble(
                     wrap: true,
                   },
                 ],
+              }
+            : {
+                type: "box" as const,
+                layout: "horizontal" as const,
+                contents: [
+                  {
+                    type: "text" as const,
+                    text: "รายการสินค้าที่จะสั่งซื้อ",
+                    size: isLargeFont ? ("sm" as const) : ("xs" as const),
+                    color: "#6b7280",
+                    weight: "bold" as const,
+                    flex: 6,
+                    wrap: true,
+                  },
+                  {
+                    type: "text" as const,
+                    text: "จำนวน / หน่วยนับ",
+                    size: isLargeFont ? ("sm" as const) : ("xs" as const),
+                    color: "#6b7280",
+                    weight: "bold" as const,
+                    align: "end" as const,
+                    flex: 4,
+                    wrap: true,
+                  },
+                ],
               },
           {
             type: "separator" as const,
