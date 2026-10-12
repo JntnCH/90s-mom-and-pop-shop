@@ -168,193 +168,11 @@ export const DEFAULT_UNITS: UnitItem[] = [
 
 export const DEFAULT_FOLLOWERS: LineUserFollower[] = [];
 
-export const DEFAULT_MOVEMENTS: StockMovementLog[] = [
-  {
-    id: "mov-1",
-    timestamp: "2026-09-24 14:30",
-    productId: "prod-1",
-    productName: "มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง 55g",
-    barcode: "8850124001153",
-    type: "RECEIVE",
-    quantity: 20,
-    previousStock: 8,
-    newStock: 28,
-    operator: "พนักงานสต็อก (Staff Store)",
-    note: "รับสินค้าเข้าจาก ซัพพลายเออร์ A",
-  },
-  {
-    id: "mov-2",
-    timestamp: "2026-09-24 16:15",
-    productId: "prod-1",
-    productName: "มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง 55g",
-    barcode: "8850124001153",
-    type: "ISSUE",
-    quantity: 20,
-    previousStock: 28,
-    newStock: 8,
-    operator: "แคชเชียร์หน้าร้าน",
-    note: "ขายหน้าร้าน",
-  },
-  {
-    id: "mov-3",
-    timestamp: "2026-09-24 17:00",
-    productId: "prod-2",
-    productName: "โค้ก น้ำอัดลม ออริจินัล 325ml",
-    barcode: "8851717001018",
-    type: "RECEIVE",
-    quantity: 24,
-    previousStock: 5,
-    newStock: 29,
-    operator: "พนักงานสต็อก (Staff Store)",
-    note: "ตรวจรับสินค้าประจำสัปดาห์",
-  },
-];
+export const DEFAULT_MOVEMENTS: StockMovementLog[] = [];
 
-export const DEFAULT_PURCHASE_ORDERS: PurchaseOrderRecord[] = [
-  {
-    id: "po-101",
-    orderNumber: "PO-20260924-001",
-    createdAt: "2026-09-24 10:30 น.",
-    supplierName: "บริษัท ยูนิลีเวอร์ / ไทยน้ำทิพย์ จำกัด",
-    items: [
-      {
-        productId: "prod-1",
-        productName: "มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง 55g",
-        barcode: "8850124001153",
-        quantity: 30,
-        unitName: "ซอง",
-        costPrice: 6.0,
-        total: 180.0,
-      },
-      {
-        productId: "prod-2",
-        productName: "โค้ก น้ำอัดลม ออริจินัล 325ml",
-        barcode: "8851717001018",
-        quantity: 24,
-        unitName: "กระป๋อง",
-        costPrice: 12.0,
-        total: 288.0,
-      },
-    ],
-    totalQuantity: 54,
-    totalCost: 468.0,
-    status: "ORDERED",
-    sentViaLineAt: "2026-09-24 10:32 น.",
-  },
-];
+export const DEFAULT_PURCHASE_ORDERS: PurchaseOrderRecord[] = [];
 
-export const DEFAULT_PRODUCTS: ProductItem[] = [
-  {
-    id: "prod-1",
-    sku: "SKU-FOD-001",
-    barcode: "8850124001153",
-    codeType: "Barcode",
-    format: "EAN_13",
-    name: "มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง 55g",
-    imageUrl:
-      "https://images.unsplash.com/photo-1612927601601-6638404737ce?w=150&auto=format&fit=crop&q=60",
-    categoryId: "cat-food",
-    zoneId: "zone-b",
-    unitId: "unit-bag",
-    costPrice: 6.0,
-    sellPrice: 7.0,
-    stock: 8,
-    minStock: 20,
-    targetStock: 30,
-    reorderQuantity: 30,
-    isActive: true,
-    createdAt: "2026-09-20 09:00",
-    updatedAt: "2026-09-23 10:00",
-  },
-  {
-    id: "prod-2",
-    sku: "SKU-BEV-001",
-    barcode: "8851717001018",
-    codeType: "Barcode",
-    format: "EAN_13",
-    name: "โค้ก น้ำอัดลม ออริจินัล 325ml",
-    imageUrl:
-      "https://images.unsplash.com/photo-1622483767028-3f66f32aef97?w=150&auto=format&fit=crop&q=60",
-    categoryId: "cat-beverage",
-    zoneId: "zone-c",
-    unitId: "unit-can",
-    costPrice: 12.0,
-    sellPrice: 15.0,
-    stock: 5,
-    minStock: 24,
-    targetStock: 48,
-    reorderQuantity: 48,
-    isActive: true,
-    createdAt: "2026-09-20 09:15",
-    updatedAt: "2026-09-23 10:15",
-  },
-  {
-    id: "prod-3",
-    sku: "SKU-SNK-001",
-    barcode: "8850718801124",
-    codeType: "Barcode",
-    format: "EAN_13",
-    name: "เลย์ มันฝรั่งแท้ทอดกรอบ รสคลาสสิค 42g",
-    imageUrl:
-      "https://images.unsplash.com/photo-1566478989037-eec170784d0b?w=150&auto=format&fit=crop&q=60",
-    categoryId: "cat-snack",
-    zoneId: "zone-a",
-    unitId: "unit-bag",
-    costPrice: 17.5,
-    sellPrice: 20.0,
-    stock: 12,
-    minStock: 15,
-    targetStock: 20,
-    reorderQuantity: 20,
-    isActive: true,
-    createdAt: "2026-09-20 09:30",
-    updatedAt: "2026-09-23 11:00",
-  },
-  {
-    id: "prod-4",
-    sku: "SKU-BEV-002",
-    barcode: "QR-WATER-CRYSTAL-600",
-    codeType: "QR",
-    format: "QR_CODE",
-    name: "น้ำดื่มคริสตัล 600ml (แพ็ค 12 ขวด)",
-    imageUrl:
-      "https://images.unsplash.com/photo-1559839914-17aae19cec71?w=150&auto=format&fit=crop&q=60",
-    categoryId: "cat-beverage",
-    zoneId: "zone-c",
-    unitId: "unit-pack",
-    costPrice: 48.0,
-    sellPrice: 60.0,
-    stock: 3,
-    minStock: 10,
-    targetStock: 15,
-    reorderQuantity: 15,
-    isActive: true,
-    createdAt: "2026-09-20 10:00",
-    updatedAt: "2026-09-23 11:30",
-  },
-  {
-    id: "prod-5",
-    sku: "SKU-HSH-001",
-    barcode: "8850029010045",
-    codeType: "Barcode",
-    format: "EAN_13",
-    name: "บรีส เอกเซล ผงซักฟอก สูตรเข้มข้น 750g",
-    imageUrl:
-      "https://images.unsplash.com/photo-1583947215259-38e31be8751f?w=150&auto=format&fit=crop&q=60",
-    categoryId: "cat-household",
-    zoneId: "zone-d",
-    unitId: "unit-bag",
-    costPrice: 72.0,
-    sellPrice: 89.0,
-    stock: 4,
-    minStock: 8,
-    targetStock: 12,
-    reorderQuantity: 12,
-    isActive: true,
-    createdAt: "2026-09-20 10:30",
-    updatedAt: "2026-09-23 12:00",
-  },
-];
+export const DEFAULT_PRODUCTS: ProductItem[] = [];
 
 export const STORAGE_KEYS = {
   ZONES: "minimark_zones",
@@ -372,6 +190,31 @@ export const STORAGE_KEYS = {
 function safeGet<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
+    // Purge mock demo products if user has not yet cleared them
+    if (key === STORAGE_KEYS.PRODUCTS && !localStorage.getItem("minimark_cleaned_mock_v3")) {
+      localStorage.setItem("minimark_cleaned_mock_v3", "true");
+      const current = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
+      if (current) {
+        try {
+          const parsed = JSON.parse(current);
+          if (
+            Array.isArray(parsed) &&
+            parsed.length > 0 &&
+            parsed.every((p: { id?: string }) =>
+              ["prod-1", "prod-2", "prod-3", "prod-4", "prod-5"].includes(p?.id || ""),
+            )
+          ) {
+            localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify([]));
+            localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify([]));
+            localStorage.setItem(STORAGE_KEYS.PURCHASE_ORDERS, JSON.stringify([]));
+            return fallback;
+          }
+        } catch {
+          // ignore
+        }
+      }
+    }
+
     const raw = localStorage.getItem(key);
     if (!raw) return fallback;
     return JSON.parse(raw) as T;
@@ -482,20 +325,41 @@ export const MasterStore = {
   saveSubCategories(items: SubCategoryItem[]) {
     safeSet(STORAGE_KEYS.SUBCATEGORIES, items);
   },
-  addSubCategory(item: Omit<SubCategoryItem, "id">) {
+  saveSubCategory(item: SubCategoryItem) {
     const list = this.getSubCategories();
-    const newItem: SubCategoryItem = { ...item, id: `sub-${Date.now()}` };
-    this.saveSubCategories([...list, newItem]);
-    return newItem;
-  },
-  updateSubCategory(id: string, updates: Partial<SubCategoryItem>) {
-    const list = this.getSubCategories().map((item) =>
-      item.id === id ? { ...item, ...updates } : item,
-    );
+    const idx = list.findIndex((s) => s.id === item.id);
+    if (idx >= 0) {
+      list[idx] = item;
+    } else {
+      list.push(item);
+    }
     this.saveSubCategories(list);
   },
+  addSubCategory(item: Omit<SubCategoryItem, "id"> & { id?: string }): SubCategoryItem {
+    const list = this.getSubCategories();
+    const newItem: SubCategoryItem = {
+      ...item,
+      id: item.id || `sub-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    };
+    list.push(newItem);
+    this.saveSubCategories(list);
+    return newItem;
+  },
+  updateSubCategory(
+    id: string,
+    patch: Partial<Omit<SubCategoryItem, "id">>,
+  ): SubCategoryItem | undefined {
+    const list = this.getSubCategories();
+    const idx = list.findIndex((s) => s.id === id);
+    if (idx < 0) return undefined;
+    const updated: SubCategoryItem = { ...list[idx], ...patch };
+    list[idx] = updated;
+    this.saveSubCategories(list);
+    return updated;
+  },
   deleteSubCategory(id: string) {
-    this.saveSubCategories(this.getSubCategories().filter((item) => item.id !== id));
+    const list = this.getSubCategories().filter((s) => s.id !== id);
+    this.saveSubCategories(list);
   },
   getSubCategoryName(subIdOrName?: string): string {
     if (!subIdOrName) return "-";

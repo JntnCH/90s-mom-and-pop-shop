@@ -89,6 +89,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createStockAlertFlexBubble,
@@ -311,7 +312,8 @@ function ReorderPage() {
   const [flexPreviewOpen, setFlexPreviewOpen] = useState(false);
   const [flexPreviewData, setFlexPreviewData] = useState<unknown>(null);
   const [flexPreviewTitle, setFlexPreviewTitle] = useState("ตัวอย่าง LINE Flex Message");
-  const [flexGroupBy, setFlexGroupBy] = useState<FlexItemGroupBy>("category");
+  const [flexGroupBy, setFlexGroupBy] = useState<FlexItemGroupBy>("category_no_header");
+  const [flexShowHeader, setFlexShowHeader] = useState<boolean>(false);
   const [flexPreviewSource, setFlexPreviewSource] = useState<{
     type: "order" | "alert" | "po";
     orderItems?: FullOrderItem[];
@@ -1184,14 +1186,24 @@ function ReorderPage() {
   };
 
   // Flex Preview Handlers with Grouping Support
-  const currentOrderFlexOptions = (groupBy = flexGroupBy) => ({
+  const currentOrderFlexOptions = (groupBy = flexGroupBy, showHeaders = flexShowHeader) => ({
     groupBy,
+    showGroupHeaders: showHeaders,
+    includeZone:
+      groupBy === "zone" ||
+      groupBy === "zone_no_header" ||
+      groupBy === "zone_then_category" ||
+      groupBy === "category_then_zone",
     orderNumber: editingPOId ? editingPONumber : "DRAFT",
     supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
   });
 
-  const buildCurrentOrderShareText = (dateStr: string, groupBy = flexGroupBy) =>
-    `${formatOrderPlainText(fullItems, dateStr, currentStoreName, groupBy)}\nเลขที่ใบสั่งซื้อ: ${editingPOId ? editingPONumber : "DRAFT"}\nซัพพลายเออร์: ${supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป"}`;
+  const buildCurrentOrderShareText = (
+    dateStr: string,
+    groupBy = flexGroupBy,
+    showHeaders = flexShowHeader,
+  ) =>
+    `${formatOrderPlainText(fullItems, dateStr, currentStoreName, groupBy, showHeaders)}\nเลขที่ใบสั่งซื้อ: ${editingPOId ? editingPONumber : "DRAFT"}\nซัพพลายเออร์: ${supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป"}`;
 
   const handlePreviewOrderFlex = (overrideGroupBy?: FlexItemGroupBy) => {
     if (fullItems.length === 0) return;
@@ -1220,6 +1232,7 @@ function ReorderPage() {
     const flexMsg = createStockAlertFlexBubble(alertPayload, {
       storeName: currentStoreName,
       groupBy: gb,
+      showGroupHeaders: flexShowHeader,
     });
     setFlexPreviewData(flexMsg);
     setFlexPreviewTitle(`แจ้งเตือนสินค้าต้องสั่งซื้อ (${allReorderNeeded.length} รายการ)`);
@@ -1235,6 +1248,7 @@ function ReorderPage() {
       setFlexPreviewData(
         formatDailyOrderFlexMessage(getPurchaseOrderFlexItems(po), po.createdAt, currentStoreName, {
           groupBy: overrideGroupBy ?? flexGroupBy,
+          showGroupHeaders: flexShowHeader,
           orderNumber: po.orderNumber,
           supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
         }),
@@ -1247,8 +1261,22 @@ function ReorderPage() {
     }
   };
 
-  const handleUpdateFlexGrouping = (newGrouping: FlexItemGroupBy) => {
+  const handleUpdateFlexGrouping = (newGrouping: FlexItemGroupBy, overrideShowHeader?: boolean) => {
+    const nextShowHeader =
+      overrideShowHeader !== undefined
+        ? overrideShowHeader
+        : newGrouping === "category_no_header" ||
+            newGrouping === "zone_no_header" ||
+            newGrouping === "none"
+          ? false
+          : newGrouping === "category" ||
+              newGrouping === "zone" ||
+              newGrouping === "zone_then_category"
+            ? true
+            : flexShowHeader;
+
     setFlexGroupBy(newGrouping);
+    setFlexShowHeader(nextShowHeader);
     if (!flexPreviewSource) return;
 
     if (flexPreviewSource.type === "order" && flexPreviewSource.orderItems) {
@@ -1257,13 +1285,14 @@ function ReorderPage() {
         flexPreviewSource.orderItems,
         orderDateStr,
         currentStoreName,
-        currentOrderFlexOptions(newGrouping),
+        currentOrderFlexOptions(newGrouping, nextShowHeader),
       );
       setFlexPreviewData(flexMsg);
     } else if (flexPreviewSource.type === "alert" && flexPreviewSource.alertItems) {
       const flexMsg = createStockAlertFlexBubble(flexPreviewSource.alertItems, {
         storeName: currentStoreName,
         groupBy: newGrouping,
+        showGroupHeaders: nextShowHeader,
       });
       setFlexPreviewData(flexMsg);
     } else if (flexPreviewSource.type === "po" && flexPreviewSource.poRecord) {
@@ -1271,6 +1300,12 @@ function ReorderPage() {
       setFlexPreviewData(
         formatDailyOrderFlexMessage(getPurchaseOrderFlexItems(po), po.createdAt, currentStoreName, {
           groupBy: newGrouping,
+          showGroupHeaders: nextShowHeader,
+          includeZone:
+            newGrouping === "zone" ||
+            newGrouping === "zone_no_header" ||
+            newGrouping === "zone_then_category" ||
+            newGrouping === "category_then_zone",
           orderNumber: po.orderNumber,
           supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
         }),
@@ -2586,7 +2621,17 @@ function ReorderPage() {
                           variant="outline"
                           className="text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
                         >
-                          หมวดหมู่ / โซน
+                          {flexGroupBy === "none"
+                            ? "ตามลำดับเดิม"
+                            : flexGroupBy === "category_no_header"
+                              ? "ตามหมวด (ไม่แสดงใน Flex)"
+                              : flexGroupBy === "zone_no_header"
+                                ? "ตามโซน (ไม่แสดงใน Flex)"
+                                : flexGroupBy === "zone"
+                                  ? "ตามโซน (มีแถบหัวข้อ)"
+                                  : flexGroupBy === "zone_then_category"
+                                    ? "โซน ➔ หมวดหมู่"
+                                    : "ตามหมวด (มีแถบหัวข้อ)"}
                         </Badge>
                       </div>
                       <select
@@ -2594,22 +2639,32 @@ function ReorderPage() {
                         value={flexGroupBy}
                         onChange={(e) => {
                           const next = e.target.value as FlexItemGroupBy;
-                          setFlexGroupBy(next);
+                          handleUpdateFlexGrouping(next);
                           toast.success(
-                            next === "category"
-                              ? "จัดกลุ่มตามหมวดหมู่สินค้า (ไม่แสดงโซน)"
-                              : next === "none"
-                                ? "เรียงตามลำดับเดิม (ไม่มีแถบหัวข้อ)"
-                                : next === "zone_then_category"
-                                  ? "จัดกลุ่มตามโซน ➔ หมวดหมู่"
-                                  : "จัดกลุ่มตามโซนจัดวางสินค้า",
+                            next === "category_no_header"
+                              ? "จัดกลุ่มตามหมวดหมู่ (ไม่แสดงหมวดหมู่ใน Flex Message)"
+                              : next === "category"
+                                ? "จัดกลุ่มตามหมวดหมู่สินค้า (แสดงแถบหัวข้อ)"
+                                : next === "none"
+                                  ? "เรียงตามลำดับเดิม (ไม่มีแถบหัวข้อ)"
+                                  : next === "zone_then_category"
+                                    ? "จัดกลุ่มตามโซน ➔ หมวดหมู่"
+                                    : next === "zone_no_header"
+                                      ? "จัดกลุ่มตามโซน (ไม่แสดงแถบหัวข้อ)"
+                                      : "จัดกลุ่มตามโซนจัดวางสินค้า",
                           );
                         }}
                       >
-                        <option value="zone_then_category">📍 โซน ➔ 🏷️ หมวดหมู่สินค้า</option>
-                        <option value="zone">📍 ตามโซนจัดวางสินค้า</option>
-                        <option value="category">🏷️ ตามหมวดหมู่สินค้า (ไม่แสดงโซน)</option>
+                        <option value="category_no_header">
+                          🏷️ ตามหมวดหมู่ (ไม่แสดงหมวดหมู่ใน Flex - แนะนำ)
+                        </option>
                         <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
+                        <option value="zone_no_header">📍 ตามโซน (ไม่แสดงแถบหัวข้อใน Flex)</option>
+                        <option value="category">🏷️ ตามหมวดหมู่สินค้า (แสดงแถบหัวข้อหมวด)</option>
+                        <option value="zone">📍 ตามโซนจัดวางสินค้า (แสดงแถบหัวข้อโซน)</option>
+                        <option value="zone_then_category">
+                          📍 โซน ➔ 🏷️ หมวดหมู่สินค้า (แสดงแถบหัวข้อ)
+                        </option>
                       </select>
                       <p className="text-[10px] text-muted-foreground leading-relaxed">
                         จัดลำดับสินค้าในหมวดหมู่หรือโซนเดียวกันให้อยู่ติดกันใน LINE Flex
@@ -2622,9 +2677,16 @@ function ReorderPage() {
                           (ยังไม่มีรายการสินค้าในใบสั่ง)
                         </p>
                       ) : (
-                        groupAndSortFlexItems(fullItems, flexGroupBy).map((grp) => (
+                        groupAndSortFlexItems(fullItems, {
+                          groupBy: flexGroupBy,
+                          includeZone:
+                            flexGroupBy === "zone" ||
+                            flexGroupBy === "zone_no_header" ||
+                            flexGroupBy === "zone_then_category" ||
+                            flexGroupBy === "category_then_zone",
+                        }).map((grp) => (
                           <div key={grp.groupKey} className="space-y-1">
-                            {flexGroupBy !== "none" && grp.headerTitle && (
+                            {flexShowHeader && grp.headerTitle && (
                               <div className="text-[10px] font-bold text-foreground/85 bg-muted/70 px-2 py-0.5 rounded-md flex items-center justify-between">
                                 <span className="truncate">{grp.headerTitle}</span>
                                 <span className="text-[9px] text-muted-foreground shrink-0">
@@ -4719,37 +4781,36 @@ function ReorderPage() {
             </DialogDescription>
           </DialogHeader>
 
-          {flexPreviewSource?.type === "alert" ? (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-muted/40 border text-xs my-1">
-              <div className="flex items-center gap-1.5 font-bold text-foreground">
-                <SlidersHorizontal className="size-3.5 text-emerald-600" />
-                <span>การจัดกลุ่มสินค้าใน Flex Message:</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <select
-                  className="h-8 rounded-lg border border-input bg-background px-2.5 text-xs font-semibold shadow-xs"
-                  value={flexGroupBy}
-                  onChange={(e) => handleUpdateFlexGrouping(e.target.value as FlexItemGroupBy)}
-                >
-                  <option value="zone_then_category">📍 โซน ➔ 🏷️ หมวดหมู่สินค้า</option>
-                  <option value="zone">📍 ตามโซนจัดวางสินค้า</option>
-                  <option value="category">🏷️ ตามหมวดหมู่สินค้า (ไม่แสดงโซน)</option>
-                  <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
-                </select>
-                <Badge
-                  variant="outline"
-                  className="text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300 shrink-0"
-                >
-                  อัปเดตทันที
-                </Badge>
-              </div>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-muted/40 border text-xs my-1">
+            <div className="flex items-center gap-1.5 font-bold text-foreground">
+              <SlidersHorizontal className="size-3.5 text-emerald-600" />
+              <span>การจัดกลุ่มสินค้าใน Flex Message:</span>
             </div>
-          ) : (
-            <div className="rounded-xl bg-muted/40 border px-3 py-2 text-xs text-muted-foreground">
-              รายการและข้อมูลจริงมาจากใบสั่งซื้อที่เลือก ส่วนเลย์เอาต์และสไตล์ยึดตาม JSON ล่าสุดใน
-              LINE Simulator
+            <div className="flex items-center gap-2">
+              <select
+                className="h-8 rounded-lg border border-input bg-background px-2.5 text-xs font-semibold shadow-xs"
+                value={flexGroupBy}
+                onChange={(e) => handleUpdateFlexGrouping(e.target.value as FlexItemGroupBy)}
+              >
+                <option value="category_no_header">
+                  🏷️ ตามหมวดหมู่ (ไม่แสดงหมวดหมู่ใน Flex - แนะนำ)
+                </option>
+                <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
+                <option value="zone_no_header">📍 ตามโซน (ไม่แสดงแถบหัวข้อใน Flex)</option>
+                <option value="category">🏷️ ตามหมวดหมู่สินค้า (แสดงแถบหัวข้อหมวด)</option>
+                <option value="zone">📍 ตามโซนจัดวางสินค้า (แสดงแถบหัวข้อโซน)</option>
+                <option value="zone_then_category">
+                  📍 โซน ➔ 🏷️ หมวดหมู่สินค้า (แสดงแถบหัวข้อ)
+                </option>
+              </select>
+              <Badge
+                variant="outline"
+                className="text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300 shrink-0"
+              >
+                อัปเดตทันที
+              </Badge>
             </div>
-          )}
+          </div>
 
           <div className="py-1">
             <FlexMessageVisualizer

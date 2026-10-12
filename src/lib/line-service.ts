@@ -290,13 +290,18 @@ export function buildOrderFlexMessage(
   const liffId = getClientLiffId() || undefined;
   const resolvedStoreName = getSystemStoreName(storeName);
 
+  const groupBy = options?.groupBy || "category";
+  const includeZone =
+    options?.includeZone ??
+    (groupBy === "zone" || groupBy === "zone_then_category" || groupBy === "category_then_zone");
+
   return createPurchaseOrderFlexBubble(items, {
     storeName: resolvedStoreName,
     note,
     liffId,
-    groupBy: options?.groupBy || "category",
+    groupBy,
     showGroupHeaders: options?.showGroupHeaders,
-    includeZone: options?.includeZone ?? false,
+    includeZone,
     ...options,
   });
 }
@@ -308,16 +313,31 @@ export function buildOrderPlainText(
   orders: LineOrderItem[],
   storeName: string = DEFAULT_STORE_NAME,
   groupBy: FlexItemGroupBy = "category",
+  showGroupHeaders: boolean = true,
 ): string {
   const resolvedStoreName = getSystemStoreName(storeName);
   const now = new Date();
   const dateStr = now.toLocaleDateString("th-TH");
   const timeStr = now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
+  const isNoHeader =
+    !showGroupHeaders ||
+    groupBy === "none" ||
+    groupBy === "category_no_header" ||
+    groupBy === "zone_no_header";
+
+  const groupingLabel = isNoHeader
+    ? "รายการสินค้า:"
+    : groupBy === "zone"
+      ? "รายการสินค้า (จัดกลุ่มตามโซนจัดวาง):"
+      : groupBy === "zone_then_category"
+        ? "รายการสินค้า (จัดกลุ่มตามโซน ➔ หมวดหมู่):"
+        : "รายการสินค้า (จัดกลุ่มตามหมวดหมู่):";
+
   let text = `📦 ใบสั่งซื้อสินค้าประจำวัน — ${resolvedStoreName}\n`;
   text += `📅 วันที่: ${dateStr} เวลา ${timeStr} น.\n`;
   text += `────────────────────\n`;
-  text += `รายการสินค้า (จัดกลุ่มตามหมวดหมู่):\n\n`;
+  text += `${groupingLabel}\n\n`;
 
   const itemsForGrouping = orders.map((o) => {
     const catName = o.product.categoryId
@@ -337,18 +357,25 @@ export function buildOrderPlainText(
     };
   });
 
-  const grouped = groupAndSortFlexItems(itemsForGrouping, { groupBy, includeZone: false });
+  const includeZone =
+    groupBy === "zone" ||
+    groupBy === "zone_no_header" ||
+    groupBy === "zone_then_category" ||
+    groupBy === "category_then_zone";
+  const grouped = groupAndSortFlexItems(itemsForGrouping, { groupBy, includeZone });
   let counter = 0;
 
   grouped.forEach((grp) => {
-    if (grp.headerTitle && groupBy !== "none") {
+    if (!isNoHeader && grp.headerTitle && groupBy !== "none") {
       text += `${grp.headerTitle} (${grp.items.length} รายการ)\n`;
     }
     grp.items.forEach(({ item }) => {
       counter++;
       text += `  ${counter}. ${item.name} ➔ ${item.quantity} ${item.unitName}\n`;
     });
-    text += `\n`;
+    if (!isNoHeader) {
+      text += `\n`;
+    }
   });
 
   const totalItems = orders.reduce((sum, o) => sum + o.quantity, 0);
@@ -726,6 +753,10 @@ export function formatDailyOrderFlexMessage(
       totalQuantity,
       totalCost,
       ...(options?.note === undefined ? {} : { note: options.note }),
+      ...(options?.groupBy === undefined ? {} : { groupBy: options.groupBy }),
+      ...(options?.showGroupHeaders === undefined
+        ? {}
+        : { showGroupHeaders: options.showGroupHeaders }),
     });
   } catch {
     const nowStr = new Date().toISOString();
@@ -748,6 +779,7 @@ export function formatOrderPlainText(
   dateStr?: string,
   storeName: string = DEFAULT_STORE_NAME,
   groupBy: FlexItemGroupBy = "zone_then_category",
+  showGroupHeaders: boolean = true,
 ): string {
   const resolvedStoreName = getSystemStoreName(storeName);
   const nowStr = new Date().toISOString();
@@ -756,7 +788,7 @@ export function formatOrderPlainText(
     quantity: i.quantity,
     unitName: i.unitName,
   }));
-  return buildOrderPlainText(lineOrders, resolvedStoreName, groupBy);
+  return buildOrderPlainText(lineOrders, resolvedStoreName, groupBy, showGroupHeaders);
 }
 
 export async function sendDailyOrderToLine(

@@ -55,7 +55,10 @@ export function createPurchaseOrderFlexBubble(
 ) {
   const storeName = getSystemStoreName(options.storeName);
   const isLargeFont = options.fontSize !== "medium";
-  const includeZone = options.includeZone === true; // ค่าเริ่มต้น: ไม่ต้องการโซนใน Flex Message
+  const groupBy = options.groupBy || "category";
+  const includeZone =
+    options.includeZone ??
+    (groupBy === "zone" || groupBy === "zone_then_category" || groupBy === "category_then_zone");
 
   const now = new Date();
   const dateStr =
@@ -81,8 +84,10 @@ export function createPurchaseOrderFlexBubble(
   const dashboardUrl = `${baseUrl}`;
   const reorderUrl = `${baseUrl}/reorder`;
 
-  const groupBy = options.groupBy || "category";
-  const showGroupHeaders = options.showGroupHeaders !== false;
+  const showGroupHeaders =
+    options.showGroupHeaders !== undefined
+      ? options.showGroupHeaders
+      : groupBy !== "none" && groupBy !== "category_no_header" && groupBy !== "zone_no_header";
 
   const totalQuantity = items.reduce((sum, o) => sum + (Number(o.quantity) || 0), 0);
   const totalCost = items.reduce(
@@ -98,7 +103,13 @@ export function createPurchaseOrderFlexBubble(
 
   groupedList.forEach((grp, grpIdx) => {
     // Add stylish group header banner if enabled and multiple or named groups exist
-    if (showGroupHeaders && grp.headerTitle && groupBy !== "none") {
+    if (
+      showGroupHeaders &&
+      grp.headerTitle &&
+      groupBy !== "none" &&
+      groupBy !== "category_no_header" &&
+      groupBy !== "zone_no_header"
+    ) {
       itemRows.push({
         type: "box",
         layout: "horizontal",

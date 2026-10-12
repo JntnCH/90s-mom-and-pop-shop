@@ -110,6 +110,7 @@ function ProductsPage() {
   const [selectedZone, setSelectedZone] = useState<string>("all");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>("all");
+  const [selectedUnit, setSelectedUnit] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<"ALL" | "ACTIVE" | "INACTIVE">("ALL");
 
   // Modal State
@@ -476,13 +477,16 @@ function ProductsPage() {
     const matchesZone = selectedZone === "all" || p.zoneId === selectedZone;
     const matchesCat = selectedCategory === "all" || p.categoryId === selectedCategory;
     const matchesSubCat = selectedSubCategory === "all" || p.subCategoryId === selectedSubCategory;
+    const matchesUnit = selectedUnit === "all" || p.unitId === selectedUnit;
 
     const matchesStatus =
       statusFilter === "ALL" ||
       (statusFilter === "ACTIVE" && p.isActive !== false) ||
       (statusFilter === "INACTIVE" && p.isActive === false);
 
-    return matchesSearch && matchesZone && matchesCat && matchesSubCat && matchesStatus;
+    return (
+      matchesSearch && matchesZone && matchesCat && matchesSubCat && matchesUnit && matchesStatus
+    );
   });
 
   const activeCount = products.filter((p) => p.isActive !== false).length;
@@ -566,7 +570,7 @@ function ProductsPage() {
             </div>
 
             {/* 2. หมวดหมู่หลัก (Main Category Select) */}
-            <div className="md:col-span-3">
+            <div className="md:col-span-2">
               <CategorySelect
                 value={selectedCategory === "all" ? "" : selectedCategory}
                 onChange={(val) => {
@@ -585,6 +589,16 @@ function ProductsPage() {
                 value={selectedSubCategory === "all" ? "" : selectedSubCategory}
                 onChange={(val) => setSelectedSubCategory(val || "all")}
                 placeholder="ทุกหมวดหมู่ย่อย"
+                className="h-11 rounded-xl"
+              />
+            </div>
+
+            {/* 4. หน่วยนับ (Unit Select) */}
+            <div className="md:col-span-1">
+              <UnitSelect
+                value={selectedUnit === "all" ? "" : selectedUnit}
+                onChange={(val) => setSelectedUnit(val || "all")}
+                placeholder="ทุกหน่วย"
                 className="h-11 rounded-xl"
               />
             </div>
@@ -1026,7 +1040,7 @@ function ProductsPage() {
                               {product.stock} {getUnitName(product.unitId)}
                             </span>
                             <span className="text-[10px] text-muted-foreground">
-                              (เตือน: {product.minStock} / เป้า:{" "}
+                              (เตือน: {product.minStock} {getUnitName(product.unitId)} / เป้า:{" "}
                               {product.targetStock || product.reorderQuantity}{" "}
                               {getUnitName(product.unitId)})
                             </span>
@@ -1422,29 +1436,21 @@ function ProductsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">เป้าหมายในสต็อก</Label>
-                <div className="relative">
-                  <Input
-                    type="number"
-                    min="0"
-                    placeholder="0"
-                    className="h-10 rounded-xl pr-16"
-                    value={formTargetStock}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setFormTargetStock(val);
-                      setFormReorderQty(val);
-                    }}
-                  />
-                  {formUnit ? (
-                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
-                      {units.find((unit) => unit.id === formUnit)?.name || "หน่วย"}
-                    </span>
-                  ) : null}
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  ใช้หน่วยเดียวกับหน่วยนับของสินค้า
-                </p>
+                <Label className="text-xs text-muted-foreground">
+                  เป้าหมายในสต็อก {getUnitName(formUnit) ? `(${getUnitName(formUnit)})` : ""}
+                </Label>
+                <Input
+                  type="number"
+                  min="0"
+                  placeholder="0"
+                  className="h-10 rounded-xl"
+                  value={formTargetStock}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setFormTargetStock(val);
+                    setFormReorderQty(val);
+                  }}
+                />
               </div>
             </div>
 

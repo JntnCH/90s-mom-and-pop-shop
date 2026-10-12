@@ -252,4 +252,172 @@ describe("LINE Flex Simulator JSON source", () => {
     ]);
     expect(body.contents.filter((row) => row["spacing"] === "sm")).toHaveLength(2);
   });
+
+  it("does not render header banners when groupBy is 'none'", () => {
+    const template = parseFlexSimulatorJson(
+      JSON.stringify({
+        type: "flex",
+        contents: {
+          type: "bubble",
+          body: {
+            type: "box",
+            layout: "vertical",
+            contents: [
+              {
+                type: "box",
+                layout: "horizontal",
+                backgroundColor: "#eeeeee",
+                contents: [
+                  { type: "text", text: "🏷️ {{categoryName}}" },
+                  { type: "text", text: "{{itemCount}} รายการ" },
+                ],
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                spacing: "sm",
+                contents: [
+                  { type: "text", text: "{{productName}}" },
+                  { type: "text", text: "{{quantity}}" },
+                  { type: "text", text: "{{unitName}}" },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    );
+    const message = populatePurchaseOrderFlexTemplate(template, {
+      orderNumber: "PO-NONE",
+      orderDate: "12 ต.ค. 2569",
+      storeName: "ร้านเจย์",
+      supplierName: "ซัพพลายเออร์ ก.",
+      groupBy: "none",
+      items: [
+        { productName: "น้ำปลา", quantity: 2, unitName: "ขวด", categoryName: "เครื่องปรุง" },
+        { productName: "สบู่", quantity: 1, unitName: "ก้อน", categoryName: "ของใช้" },
+      ],
+      totalQuantity: 3,
+      totalCost: 50,
+    });
+    const body = message.contents["body"] as { contents: Record<string, unknown>[] };
+    const headings = body.contents.filter((row) => row["backgroundColor"] === "#eeeeee");
+    expect(headings).toHaveLength(0);
+    expect(body.contents.filter((row) => row["spacing"] === "sm")).toHaveLength(2);
+  });
+
+  it("renders zone headers when groupBy is 'zone'", () => {
+    const template = parseFlexSimulatorJson(
+      JSON.stringify({
+        type: "flex",
+        contents: {
+          type: "bubble",
+          body: {
+            type: "box",
+            layout: "vertical",
+            contents: [
+              {
+                type: "box",
+                layout: "horizontal",
+                backgroundColor: "#eeeeee",
+                contents: [
+                  { type: "text", text: "🏷️ {{categoryName}}" },
+                  { type: "text", text: "{{itemCount}} รายการ" },
+                ],
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                spacing: "sm",
+                contents: [
+                  { type: "text", text: "{{productName}}" },
+                  { type: "text", text: "{{quantity}}" },
+                  { type: "text", text: "{{unitName}}" },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    );
+    const message = populatePurchaseOrderFlexTemplate(template, {
+      orderNumber: "PO-ZONE",
+      orderDate: "12 ต.ค. 2569",
+      storeName: "ร้านเจย์",
+      supplierName: "ซัพพลายเออร์ ก.",
+      groupBy: "zone",
+      items: [
+        { productName: "น้ำปลา", quantity: 2, unitName: "ขวด", zoneName: "ตู้แช่" },
+        { productName: "สบู่", quantity: 1, unitName: "ก้อน", zoneName: "หน้าร้าน" },
+      ],
+      totalQuantity: 3,
+      totalCost: 50,
+    });
+    const body = message.contents["body"] as { contents: Record<string, unknown>[] };
+    const headings = body.contents.filter((row) => row["backgroundColor"] === "#eeeeee");
+    expect(headings.map((row) => (row["contents"] as { text: string }[])[0]?.text)).toEqual([
+      "📍 โซน: ตู้แช่",
+      "📍 โซน: หน้าร้าน",
+    ]);
+  });
+
+  it("sorts by category but suppresses category header when groupBy is 'category_no_header'", () => {
+    const template = parseFlexSimulatorJson(
+      JSON.stringify({
+        type: "flex",
+        contents: {
+          type: "bubble",
+          body: {
+            type: "box",
+            layout: "vertical",
+            contents: [
+              {
+                type: "box",
+                layout: "horizontal",
+                backgroundColor: "#eeeeee",
+                contents: [
+                  { type: "text", text: "🏷️ {{categoryName}}" },
+                  { type: "text", text: "{{itemCount}} รายการ" },
+                ],
+              },
+              {
+                type: "box",
+                layout: "horizontal",
+                spacing: "sm",
+                contents: [
+                  { type: "text", text: "{{index}}. {{productName}}" },
+                  { type: "text", text: "{{quantity}}" },
+                  { type: "text", text: "{{unitName}}" },
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    );
+    const message = populatePurchaseOrderFlexTemplate(template, {
+      orderNumber: "PO-CAT-NO-HEADER",
+      orderDate: "12 ต.ค. 2569",
+      storeName: "ร้านเจย์",
+      supplierName: "ซัพพลายเออร์ ก.",
+      groupBy: "category_no_header",
+      items: [
+        { productName: "สบู่", quantity: 1, unitName: "ก้อน", categoryName: "ของใช้" },
+        { productName: "น้ำปลา", quantity: 2, unitName: "ขวด", categoryName: "เครื่องปรุง" },
+        { productName: "แชมพู", quantity: 3, unitName: "ขวด", categoryName: "ของใช้" },
+      ],
+      totalQuantity: 6,
+      totalCost: 150,
+    });
+    const body = message.contents["body"] as { contents: Record<string, unknown>[] };
+    const headings = body.contents.filter((row) => row["backgroundColor"] === "#eeeeee");
+    // Should NOT have category headings
+    expect(headings).toHaveLength(0);
+
+    // Items should be present and sorted by category (ของใช้: สบู่, แชมพู then เครื่องปรุง: น้ำปลา)
+    const itemRows = body.contents.filter((row) => row["spacing"] === "sm");
+    expect(itemRows).toHaveLength(3);
+    const renderedNames = itemRows.map((r) => (r["contents"] as { text: string }[])[0]?.text);
+    expect(renderedNames).toEqual(["1. สบู่", "2. แชมพู", "3. น้ำปลา"]);
+  });
 });

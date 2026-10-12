@@ -39,7 +39,10 @@ export function createStockAlertFlexBubble(
   options: StockAlertFlexOptions = {},
 ) {
   const isLargeFont = options.fontSize !== "medium";
-  const includeZone = options.includeZone === true; // ค่าเริ่มต้น: ไม่ต้องการโซนใน Flex Message
+  const groupBy = options.groupBy || "category";
+  const includeZone =
+    options.includeZone ??
+    (groupBy === "zone" || groupBy === "zone_then_category" || groupBy === "category_then_zone");
 
   const now = new Date();
   const dateStr = now.toLocaleDateString("th-TH", {
@@ -55,7 +58,6 @@ export function createStockAlertFlexBubble(
   const title = options.title || "แจ้งเตือนสต็อกสินค้าต้องสั่งซื้อ";
   const headerBg = "#ef4444"; // Red for alert
 
-  const groupBy = options.groupBy || "category";
   const showGroupHeaders = options.showGroupHeaders !== false;
 
   // Group and sort alert items (omits zone by default)

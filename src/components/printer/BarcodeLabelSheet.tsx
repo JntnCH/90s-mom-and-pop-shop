@@ -70,16 +70,18 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
   const [zones, setZones] = useState<ZoneItem[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [subCategories, setSubCategories] = useState<SubCategoryItem[]>([]);
+  const [units, setUnits] = useState<UnitItem[]>([]);
 
   // Print Queue Items
   const [itemsToPrint, setItemsToPrint] = useState<LabelItemToPrint[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-  // Search & Filter (โซนสินค้า > หมวดหมู่หลัก > หมวดหมู่ย่อย)
+  // Search & Filter (โซนสินค้า > หมวดหมู่หลัก > หมวดหมู่ย่อย > หน่วยนับ)
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedZone, setSelectedZone] = useState("ALL");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [selectedSubCategory, setSelectedSubCategory] = useState("ALL");
+  const [selectedUnit, setSelectedUnit] = useState("ALL");
 
   // Design Options
   const [options, setOptions] = useState<LabelDesignOptions>(DEFAULT_LABEL_OPTIONS);
@@ -99,6 +101,7 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
     setZones(allZones);
     setCategories(allCats);
     setSubCategories(allSubCats);
+    setUnits(allUnits);
 
     const initialItems: LabelItemToPrint[] = allProds.map((p) => {
       const u = allUnits.find((unit) => unit.id === p.unitId)?.name || "ชิ้น";
@@ -150,9 +153,21 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
         return false;
       }
 
+      if (selectedUnit !== "ALL" && p.unitId !== selectedUnit) {
+        return false;
+      }
+
       return true;
     });
-  }, [itemsToPrint, products, searchQuery, selectedZone, selectedCategory, selectedSubCategory]);
+  }, [
+    itemsToPrint,
+    products,
+    searchQuery,
+    selectedZone,
+    selectedCategory,
+    selectedSubCategory,
+    selectedUnit,
+  ]);
 
   const selectedItemsToPrint = useMemo(() => {
     return itemsToPrint.filter((i) => selectedIds.has(i.productId) && i.copies > 0);
@@ -309,8 +324,8 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
                 </div>
               </div>
 
-              {/* Filters (โซนสินค้า > หมวดหมู่หลัก > หมวดหมู่ย่อย) */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2 pt-1">
+              {/* Filters (โซนสินค้า > หมวดหมู่หลัก > หมวดหมู่ย่อย > หน่วยนับ) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2 pt-1">
                 <div className="relative">
                   <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -376,6 +391,21 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
                           {s.name}
                         </SelectItem>
                       ))}
+                  </SelectContent>
+                </Select>
+
+                {/* 4. หน่วยนับ */}
+                <Select value={selectedUnit} onValueChange={setSelectedUnit}>
+                  <SelectTrigger className="h-9 text-xs rounded-xl">
+                    <SelectValue placeholder="หน่วยนับ" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">ทุกหน่วยนับ</SelectItem>
+                    {units.map((u) => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>

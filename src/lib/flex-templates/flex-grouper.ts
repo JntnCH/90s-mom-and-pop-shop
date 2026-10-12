@@ -5,7 +5,13 @@
 import { MasterStore } from "../store";
 
 export type FlexItemGroupBy =
-  "zone_then_category" | "category_then_zone" | "zone" | "category" | "none";
+  | "zone_then_category"
+  | "category_then_zone"
+  | "zone"
+  | "zone_no_header"
+  | "category"
+  | "category_no_header"
+  | "none";
 
 export interface ItemWithCategoryAndZone {
   name: string;
@@ -94,16 +100,11 @@ export function groupAndSortFlexItems<T extends ItemWithCategoryAndZone>(
   const includeZone: boolean =
     typeof groupByOrOptions === "object" && typeof groupByOrOptions.includeZone === "boolean"
       ? groupByOrOptions.includeZone
-      : false;
+      : rawGroupBy === "zone" ||
+        rawGroupBy === "zone_then_category" ||
+        rawGroupBy === "category_then_zone";
 
-  // หากไม่ต้องการโซนใน Flex Message ให้จัดกลุ่มตามหมวดหมู่อย่างเดียว
-  const groupBy: FlexItemGroupBy =
-    !includeZone &&
-    (rawGroupBy === "zone_then_category" ||
-      rawGroupBy === "category_then_zone" ||
-      rawGroupBy === "zone")
-      ? "category"
-      : rawGroupBy;
+  const groupBy: FlexItemGroupBy = rawGroupBy;
 
   if (groupBy === "none") {
     return [
@@ -146,13 +147,13 @@ export function groupAndSortFlexItems<T extends ItemWithCategoryAndZone>(
       return a.item.name.localeCompare(b.item.name, "th");
     }
 
-    if (groupBy === "zone") {
+    if (groupBy === "zone" || groupBy === "zone_no_header") {
       const zCompare = a.zoneName.localeCompare(b.zoneName, "th");
       if (zCompare !== 0) return zCompare;
       return a.item.name.localeCompare(b.item.name, "th");
     }
 
-    if (groupBy === "category") {
+    if (groupBy === "category" || groupBy === "category_no_header") {
       const cCompare = a.categoryName.localeCompare(b.categoryName, "th");
       if (cCompare !== 0) return cCompare;
       return a.item.name.localeCompare(b.item.name, "th");
@@ -170,20 +171,28 @@ export function groupAndSortFlexItems<T extends ItemWithCategoryAndZone>(
 
     switch (groupBy) {
       case "zone_then_category":
-        groupKey = includeZone ? `${zoneName}:::${categoryName}` : categoryName;
-        headerTitle = includeZone ? `📍 ${zoneName} • 🏷️ ${categoryName}` : `🏷️ ${categoryName}`;
+        groupKey = `${zoneName}:::${categoryName}`;
+        headerTitle = `📍 ${zoneName} • 🏷️ ${categoryName}`;
         break;
       case "category_then_zone":
-        groupKey = includeZone ? `${categoryName}:::${zoneName}` : categoryName;
-        headerTitle = includeZone ? `🏷️ ${categoryName} • 📍 ${zoneName}` : `🏷️ ${categoryName}`;
+        groupKey = `${categoryName}:::${zoneName}`;
+        headerTitle = `🏷️ ${categoryName} • 📍 ${zoneName}`;
         break;
       case "zone":
-        groupKey = includeZone ? zoneName : categoryName;
-        headerTitle = includeZone ? `📍 โซน: ${zoneName}` : `🏷️ ${categoryName}`;
+        groupKey = zoneName;
+        headerTitle = `📍 โซน: ${zoneName}`;
+        break;
+      case "zone_no_header":
+        groupKey = zoneName;
+        headerTitle = "";
         break;
       case "category":
         groupKey = categoryName;
         headerTitle = `🏷️ ${categoryName}`;
+        break;
+      case "category_no_header":
+        groupKey = categoryName;
+        headerTitle = "";
         break;
     }
 

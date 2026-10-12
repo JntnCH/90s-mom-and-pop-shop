@@ -1,3 +1,5 @@
+import type { FlexItemGroupBy } from "./flex-grouper";
+
 export const FLEX_SIMULATOR_JSON_STORAGE_KEY = "minimark_custom_po_flex_json";
 
 const DEFAULT_FLEX_ALT_TEXT = "📦 ใบสั่งซื้อสินค้าจากร้าน";
@@ -25,6 +27,8 @@ export interface PurchaseOrderFlexTemplateData {
   totalQuantity: number;
   totalCost: number;
   note?: string | undefined;
+  groupBy?: FlexItemGroupBy | undefined;
+  showGroupHeaders?: boolean | undefined;
 }
 
 export type FlexSimulatorMessage = JsonRecord & {
@@ -34,7 +38,9 @@ export type FlexSimulatorMessage = JsonRecord & {
 };
 
 interface GroupContext {
+  headerTitle: string;
   categoryName: string;
+  zoneName?: string | undefined;
   itemCount: number;
   items: readonly PurchaseOrderFlexTemplateItem[];
 }
@@ -180,17 +186,31 @@ function isSampleItemRow(value: unknown): value is JsonRecord {
 }
 
 function isSampleGroupHeader(value: unknown): value is JsonRecord {
-  if (!isRecord(value) || value["type"] !== "box" || value["layout"] !== "horizontal") {
+  if (!isRecord(value) || value["type"] !== "box") {
     return false;
   }
   if (typeof value["backgroundColor"] !== "string" && value["paddingAll"] === undefined) {
     return false;
   }
   const textNodes = directTextNodes(value);
+  if (textNodes.length === 0) return false;
   const countText = textNodes[1]?.["text"];
-  return (
-    textNodes.length >= 2 && typeof countText === "string" && /^\s*\d+\s*รายการ\s*$/.test(countText)
-  );
+  if (
+    textNodes.length >= 2 &&
+    typeof countText === "string" &&
+    /^\s*\d+\s*รายการ\s*$/.test(countText)
+  ) {
+    return true;
+  }
+  const firstText = textNodes[0]?.["text"];
+  if (
+    typeof firstText === "string" &&
+    /^\s*(?:🏷️|📍|หมวดหมู่|โซน)\s*/.test(firstText) &&
+    !hasItemPlaceholder(value)
+  ) {
+    return true;
+  }
+  return false;
 }
 function isExplicitGroupHeader(value: unknown): value is JsonRecord {
   if (!isRecord(value) || value["type"] !== "box" || value["layout"] !== "horizontal") {
@@ -281,7 +301,8 @@ function getItemValue(
       return index === undefined ? undefined : String(index + 1);
     case "groupname":
     case "group":
-      return group?.categoryName;
+    case "headertitle":
+      return group?.headerTitle ?? group?.categoryName;
     case "groupcount":
       return group ? String(group.itemCount) : undefined;
     case "items":
@@ -400,14 +421,16 @@ function renderGroupHeader(
       return renderNode(child, data, undefined, undefined, group);
     }
     const rawText = child["text"];
-    if (rawText.includes("{{"))
-      return renderTextComponent(child, data, undefined, undefined, group);
     const currentIndex = textIndex;
     textIndex += 1;
     if (currentIndex === 0) {
-      const icon = rawText.match(/^\s*(?:🏷️|📍)/)?.[0]?.trim();
-      return { ...child, text: icon ? `${icon} ${group.categoryName}` : group.categoryName };
+      if (group.headerTitle) {
+        return { ...child, text: group.headerTitle };
+      }
+      return { ...child, text: group.categoryName || "" };
     }
+    if (rawText.includes("{{"))
+      return renderTextComponent(child, data, undefined, undefined, group);
     if (currentIndex === 1 && /^\s*\d+\s*รายการ\s*$/.test(rawText)) {
       return { ...child, text: `${group.itemCount} รายการ` };
     }
@@ -416,18 +439,74 @@ function renderGroupHeader(
   return { ...row, contents: renderedContents };
 }
 
-function groupOrderItems(items: readonly PurchaseOrderFlexTemplateItem[]): GroupContext[] {
-  const groups = new Map<string, PurchaseOrderFlexTemplateItem[]>();
+function groupOrderItems(
+  items: readonly PurchaseOrderFlexTemplateItem[],
+  groupBy: FlexItemGroupBy = "category",
+): GroupContext[] {
+  if (groupBy === "none") {
+    return [
+      {
+        headerTitle: "",
+        categoryName: "",
+        itemCount: items.length,
+        items,
+      },
+    ];
+  }
+
+  const groups = new Map<
+    string,
+    {
+      headerTitle: string;
+      categoryName: string;
+      zoneName: string;
+      items: PurchaseOrderFlexTemplateItem[];
+    }
+  >();
+
   items.forEach((item) => {
-    const name = item.categoryName?.trim() || "หมวดหมู่ทั่วไป";
-    const existing = groups.get(name) ?? [];
-    existing.push(item);
-    groups.set(name, existing);
+    const catName = item.categoryName?.trim() || "หมวดหมู่ทั่วไป";
+    const zoneName = item.zoneName?.trim() || "โซนทั่วไป";
+
+    let groupKey = catName;
+    let headerTitle = `🏷️ ${catName}`;
+
+    if (groupBy === "zone_then_category") {
+      groupKey = `${zoneName}:::${catName}`;
+      headerTitle = `📍 ${zoneName} • 🏷️ ${catName}`;
+    } else if (groupBy === "category_then_zone") {
+      groupKey = `${catName}:::${zoneName}`;
+      headerTitle = `🏷️ ${catName} • 📍 ${zoneName}`;
+    } else if (groupBy === "zone") {
+      groupKey = zoneName;
+      headerTitle = `📍 โซน: ${zoneName}`;
+    } else if (groupBy === "zone_no_header") {
+      groupKey = zoneName;
+      headerTitle = "";
+    } else if (groupBy === "category") {
+      groupKey = catName;
+      headerTitle = `🏷️ ${catName}`;
+    } else if (groupBy === "category_no_header") {
+      groupKey = catName;
+      headerTitle = "";
+    }
+
+    const existing = groups.get(groupKey) ?? {
+      headerTitle,
+      categoryName: catName,
+      zoneName,
+      items: [],
+    };
+    existing.items.push(item);
+    groups.set(groupKey, existing);
   });
-  return [...groups.entries()].map(([categoryName, groupedItems]) => ({
-    categoryName,
-    itemCount: groupedItems.length,
-    items: groupedItems,
+
+  return [...groups.values()].map((g) => ({
+    headerTitle: g.headerTitle,
+    categoryName: g.categoryName,
+    zoneName: g.zoneName,
+    itemCount: g.items.length,
+    items: g.items,
   }));
 }
 
@@ -454,24 +533,29 @@ function renderArray(
   const rowTemplates = rowIndices.map((index) => values[index]).filter(isRecord);
   const headerTemplate = headerIndices.map((index) => values[index]).find(isRecord);
   const generatedRows: unknown[] = [];
-  const groups = headerTemplate
-    ? groupOrderItems(data.items)
-    : [{ categoryName: "", itemCount: data.items.length, items: data.items }];
+  const groupBy = data.groupBy || "category";
+  const isNoHeader =
+    groupBy === "none" ||
+    groupBy === "category_no_header" ||
+    groupBy === "zone_no_header" ||
+    data.showGroupHeaders === false;
+  const shouldRenderHeader = Boolean(headerTemplate && !isNoHeader);
+  const groups =
+    groupBy !== "none"
+      ? groupOrderItems(data.items, groupBy)
+      : [{ headerTitle: "", categoryName: "", itemCount: data.items.length, items: data.items }];
 
+  let globalItemIndex = 0;
   groups.forEach((currentGroup) => {
-    if (headerTemplate) generatedRows.push(renderGroupHeader(headerTemplate, data, currentGroup));
-    currentGroup.items.forEach((orderItem, indexInGroup) => {
-      const absoluteIndex = data.items.indexOf(orderItem);
-      const rowTemplate = rowTemplates[absoluteIndex % rowTemplates.length] ?? rowTemplates[0];
+    if (shouldRenderHeader && headerTemplate && currentGroup.headerTitle) {
+      generatedRows.push(renderGroupHeader(headerTemplate, data, currentGroup));
+    }
+    currentGroup.items.forEach((orderItem) => {
+      const currentIndex = globalItemIndex++;
+      const rowTemplate = rowTemplates[currentIndex % rowTemplates.length] ?? rowTemplates[0];
       if (rowTemplate) {
         generatedRows.push(
-          renderItemRow(
-            rowTemplate,
-            data,
-            orderItem,
-            absoluteIndex >= 0 ? absoluteIndex : indexInGroup,
-            isSampleItemRow(rowTemplate),
-          ),
+          renderItemRow(rowTemplate, data, orderItem, currentIndex, isSampleItemRow(rowTemplate)),
         );
       }
     });

@@ -198,4 +198,78 @@ describe("Flex Message Template Customization (Separated Qty/Unit & Large Font)"
     expect(requiredAt(flex.contents.header.contents, 0).size).toBe("xl");
     expect(requiredAt(flex.contents.header.contents, 1).size).toBe("md");
   });
+
+  it("does not include any group header banner when groupBy is 'none'", () => {
+    const flex = createPurchaseOrderFlexBubble(
+      [
+        {
+          name: "ช้างขวด",
+          quantity: 20,
+          unitName: "ขวด",
+          categoryName: "เครื่องดื่ม",
+        },
+      ],
+      { groupBy: "none" },
+    );
+
+    const bodyContents = flex.contents.body.contents;
+    const itemsBox = bodyContents[2] as {
+      contents: Array<{ contents: Array<{ text: string }> }>;
+    };
+    const headerBanners = itemsBox.contents.filter(
+      (c) =>
+        c.contents && c.contents.length === 2 && requiredAt(c.contents, 0).text.startsWith("🏷️"),
+    );
+    expect(headerBanners).toHaveLength(0);
+  });
+
+  it("displays zone headers when groupBy is 'zone'", () => {
+    const flex = createPurchaseOrderFlexBubble(
+      [
+        {
+          name: "ช้างขวด",
+          quantity: 20,
+          unitName: "ขวด",
+          zoneName: "ตู้แช่",
+          categoryName: "เครื่องดื่ม",
+        },
+      ],
+      { groupBy: "zone" },
+    );
+
+    const bodyContents = flex.contents.body.contents;
+    const itemsBox = bodyContents[2] as {
+      contents: Array<{ contents: Array<{ text: string }> }>;
+    };
+    const headerBanner = itemsBox.contents.find(
+      (c) => c.contents && c.contents.length === 2 && requiredAt(c.contents, 0).text.includes("📍"),
+    );
+    expect(headerBanner).toBeDefined();
+    expect(requiredAt(headerBanner!.contents, 0).text).toBe("📍 โซน: ตู้แช่");
+  });
+
+  it("displays zone then category headers when groupBy is 'zone_then_category'", () => {
+    const flex = createPurchaseOrderFlexBubble(
+      [
+        {
+          name: "ช้างขวด",
+          quantity: 20,
+          unitName: "ขวด",
+          zoneName: "ตู้แช่",
+          categoryName: "เครื่องดื่ม",
+        },
+      ],
+      { groupBy: "zone_then_category" },
+    );
+
+    const bodyContents = flex.contents.body.contents;
+    const itemsBox = bodyContents[2] as {
+      contents: Array<{ contents: Array<{ text: string }> }>;
+    };
+    const headerBanner = itemsBox.contents.find(
+      (c) => c.contents && c.contents.length === 2 && requiredAt(c.contents, 0).text.includes("📍"),
+    );
+    expect(headerBanner).toBeDefined();
+    expect(requiredAt(headerBanner!.contents, 0).text).toBe("📍 ตู้แช่ • 🏷️ เครื่องดื่ม");
+  });
 });
