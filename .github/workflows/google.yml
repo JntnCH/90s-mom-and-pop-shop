@@ -91,7 +91,7 @@ jobs:
       - name: "Apply database migration"
         env:
           INSTANCE_CONNECTION_NAME: "openclaw-gcp-272026:asia-southeast1:minimark-2026"
-          PGDATABASE: "cloud_sql_development_database"
+          PGDATABASE: "postgres"
           PGUSER: ${{ secrets.SQL_ADMIN_USER }}
           PGPASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
           PGSSLMODE: disable
