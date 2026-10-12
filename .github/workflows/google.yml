@@ -96,6 +96,10 @@ jobs:
           PGPASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
           PGSSLMODE: disable
           DATABASE_URL: placeholder
+          SQL_HOST: "/home/runner/work/_temp/cloudsql/openclaw-gcp-272026:asia-southeast1:minimark-2026"
+          SQL_DB_NAME: "cloud_sql_development_database"
+          SQL_ADMIN_USER: ${{ secrets.SQL_ADMIN_USER }}
+          SQL_ADMIN_PASSWORD: ${{ secrets.SQL_ADMIN_PASSWORD }}
         run: |
           set -euo pipefail
           proxy_dir="${RUNNER_TEMP}/cloudsql"
