@@ -224,7 +224,7 @@ function ReorderPage() {
   }
   const [orderList, setOrderList] = useState<OrderCartItem[]>([]);
   const [supplierNameInput, setSupplierNameInput] = useState(
-    "บริษัท ยูนิลีเวอร์ / ซัพพลายเออร์หลัก",
+    "บจก ไทรงามช้อป",
   );
 
   // Add Item Modal (Cascading: Zone -> Category -> Product)
