@@ -20,6 +20,11 @@ export const requireAuth = async (req: AuthRequest, res: AuthResponse, next: Nex
     return;
   }
 
+  if (!adminAuth) {
+    res.status(503).json({ error: "Service Unavailable: Firebase Admin not configured" });
+    return;
+  }
+
   const token = authHeader.slice("Bearer ".length);
   try {
     const decodedToken = await adminAuth.verifyIdToken(token);

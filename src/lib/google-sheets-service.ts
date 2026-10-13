@@ -51,6 +51,10 @@ export function initGoogleAuth(
   onSuccess?: (user: User, token: string) => void,
   onFailure?: () => void,
 ): () => void {
+  if (!auth) {
+    if (onFailure) onFailure();
+    return () => {};
+  }
   return onAuthStateChanged(auth, async (user) => {
     if (user) {
       if (cachedAccessToken) {
@@ -69,6 +73,11 @@ export function initGoogleAuth(
  * Trigger Google Sign In with popup and request required Workspace scopes
  */
 export async function signInWithGoogle(): Promise<{ user: User; accessToken: string }> {
+  if (!auth) {
+    throw new Error(
+      "ระบบ Google Sheets Sync ยังไม่ได้กำหนดค่า Firebase Auth หรือ API Key ในสภาพแวดล้อมนี้",
+    );
+  }
   try {
     isSigningIn = true;
     const result = await signInWithPopup(auth, provider);
@@ -87,7 +96,9 @@ export async function signInWithGoogle(): Promise<{ user: User; accessToken: str
  * Sign out and clear in-memory credentials
  */
 export async function signOutFromGoogle(): Promise<void> {
-  await signOut(auth);
+  if (auth) {
+    await signOut(auth);
+  }
   cachedAccessToken = null;
 }
 
