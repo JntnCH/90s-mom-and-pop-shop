@@ -224,9 +224,7 @@ function ReorderPage() {
     zoneName?: string | undefined;
   }
   const [orderList, setOrderList] = useState<OrderCartItem[]>([]);
-  const [supplierNameInput, setSupplierNameInput] = useState(
-    "บจก ไทรงามช้อป",
-  );
+  const [supplierNameInput, setSupplierNameInput] = useState("บจก ไทรงามช้อป");
 
   // Add Item Modal (Cascading: Zone -> Category -> Product)
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -1811,7 +1809,7 @@ function ReorderPage() {
                 <Button
                   size="sm"
                   variant={poStatusFilter === "ALL" ? "default" : "outline"}
-                  className="h-8 text-xs rounded-xl"
+                  className="h-8 text-xs rounded-xl shrink-0"
                   onClick={() => setPoStatusFilter("ALL")}
                 >
                   ทั้งหมด ({purchaseOrders.length})
@@ -1819,7 +1817,7 @@ function ReorderPage() {
                 <Button
                   size="sm"
                   variant={poStatusFilter === "ORDERED" ? "default" : "outline"}
-                  className="h-8 text-xs rounded-xl text-blue-600"
+                  className="h-8 text-xs rounded-xl text-blue-600 shrink-0"
                   onClick={() => setPoStatusFilter("ORDERED")}
                 >
                   สั่งซื้อแล้ว ({purchaseOrders.filter((p) => p.status === "ORDERED").length})
@@ -1827,7 +1825,7 @@ function ReorderPage() {
                 <Button
                   size="sm"
                   variant={poStatusFilter === "RECEIVED" ? "default" : "outline"}
-                  className="h-8 text-xs rounded-xl text-emerald-600"
+                  className="h-8 text-xs rounded-xl text-emerald-600 shrink-0"
                   onClick={() => setPoStatusFilter("RECEIVED")}
                 >
                   รับเข้าสต็อกแล้ว ({purchaseOrders.filter((p) => p.status === "RECEIVED").length})
@@ -1835,7 +1833,7 @@ function ReorderPage() {
                 <Button
                   size="sm"
                   variant={poStatusFilter === "DRAFT" ? "default" : "outline"}
-                  className="h-8 text-xs rounded-xl"
+                  className="h-8 text-xs rounded-xl shrink-0"
                   onClick={() => setPoStatusFilter("DRAFT")}
                 >
                   ฉบับร่าง ({purchaseOrders.filter((p) => p.status === "DRAFT").length})
@@ -1843,7 +1841,7 @@ function ReorderPage() {
                 <Button
                   size="sm"
                   variant={poStatusFilter === "CANCELLED" ? "destructive" : "outline"}
-                  className="h-8 text-xs rounded-xl text-destructive"
+                  className="h-8 text-xs rounded-xl text-destructive shrink-0"
                   onClick={() => setPoStatusFilter("CANCELLED")}
                 >
                   ยกเลิก ({purchaseOrders.filter((p) => p.status === "CANCELLED").length})
@@ -1881,51 +1879,76 @@ function ReorderPage() {
                         {po.sentViaLineAt && <div>ส่ง LINE: {po.sentViaLineAt}</div>}
                       </div>
 
-                      <div className="flex items-center justify-between border-t border-border/60 pt-2 text-xs">
-                        <div>
-                          <span className="text-muted-foreground">
-                            {po.items.length} รายการ ({po.totalQuantity} ชิ้น) ➔{" "}
+                      {/* ข้อมูลสรุปจำนวนรายการและยอดเงินรวม (แยกแถวเต็มความกว้าง ไม่โดนเบียด) */}
+                      <div className="flex items-center justify-between border-t border-border/60 pt-2.5 text-xs">
+                        <div className="text-muted-foreground">
+                          <span className="font-semibold text-foreground">{po.items.length}</span>{" "}
+                          รายการ
+                          <span className="text-muted-foreground/80">
+                            {" "}
+                            ({po.totalQuantity} ชิ้น)
                           </span>
-                          <span className="font-mono font-bold text-emerald-600">
+                        </div>
+                        <div className="text-right">
+                          <span className="text-muted-foreground text-[11px] mr-1">ยอดรวม:</span>
+                          <span className="font-mono font-bold text-sm text-emerald-600">
                             ฿{po.totalCost.toLocaleString("th-TH")}
                           </span>
                         </div>
+                      </div>
 
-                        <div className="flex items-center gap-1">
+                      {/* ปุ่มการทำงาน (จัดแถวเป็นสัดส่วน ป้องกันล้นขอบจอและกดง่ายบนมือถือ) */}
+                      <div className="space-y-1.5 pt-0.5">
+                        <div className="grid grid-cols-3 gap-1.5">
                           <Button
                             variant="outline"
                             size="sm"
-                            className="h-7 text-xs px-2 gap-1 rounded-lg text-primary border-primary/30 hover:bg-primary/10"
+                            className="h-8 text-xs px-1.5 gap-1 rounded-xl text-primary border-primary/30 hover:bg-primary/10"
                             onClick={() => handleEditPO(po)}
                           >
-                            <Pencil className="size-3" /> แก้ไข
+                            <Pencil className="size-3.5 shrink-0" />
+                            <span className="truncate">แก้ไข</span>
                           </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs px-1.5 gap-1 rounded-xl"
+                            onClick={() => handleOpenPODetail(po)}
+                          >
+                            <Eye className="size-3.5 shrink-0" />
+                            <span className="truncate">ดู/พิมพ์ A4</span>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs px-1.5 gap-1 rounded-xl"
+                            onClick={() => handleOpenExportPO(po)}
+                          >
+                            <Share2 className="size-3.5 shrink-0" />
+                            <span className="truncate">ส่งออก</span>
+                          </Button>
+                        </div>
+
+                        {po.status === "ORDERED" && (
+                          <Button
+                            size="sm"
+                            className="h-8.5 text-xs px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold w-full gap-1.5 shadow-sm active:scale-[0.99] transition-all"
+                            onClick={() => handleReceivePO(po)}
+                          >
+                            <PackageCheck className="size-4 shrink-0" /> รับเข้าสต็อก
+                          </Button>
+                        )}
+
+                        {po.status === "DRAFT" && (
                           <Button
                             variant="ghost"
                             size="sm"
-                            className="h-7 text-xs px-2 gap-1 rounded-lg"
-                            onClick={() => handleOpenPODetail(po)}
+                            className="h-7 text-xs rounded-xl text-destructive hover:bg-destructive/10 w-full gap-1"
+                            onClick={() => handleDeletePO(po)}
                           >
-                            <Eye className="size-3" /> ดู / พิมพ์ A4
+                            <Trash2 className="size-3.5 shrink-0" /> ลบฉบับร่าง
                           </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="h-7 text-xs px-2 gap-1 rounded-lg"
-                            onClick={() => handleOpenExportPO(po)}
-                          >
-                            <Share2 className="size-3" /> ส่งออก
-                          </Button>
-                          {po.status === "ORDERED" && (
-                            <Button
-                              size="sm"
-                              className="h-7 text-xs px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-semibold"
-                              onClick={() => handleReceivePO(po)}
-                            >
-                              รับเข้าสต็อก
-                            </Button>
-                          )}
-                        </div>
+                        )}
                       </div>
                     </div>
                   ))

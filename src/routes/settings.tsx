@@ -9,6 +9,7 @@ import {
   ExternalLink,
   Eye,
   FileCode2,
+  FileSpreadsheet,
   FolderTree,
   HardDrive,
   Info,
@@ -36,6 +37,7 @@ import { StaffManagementTab } from "@/components/auth/StaffManagementTab";
 import { FlexMessageVisualizer } from "@/components/line/FlexMessageVisualizer";
 import { FlexSimulatorImporter } from "@/components/line/FlexSimulatorImporter";
 import { BackupRestoreTab } from "@/components/settings/BackupRestoreTab";
+import { GoogleSheetsSyncTab } from "@/components/sheets/GoogleSheetsSyncTab";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -898,6 +900,12 @@ function SettingsPage() {
           {/* Responsive Mobile Tabs Grid */}
           <TabsList className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 h-auto p-1.5 rounded-2xl bg-muted gap-1">
             <TabsTrigger
+              value="sheets"
+              className="h-10 text-xs sm:text-sm gap-1.5 rounded-xl font-medium"
+            >
+              <FileSpreadsheet className="size-4 text-emerald-600" /> Google Sheets
+            </TabsTrigger>
+            <TabsTrigger
               value="rbac"
               className="h-10 text-xs sm:text-sm gap-1.5 rounded-xl font-medium"
             >
@@ -940,6 +948,11 @@ function SettingsPage() {
               <MessageSquare className="size-4" /> LINE API
             </TabsTrigger>
           </TabsList>
+
+          {/* TAB: GOOGLE SHEETS SYNC & WORKSPACE INTEGRATION */}
+          <TabsContent value="sheets" className="space-y-4">
+            <GoogleSheetsSyncTab />
+          </TabsContent>
 
           {/* TAB: BACKUP & RESTORE (PHASE 12) */}
           <TabsContent value="backup" className="space-y-4">

@@ -2,16 +2,23 @@ import {
   Check,
   Copy,
   Download,
+  ExternalLink,
   FileSpreadsheet,
   FileText,
   FileCode,
   Image as ImageIcon,
+  Loader2,
   MessageSquare,
   Printer,
   Share2,
 } from "lucide-react";
 import React, { useRef, useState } from "react";
 import { toast } from "sonner";
+import {
+  createNewSpreadsheet,
+  getGoogleAccessToken,
+  signInWithGoogle,
+} from "@/lib/google-sheets-service";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,9 +67,88 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageBlobUrl, setImageBlobUrl] = useState<string | null>(null);
   const printDocRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [isExportingGoogleSheets, setIsExportingGoogleSheets] = useState(false);
+  const [googleSheetsUrl, setGoogleSheetsUrl] = useState<string | null>(null);
 
   if (!payload) return null;
+
+  const handleExportGoogleSheets = async () => {
+    setIsExportingGoogleSheets(true);
+    try {
+      let token = getGoogleAccessToken();
+      if (!token) {
+        toast.info("กรุณาเข้าสู่ระบบ Google เพื่อบันทึกลงในสเปรดชีต");
+        const res = await signInWithGoogle();
+        token = res.accessToken;
+      }
+
+      const rows: (string | number)[][] = [
+        [
+          `ใบสั่งซื้อสินค้าเลขที่: ${payload.orderNumber}`,
+          `ร้านค้า: ${payload.storeName}`,
+          `วันที่: ${payload.createdAt}`,
+        ],
+        [
+          `ซัพพลายเออร์: ${payload.supplierName || "-"}`,
+          `ยอดรวมสุทธิ: ฿${payload.totalCost.toFixed(2)}`,
+        ],
+        [],
+        [
+          "ลำดับ",
+          "บาร์โค้ด",
+          "ชื่อสินค้า",
+          "โซนจัดเก็บ",
+          "หมวดหมู่",
+          "จำนวน",
+          "หน่วยนับ",
+          "ราคาต่อหน่วย (บาท)",
+          "ราคารวม (บาท)",
+          "หมายเหตุ",
+        ],
+        ...payload.items.map((it, idx) => [
+          idx + 1,
+          it.barcode,
+          it.productName,
+          it.zoneName,
+          it.categoryName,
+          it.quantity,
+          it.unitName,
+          it.costPrice,
+          it.total,
+          it.note || "",
+        ]),
+        [],
+        [
+          "",
+          "",
+          "ยอดรวมทั้งสิ้น",
+          "",
+          "",
+          payload.totalQuantity,
+          "ชิ้น",
+          "",
+          payload.totalCost,
+          "",
+        ],
+      ];
+
+      const created = await createNewSpreadsheet(
+        `ใบสั่งซื้อ ${payload.orderNumber} - ${payload.storeName}`,
+        "ใบสั่งซื้อ",
+        rows,
+        token,
+      );
+
+      setGoogleSheetsUrl(created.spreadsheetUrl);
+      toast.success("สร้างเอกสารใน Google Sheets สำเร็จเรียบร้อย!");
+    } catch (err: unknown) {
+      console.error("Export PO to sheets error:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error("ไม่สามารถสร้าง Google Sheet ได้: " + msg);
+    } finally {
+      setIsExportingGoogleSheets(false);
+    }
+  };
 
   // 1. Download CSV / Excel formatted with UTF-8 BOM
   const handleDownloadCSV = () => {
@@ -545,13 +631,40 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                 ไฟล์ CSV ที่สร้างขึ้นจะถูกเข้ารหัส UTF-8 with BOM สามารถเปิดบน Microsoft Excel,
                 Google Sheets หรือ Numbers ได้ทันทีโดยภาษาไทยไม่เพี้ยน
               </p>
-              <div className="pt-2">
+              <div className="pt-2 flex flex-wrap items-center gap-2.5">
                 <Button
                   className="gap-2 rounded-xl font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
                   onClick={handleDownloadCSV}
                 >
                   <Download className="size-4" /> ดาวน์โหลดไฟล์ Excel (CSV)
                 </Button>
+
+                <Button
+                  variant="outline"
+                  className="gap-2 rounded-xl font-semibold border-emerald-500/40 text-emerald-800 dark:text-emerald-300 hover:bg-emerald-500/10"
+                  onClick={handleExportGoogleSheets}
+                  disabled={isExportingGoogleSheets}
+                >
+                  {isExportingGoogleSheets ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="size-4 text-emerald-600" />
+                  )}
+                  ส่งออกสู่ Google Sheets
+                </Button>
+
+                {googleSheetsUrl && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    asChild
+                    className="gap-1.5 text-xs text-primary underline"
+                  >
+                    <a href={googleSheetsUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="size-3.5" /> เปิดใน Google Sheets
+                    </a>
+                  </Button>
+                )}
               </div>
             </div>
 

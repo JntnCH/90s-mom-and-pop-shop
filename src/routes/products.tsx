@@ -6,6 +6,7 @@ import {
   Camera,
   CameraOff,
   CheckCircle2,
+  FileSpreadsheet,
   Flashlight,
   FlashlightOff,
   Filter,
@@ -504,7 +505,17 @@ function ProductsPage() {
             บันทึก SKU, บาร์โค้ด, ถ่ายรูปสินค้า, ราคา, หมวดหมู่, สต็อก และตั้งค่าเปิด/ปิดการขาย
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            asChild
+            className="h-12 sm:h-11 font-semibold gap-2 rounded-xl border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 text-xs sm:text-sm px-4 shadow-xs"
+          >
+            <Link to="/settings">
+              <FileSpreadsheet className="size-4 text-emerald-600" />
+              <span>ซิงค์ Google Sheets</span>
+            </Link>
+          </Button>
           <Button
             onClick={handleOpenCreate}
             size="lg"
