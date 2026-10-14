@@ -105,6 +105,7 @@ import { getLineServerConfigFn, sendLineMessagingApiFn } from "@/lib/line-server
 import {
   buildOrderPlainText,
   formatDailyOrderFlexMessage,
+  formatDailyOrderFlexMessages,
   formatOrderPlainText,
   getClientLiffId,
   getLineStatus,
@@ -1376,7 +1377,7 @@ function ReorderPage() {
         return;
       }
 
-      let flexMsg: unknown;
+      let flexMsg: unknown | unknown[];
       let plainText = "";
       if (msgType === "STOCK_ALERT") {
         const alertPayload = createStockAlertItems();
@@ -1394,7 +1395,7 @@ function ReorderPage() {
         const sentAt = new Date();
         const orderDateStr = sentAt.toLocaleDateString("th-TH");
         const flexDateTimeStr = formatPurchaseOrderSentAt(sentAt);
-        flexMsg = formatDailyOrderFlexMessage(
+        flexMsg = formatDailyOrderFlexMessages(
           fullItems,
           flexDateTimeStr,
           currentStoreName,
@@ -1413,9 +1414,11 @@ function ReorderPage() {
         }
         setStatusMessage({
           type: "success",
-          text: `ส่ง LINE Flex Message จาก LINE Share Target Picker ไปยังห้องแชทที่เลือกสำเร็จเรียบร้อย`,
+          text: `ส่ง LINE Flex Message จาก LINE Share Target Picker ไปยังห้องแชทที่เลือกสำเร็จเรียบร้อย (${Array.isArray(flexMsg) ? flexMsg.length : 1} ข้อความ)`,
         });
-        toast.success("ส่ง LINE Flex Message จาก LINE Share Target Picker สำเร็จแล้ว");
+        toast.success(
+          `ส่ง LINE Flex Message จาก LINE Share Target Picker สำเร็จแล้ว (${Array.isArray(flexMsg) ? flexMsg.length : 1} ข้อความ)`,
+        );
         setPushModalOpen(false);
       } else if (res.needLiffId) {
         setLiffIdInputValue("");

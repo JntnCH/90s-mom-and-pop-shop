@@ -413,7 +413,7 @@ export interface LineShareResult {
  * Directly trigger LINE LIFF shareTargetPicker with a Flex Message
  */
 export async function shareFlexViaLiffPicker(
-  flexMessage: unknown,
+  flexMessage: unknown | unknown[],
   altSummary: string = `รายการสั่งซื้อสินค้า ${DEFAULT_STORE_NAME}`,
 ): Promise<{
   success: boolean;
@@ -455,7 +455,9 @@ export async function shareFlexViaLiffPicker(
   }
 
   try {
-    const messagePayload = toLiffMessage(flexMessage, altSummary);
+    const messagePayloads = (Array.isArray(flexMessage) ? flexMessage : [flexMessage]).map(
+      (message) => toLiffMessage(message, altSummary),
+    );
 
     // Diagnostic check for API availability in this environment
     const isApiAvailable =
@@ -475,7 +477,7 @@ export async function shareFlexViaLiffPicker(
     }
 
     if (typeof liffInstance.shareTargetPicker === "function") {
-      const res = await liffInstance.shareTargetPicker([messagePayload]);
+      const res = await liffInstance.shareTargetPicker(messagePayloads);
       if (res) {
         return {
           success: true,
@@ -772,6 +774,33 @@ export function formatDailyOrderFlexMessage(
       options,
     );
   }
+}
+
+/**
+ * Formats large purchase orders into multiple valid Flex messages.
+ * A single bubble with dozens of item rows can exceed LINE's component/payload limits.
+ */
+export function formatDailyOrderFlexMessages(
+  items: OrderFlexItem[],
+  dateStr?: string,
+  storeName: string = DEFAULT_STORE_NAME,
+  options?: Partial<PurchaseOrderFlexOptions>,
+  maxItemsPerMessage: number = 20,
+) {
+  const chunkSize = Math.max(1, Math.floor(maxItemsPerMessage));
+  const chunks: OrderFlexItem[][] = [];
+  for (let index = 0; index < items.length; index += chunkSize) {
+    chunks.push(items.slice(index, index + chunkSize));
+  }
+
+  return (chunks.length > 0 ? chunks : [[]]).map((chunk, index) =>
+    formatDailyOrderFlexMessage(chunk, dateStr, storeName, {
+      ...options,
+      ...(chunks.length > 1
+        ? { note: `ใบสั่งซื้อสินค้าประจำวัน (${index + 1}/${chunks.length})` }
+        : {}),
+    }),
+  );
 }
 
 export function formatOrderPlainText(
