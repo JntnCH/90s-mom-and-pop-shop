@@ -23,13 +23,13 @@ import { MasterStore, type ProductItem } from "@/lib/store";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "แดชบอร์ด | MiniMark" },
+      { title: "แดชบอร์ด | โชห่วยยุค90s" },
       {
         name: "description",
         content: "ภาพรวมสต็อกสินค้า สินค้าใกล้หมด และส่งสั่งซื้อผ่าน LINE",
       },
-      { property: "og:title", content: "แดชบอร์ด | MiniMark" },
-      { property: "og:description", content: "ภาพรวมสต็อกสินค้าของร้าน MiniMark" },
+      { property: "og:title", content: "แดชบอร์ด | โชห่วยยุค90s" },
+      { property: "og:description", content: "ภาพรวมสต็อกสินค้าของร้าน โชห่วยยุค90s" },
     ],
   }),
   component: Dashboard,
