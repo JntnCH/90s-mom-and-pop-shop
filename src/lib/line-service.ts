@@ -659,10 +659,20 @@ export async function sendOrderToLine(
   storeName: string = DEFAULT_STORE_NAME,
 ): Promise<LineShareResult> {
   const resolvedStoreName = getSystemStoreName(storeName);
-  const flex = buildOrderFlexMessage(
-    orders,
-    `ใบสั่งซื้อประจำวัน (${target === "group" ? "กลุ่ม" : "ส่วนตัว"})`,
+  const flex = formatDailyOrderFlexCarouselMessage(
+    orders.map(({ product, quantity, unitName }) => ({
+      name: product.name,
+      quantity,
+      unitName,
+      barcode: product.barcode,
+      costPrice: product.costPrice,
+      priceEstimate: quantity * (product.costPrice ?? 0),
+      categoryId: product.categoryId,
+      zoneId: product.zoneId,
+    })),
+    undefined,
     resolvedStoreName,
+    { note: `ใบสั่งซื้อประจำวัน (${target === "group" ? "กลุ่ม" : "ส่วนตัว"})` },
   );
   const plain = buildOrderPlainText(orders, resolvedStoreName);
 
@@ -757,6 +767,9 @@ export function formatDailyOrderFlexMessage(
       ...(options?.showGroupHeaders === undefined
         ? {}
         : { showGroupHeaders: options.showGroupHeaders }),
+      ...(options?.itemIndexOffset === undefined
+        ? {}
+        : { itemIndexOffset: options.itemIndexOffset }),
     });
   } catch {
     const nowStr = new Date().toISOString();
@@ -798,12 +811,14 @@ export function formatDailyOrderFlexCarouselMessage(
       ...(chunks.length > 1
         ? { note: `ใบสั่งซื้อสินค้าประจำวัน (${index + 1}/${chunks.length})` }
         : {}),
+      itemIndexOffset: index * chunkSize,
     }),
   );
 
   const bubbles = messages.flatMap((message) => {
-    if (!isRecord(message)) return [];
-    const contents = message["contents"];
+    const rawMessage: unknown = message;
+    if (!isRecord(rawMessage)) return [];
+    const contents = rawMessage["contents"];
     if (!isRecord(contents)) return [];
     if (contents["type"] === "bubble") return [contents];
     if (contents["type"] === "carousel" && Array.isArray(contents["contents"])) {
@@ -812,7 +827,7 @@ export function formatDailyOrderFlexCarouselMessage(
     return [];
   });
 
-  const firstMessage = messages[0];
+  const firstMessage: unknown = messages[0];
   const altText =
     isRecord(firstMessage) && typeof firstMessage["altText"] === "string"
       ? firstMessage["altText"]
@@ -863,12 +878,7 @@ export async function sendDailyOrderToLine(
     unitName: i.unitName,
   }));
 
-  const flex = buildOrderFlexMessage(
-    lineOrders,
-    `ใบสั่งซื้อประจำวัน (${dateStr || "วันนี้"})`,
-    resolvedStoreName,
-    options,
-  );
+  const flex = formatDailyOrderFlexCarouselMessage(items, dateStr, resolvedStoreName, options);
   const plain = buildOrderPlainText(
     lineOrders,
     resolvedStoreName,

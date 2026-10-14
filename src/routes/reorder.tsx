@@ -1209,7 +1209,7 @@ function ReorderPage() {
     const gb = overrideGroupBy || flexGroupBy;
     const orderDateStr = formatPurchaseOrderSentAt();
     try {
-      const flexMsg = formatDailyOrderFlexMessage(
+      const flexMsg = formatDailyOrderFlexCarouselMessage(
         fullItems,
         orderDateStr,
         currentStoreName,
@@ -1245,12 +1245,17 @@ function ReorderPage() {
   ) => {
     try {
       setFlexPreviewData(
-        formatDailyOrderFlexMessage(getPurchaseOrderFlexItems(po), po.createdAt, currentStoreName, {
-          groupBy: overrideGroupBy ?? flexGroupBy,
-          showGroupHeaders: flexShowHeader,
-          orderNumber: po.orderNumber,
-          supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
-        }),
+        formatDailyOrderFlexCarouselMessage(
+          getPurchaseOrderFlexItems(po),
+          po.createdAt,
+          currentStoreName,
+          {
+            groupBy: overrideGroupBy ?? flexGroupBy,
+            showGroupHeaders: flexShowHeader,
+            orderNumber: po.orderNumber,
+            supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
+          },
+        ),
       );
       setFlexPreviewTitle(`ใบสั่งซื้อ ${po.orderNumber} — ข้อมูลจริงในโครงสร้าง Simulator`);
       setFlexPreviewSource({ type: "po", poRecord: po });
@@ -1280,7 +1285,7 @@ function ReorderPage() {
 
     if (flexPreviewSource.type === "order" && flexPreviewSource.orderItems) {
       const orderDateStr = formatPurchaseOrderSentAt();
-      const flexMsg = formatDailyOrderFlexMessage(
+      const flexMsg = formatDailyOrderFlexCarouselMessage(
         flexPreviewSource.orderItems,
         orderDateStr,
         currentStoreName,
@@ -1297,17 +1302,22 @@ function ReorderPage() {
     } else if (flexPreviewSource.type === "po" && flexPreviewSource.poRecord) {
       const po = flexPreviewSource.poRecord;
       setFlexPreviewData(
-        formatDailyOrderFlexMessage(getPurchaseOrderFlexItems(po), po.createdAt, currentStoreName, {
-          groupBy: newGrouping,
-          showGroupHeaders: nextShowHeader,
-          includeZone:
-            newGrouping === "zone" ||
-            newGrouping === "zone_no_header" ||
-            newGrouping === "zone_then_category" ||
-            newGrouping === "category_then_zone",
-          orderNumber: po.orderNumber,
-          supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
-        }),
+        formatDailyOrderFlexCarouselMessage(
+          getPurchaseOrderFlexItems(po),
+          po.createdAt,
+          currentStoreName,
+          {
+            groupBy: newGrouping,
+            showGroupHeaders: nextShowHeader,
+            includeZone:
+              newGrouping === "zone" ||
+              newGrouping === "zone_no_header" ||
+              newGrouping === "zone_then_category" ||
+              newGrouping === "category_then_zone",
+            orderNumber: po.orderNumber,
+            supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
+          },
+        ),
       );
     }
   };
@@ -1542,7 +1552,7 @@ function ReorderPage() {
         const sentAt = new Date();
         const orderDateStr = sentAt.toLocaleDateString("th-TH");
         const flexDateTimeStr = formatPurchaseOrderSentAt(sentAt);
-        const flexMsg = formatDailyOrderFlexMessage(
+        const flexMsg = formatDailyOrderFlexCarouselMessage(
           fullItems,
           flexDateTimeStr,
           currentStoreName,
@@ -2081,7 +2091,26 @@ function ReorderPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+              <div className="flex flex-wrap items-center justify-end gap-2 self-end sm:self-auto shrink-0">
+                <Button
+                  size="sm"
+                  disabled={fullItems.length === 0}
+                  className="h-8 text-xs rounded-xl gap-1.5 bg-primary hover:bg-primary/90"
+                  onClick={() =>
+                    handleSavePO(editingPOStatus === "RECEIVED" ? "RECEIVED" : editingPOStatus)
+                  }
+                >
+                  <Save className="size-3.5" /> บันทึกการแก้ไข
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={fullItems.length === 0}
+                  className="h-8 text-xs rounded-xl gap-1.5"
+                  onClick={() => handleSavePO("DRAFT")}
+                >
+                  <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
@@ -2787,40 +2816,8 @@ function ReorderPage() {
                       </Button>
                     </div>
 
-                    {/* Save / Update Action Controls */}
-                    {editingPOId ? (
-                      <div className="space-y-2 p-2 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60">
-                        <Button
-                          size="lg"
-                          disabled={fullItems.length === 0}
-                          className="h-11 w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs rounded-xl shadow-xs active:scale-95"
-                          onClick={() =>
-                            handleSavePO(
-                              editingPOStatus === "RECEIVED" ? "RECEIVED" : editingPOStatus,
-                            )
-                          }
-                        >
-                          <Save className="size-4" /> บันทึกการแก้ไข ({editingPONumber})
-                        </Button>
-                        <div className="grid grid-cols-2 gap-2">
-                          <Button
-                            variant="secondary"
-                            disabled={fullItems.length === 0}
-                            className="h-9 text-xs font-semibold rounded-xl gap-1.5"
-                            onClick={() => handleSavePO("DRAFT")}
-                          >
-                            <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
-                          </Button>
-                          <Button
-                            variant="outline"
-                            className="h-9 text-xs font-semibold rounded-xl gap-1.5 text-destructive hover:bg-destructive/10 border-destructive/30"
-                            onClick={handleCancelEditPO}
-                          >
-                            <X className="size-3.5" /> ยกเลิกการแก้ไข
-                          </Button>
-                        </div>
-                      </div>
-                    ) : (
+                    {/* Save new purchase orders; edit-mode actions live in the banner above. */}
+                    {!editingPOId && (
                       <div className="grid grid-cols-2 gap-2">
                         <Button
                           variant="secondary"
