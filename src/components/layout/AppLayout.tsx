@@ -15,7 +15,7 @@ function Brand() {
         <Store className="size-5" />
       </span>
       <span className="leading-tight">
-        <span className="block text-base font-bold text-foreground">MiniMark</span>
+        <span className="block text-base font-bold text-foreground">โชห่วยยุค90s</span>
         <span className="block text-xs text-muted-foreground">ระบบจัดการร้านโชว์ห่วย</span>
       </span>
     </div>
@@ -106,7 +106,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Store className="size-4" />
               </span>
-              <span className="text-base font-bold text-foreground">MiniMark</span>
+              <span className="text-base font-bold text-foreground">โชห่วยยุค90s</span>
             </Link>
           </div>
 
