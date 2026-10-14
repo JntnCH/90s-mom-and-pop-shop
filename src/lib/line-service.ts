@@ -413,7 +413,7 @@ export interface LineShareResult {
  * Directly trigger LINE LIFF shareTargetPicker with a Flex Message
  */
 export async function shareFlexViaLiffPicker(
-  flexMessage: unknown | unknown[],
+  flexMessage: unknown,
   altSummary: string = `รายการสั่งซื้อสินค้า ${DEFAULT_STORE_NAME}`,
 ): Promise<{
   success: boolean;
@@ -455,9 +455,7 @@ export async function shareFlexViaLiffPicker(
   }
 
   try {
-    const messagePayloads = (Array.isArray(flexMessage) ? flexMessage : [flexMessage]).map(
-      (message) => toLiffMessage(message, altSummary),
-    );
+    const messagePayload = toLiffMessage(flexMessage, altSummary);
 
     // Diagnostic check for API availability in this environment
     const isApiAvailable =
@@ -477,7 +475,7 @@ export async function shareFlexViaLiffPicker(
     }
 
     if (typeof liffInstance.shareTargetPicker === "function") {
-      const res = await liffInstance.shareTargetPicker(messagePayloads);
+      const res = await liffInstance.shareTargetPicker([messagePayload]);
       if (res) {
         return {
           success: true,
@@ -777,10 +775,11 @@ export function formatDailyOrderFlexMessage(
 }
 
 /**
- * Formats large purchase orders into multiple valid Flex messages.
- * A single bubble with dozens of item rows can exceed LINE's component/payload limits.
+ * Formats large purchase orders as one Flex carousel message.
+ * Each carousel bubble stays within LINE's component/payload limits while the
+ * recipient still receives exactly one LINE message.
  */
-export function formatDailyOrderFlexMessages(
+export function formatDailyOrderFlexCarouselMessage(
   items: OrderFlexItem[],
   dateStr?: string,
   storeName: string = DEFAULT_STORE_NAME,
@@ -793,7 +792,7 @@ export function formatDailyOrderFlexMessages(
     chunks.push(items.slice(index, index + chunkSize));
   }
 
-  return (chunks.length > 0 ? chunks : [[]]).map((chunk, index) =>
+  const messages = (chunks.length > 0 ? chunks : [[]]).map((chunk, index) =>
     formatDailyOrderFlexMessage(chunk, dateStr, storeName, {
       ...options,
       ...(chunks.length > 1
@@ -801,6 +800,35 @@ export function formatDailyOrderFlexMessages(
         : {}),
     }),
   );
+
+  const bubbles = messages.flatMap((message) => {
+    if (!isRecord(message)) return [];
+    const contents = message["contents"];
+    if (!isRecord(contents)) return [];
+    if (contents["type"] === "bubble") return [contents];
+    if (contents["type"] === "carousel" && Array.isArray(contents["contents"])) {
+      return contents["contents"].filter(isRecord);
+    }
+    return [];
+  });
+
+  const firstMessage = messages[0];
+  const altText =
+    isRecord(firstMessage) && typeof firstMessage["altText"] === "string"
+      ? firstMessage["altText"]
+      : `📦 ${getSystemStoreName(storeName)} — ใบสั่งซื้อสินค้าประจำวัน (${items.length} รายการ)`;
+
+  return {
+    type: "flex" as const,
+    altText,
+    contents:
+      bubbles.length === 1
+        ? bubbles[0]
+        : {
+            type: "carousel" as const,
+            contents: bubbles,
+          },
+  };
 }
 
 export function formatOrderPlainText(
