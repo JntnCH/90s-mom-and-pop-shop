@@ -1413,9 +1413,9 @@ function ReorderPage() {
         }
         setStatusMessage({
           type: "success",
-          text: `ส่ง LINE Flex Message ไปยังห้องแชทเพื่อนที่เลือกสำเร็จเรียบร้อย`,
+          text: `ส่ง LINE Flex Message จาก LINE Share Target Picker ไปยังห้องแชทที่เลือกสำเร็จเรียบร้อย`,
         });
-        toast.success("ส่ง LINE Flex Message ไปยังห้องแชทสำเร็จแล้ว");
+        toast.success("ส่ง LINE Flex Message จาก LINE Share Target Picker สำเร็จแล้ว");
         setPushModalOpen(false);
       } else if (res.needLiffId) {
         setLiffIdInputValue("");
@@ -1504,40 +1504,38 @@ function ReorderPage() {
         });
         const plainText = `⚠️ แจ้งเตือนสินค้าต้องสั่งซื้อ ${allReorderNeeded.length} รายการ (${currentStoreName})`;
 
-        if (tokenToUse || serverConfig?.hasAccessToken) {
-          const res = await sendWith3TierFallback({
-            summary: plainText,
-            flexMessage: flexMsg,
-            toUserIdOrGroupId: isBroadcastMode ? undefined : targetIdInput.trim(),
-            isBroadcast: isBroadcastMode,
-            channelAccessToken: tokenToUse || undefined,
-            disableIntentFallback: true,
-          });
-
-          if (res.success) {
-            playScanSuccessSound({ force: true });
-            setStatusMessage({
-              type: "success",
-              text: isBroadcastMode
-                ? `บรอดแคสต์ Flex Message แจ้งเตือนสต็อกไปยังทุกคนสำเร็จ`
-                : `ส่ง Flex Message แจ้งเตือนสต็อกไปยัง "${targetName}" สำเร็จเรียบร้อย`,
-            });
-            toast.success(`ส่ง Flex Message แจ้งเตือนไปยัง ${targetName} สำเร็จ`);
-            setPushModalOpen(false);
-            return;
-          }
+        if (!tokenToUse && !serverConfig?.hasAccessToken) {
+          const message = "ยังไม่ได้ตั้งค่า LINE Channel Access Token สำหรับช่องทาง Messaging API";
+          setStatusMessage({ type: "error", text: message });
+          toast.error(message);
+          return;
         }
 
-        // Live delivery confirmation
-        playScanSuccessSound({ force: true });
-        setStatusMessage({
-          type: "success",
-          text: isBroadcastMode
-            ? `บรอดแคสต์ Flex Message แจ้งเตือนสต็อกไปยังทุกคนเรียบร้อยแล้ว`
-            : `ส่ง Flex Message แจ้งเตือนสต็อกไปยัง "${targetName}" เรียบร้อยแล้ว`,
+        const res = await sendWith3TierFallback({
+          summary: plainText,
+          flexMessage: flexMsg,
+          toUserIdOrGroupId: isBroadcastMode ? undefined : targetIdInput.trim(),
+          isBroadcast: isBroadcastMode,
+          channelAccessToken: tokenToUse || undefined,
+          disableIntentFallback: true,
         });
-        toast.success(`ส่ง Flex Message แจ้งเตือนสต็อกให้ ${targetName} สำเร็จ`);
-        setPushModalOpen(false);
+
+        if (res.success) {
+          playScanSuccessSound({ force: true });
+          setStatusMessage({
+            type: "success",
+            text: isBroadcastMode
+              ? `บรอดแคสต์ Flex Message แจ้งเตือนสต็อกผ่าน Messaging API ไปยังทุกคนสำเร็จ`
+              : `ส่ง Flex Message แจ้งเตือนสต็อกผ่าน Messaging API ไปยัง "${targetName}" สำเร็จเรียบร้อย`,
+          });
+          toast.success(`ส่ง Flex Message แจ้งเตือนผ่าน Messaging API ไปยัง ${targetName} สำเร็จ`);
+          setPushModalOpen(false);
+          return;
+        }
+
+        setStatusMessage({ type: "error", text: res.message });
+        toast.error(`ส่งผ่าน Messaging API ไม่สำเร็จ: ${res.message}`);
+        return;
       } else {
         if (fullItems.length === 0) return;
         const sentAt = new Date();
@@ -1551,42 +1549,39 @@ function ReorderPage() {
         );
         const plainText = buildCurrentOrderShareText(orderDateStr);
 
-        if (tokenToUse || serverConfig?.hasAccessToken) {
-          const res = await sendWith3TierFallback({
-            summary: plainText,
-            flexMessage: flexMsg,
-            toUserIdOrGroupId: isBroadcastMode ? undefined : targetIdInput.trim(),
-            isBroadcast: isBroadcastMode,
-            channelAccessToken: tokenToUse || undefined,
-            disableIntentFallback: true,
-          });
-
-          if (res.success) {
-            playScanSuccessSound({ force: true });
-            handleSavePO("ORDERED");
-            setStatusMessage({
-              type: "success",
-              text: isBroadcastMode
-                ? `บรอดแคสต์ Flex Message ใบสั่งซื้อสินค้าไปยังทุกคนสำเร็จ และบันทึกสถานะเรียบร้อย`
-                : `ส่ง Flex Message ใบสั่งซื้อสินค้าไปยัง "${targetName}" สำเร็จ และบันทึกสถานะเรียบร้อย`,
-            });
-            toast.success(`ส่ง Flex Message ใบสั่งซื้อให้ ${targetName} เรียบร้อย`);
-            setPushModalOpen(false);
-            return;
-          }
+        if (!tokenToUse && !serverConfig?.hasAccessToken) {
+          const message = "ยังไม่ได้ตั้งค่า LINE Channel Access Token สำหรับช่องทาง Messaging API";
+          setStatusMessage({ type: "error", text: message });
+          toast.error(message);
+          return;
         }
 
-        // Live delivery confirmation
-        playScanSuccessSound({ force: true });
-        handleSavePO("ORDERED");
-        setStatusMessage({
-          type: "success",
-          text: isBroadcastMode
-            ? `บรอดแคสต์ Flex Message ใบสั่งซื้อสินค้าไปยังทุกคนเรียบร้อย และปรับสถานะเป็น "สั่งซื้อแล้ว"`
-            : `ส่ง Flex Message ใบสั่งซื้อสินค้า (${fullItems.length} รายการ, ฿${totalCost.toLocaleString()}) ไปยัง "${targetName}" สำเร็จ และปรับสถานะเป็น "สั่งซื้อแล้ว"`,
+        const res = await sendWith3TierFallback({
+          summary: plainText,
+          flexMessage: flexMsg,
+          toUserIdOrGroupId: isBroadcastMode ? undefined : targetIdInput.trim(),
+          isBroadcast: isBroadcastMode,
+          channelAccessToken: tokenToUse || undefined,
+          disableIntentFallback: true,
         });
-        toast.success(`ส่ง LINE Flex Message ใบสั่งซื้อให้ ${targetName} เรียบร้อย`);
-        setPushModalOpen(false);
+
+        if (res.success) {
+          playScanSuccessSound({ force: true });
+          handleSavePO("ORDERED");
+          setStatusMessage({
+            type: "success",
+            text: isBroadcastMode
+              ? `บรอดแคสต์ Flex Message ใบสั่งซื้อสินค้าผ่าน Messaging API ไปยังทุกคนสำเร็จ และบันทึกสถานะเรียบร้อย`
+              : `ส่ง Flex Message ใบสั่งซื้อสินค้าผ่าน Messaging API ไปยัง "${targetName}" สำเร็จ และบันทึกสถานะเรียบร้อย`,
+          });
+          toast.success(`ส่ง Flex Message ผ่าน Messaging API ให้ ${targetName} เรียบร้อย`);
+          setPushModalOpen(false);
+          return;
+        }
+
+        setStatusMessage({ type: "error", text: res.message });
+        toast.error(`ส่งผ่าน Messaging API ไม่สำเร็จ: ${res.message}`);
+        return;
       }
     } catch (e: unknown) {
       setStatusMessage({
@@ -4348,11 +4343,11 @@ function ReorderPage() {
                 <div className="space-y-0.5">
                   <div className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-2">
                     <Smartphone className="size-4 text-[#06C755]" />
-                    เปิดรายชื่อเพื่อนในแอป LINE ทันที (LINE Share Target Picker)
+                    ช่องทาง 1: เลือกและส่งจากแอป LINE (Share Target Picker)
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    เปิดหน้าจอเลือกห้องแชทของแอป LINE เพื่อส่ง Flex Message
-                    เข้าห้องแชทเพื่อนหรือกลุ่มที่ต้องการทันที
+                    เปิดหน้าจอเลือกห้องแชทของแอป LINE และส่ง Flex Message จาก LINE โดยตรง
+                    ช่องทางนี้ไม่ใช้รายชื่อผู้รับในระบบด้านล่าง
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -4363,7 +4358,7 @@ function ReorderPage() {
                     disabled={isSending}
                   >
                     <Users className="size-4" />
-                    เปิดรายชื่อเพื่อนใน LINE
+                    เลือกผู้รับและส่งจาก LINE
                   </Button>
                 </div>
               </div>
@@ -4374,7 +4369,7 @@ function ReorderPage() {
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <Label className="text-xs sm:text-sm font-bold flex items-center gap-1.5 text-foreground">
                   <User className="size-4 text-emerald-600" />
-                  เลือกจากรายชื่อเพื่อน / ซัพพลายเออร์ ในระบบ
+                  ช่องทาง 2: เลือกผู้รับในระบบและส่งผ่าน Messaging API
                 </Label>
                 <Button
                   type="button"
@@ -4725,7 +4720,7 @@ function ReorderPage() {
             <div className="p-2.5 rounded-xl border bg-emerald-500/10 border-emerald-500/25 flex items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2 min-w-0">
                 <Check className="size-4 text-emerald-600 font-bold shrink-0" />
-                <span className="text-muted-foreground shrink-0">ผู้รับ Flex:</span>
+                <span className="text-muted-foreground shrink-0">ผู้รับ Messaging API:</span>
                 <span className="font-bold text-foreground truncate">
                   {isBroadcastMode
                     ? "📢 บรอดแคสต์ถึงทุกคน (Broadcast All)"
@@ -4739,7 +4734,7 @@ function ReorderPage() {
                 variant="outline"
                 className="text-[10px] border-emerald-600 text-emerald-700 shrink-0 hidden sm:inline-flex"
               >
-                Flex Bubble Format
+                Messaging API • Flex Bubble
               </Badge>
             </div>
 
@@ -4770,7 +4765,7 @@ function ReorderPage() {
                 {targetIdInput || isBroadcastMode ? "เลือกผู้รับนี้แล้วกลับ" : "ยกเลิก"}
               </Button>
 
-              {/* Primary Send Button (Sends Flex Message and Closes Panel) */}
+              {/* Primary Send Button (Messaging API only) */}
               <Button
                 type="button"
                 className="h-10 sm:h-11 rounded-xl font-bold gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white text-xs shadow-xs px-4 sm:px-5 active:scale-95 flex-1 sm:flex-none"
@@ -4782,7 +4777,7 @@ function ReorderPage() {
                   ? "กำลังส่ง Flex Message..."
                   : isBroadcastMode
                     ? "ส่ง Flex Message บรอดแคสต์ทุกคน"
-                    : `ส่ง Flex Message ให้ ${
+                    : `ส่งผ่าน Messaging API ให้ ${
                         followers.find((f) => f.userId === targetIdInput.trim())?.displayName ||
                         (targetIdInput ? targetIdInput.slice(0, 10) + "..." : "ผู้รับที่เลือก")
                       }`}
