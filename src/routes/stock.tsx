@@ -63,15 +63,15 @@ import {
 export const Route = createFileRoute("/stock")({
   head: () => ({
     meta: [
-      { title: "สต็อกสินค้า & ความเคลื่อนไหว | MiniMark" },
+      { title: "สต็อกสินค้า & ความเคลื่อนไหว | โชห่วยยุค90s" },
       {
         name: "description",
         content: "ตรวจสอบจำนวนสินค้าคงเหลือ จุดสั่งซื้อ ประวัติ Stock Movement และปรับปรุงยอดสต็อก",
       },
-      { property: "og:title", content: "สต็อกสินค้า & ความเคลื่อนไหว | MiniMark" },
+      { property: "og:title", content: "สต็อกสินค้า & ความเคลื่อนไหว | โชห่วยยุค90s" },
       {
         property: "og:description",
-        content: "เช็คสต็อกสินค้าคงเหลือและประวัติการเคลื่อนไหวในร้าน MiniMark",
+        content: "เช็คสต็อกสินค้าคงเหลือและประวัติการเคลื่อนไหวในร้าน โชห่วยยุค90s",
       },
     ],
   }),

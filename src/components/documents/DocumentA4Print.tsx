@@ -443,7 +443,7 @@ export function DocumentA4Print({
 
         {/* Footer info */}
         <div className="mt-6 pt-3 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center text-[10px] text-slate-400 gap-1">
-          <span>ออกเอกสารโดยระบบ MiniMark Cloud ERP & Flow POS</span>
+          <span>ออกเอกสารโดยระบบ โชห่วยยุค90s Cloud ERP & Flow POS</span>
           <span>หน้า 1 จาก 1</span>
         </div>
       </div>

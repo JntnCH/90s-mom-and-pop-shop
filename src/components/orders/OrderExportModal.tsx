@@ -412,7 +412,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
       ctx.fillStyle = "#9ca3af";
       ctx.font = "11px Prompt, sans-serif";
       ctx.fillText(
-        `เอกสารสร้างอัตโนมัติจากระบบ MiniMark • สแกนและตรวจรับเข้าสต็อกได้ทันที`,
+        `เอกสารสร้างอัตโนมัติจากระบบ โชห่วยยุค90s • สแกนและตรวจรับเข้าสต็อกได้ทันที`,
         padding,
         currentY,
       );
@@ -533,7 +533,7 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
 ────────────────────
 รวมสินค้า: ${payload.totalQuantity} ชิ้น
 ยอดเงินรวมทั้งสิ้น: ฿${payload.totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-สร้างจากระบบ MiniMark POS & Stock Manager`;
+สร้างจากระบบ โชห่วยยุค90s POS & Stock Manager`;
 
   const handleCopyText = () => {
     try {

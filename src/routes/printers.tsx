@@ -77,7 +77,7 @@ import {
 export const Route = createFileRoute("/printers")({
   head: () => ({
     meta: [
-      { title: "จัดการเครื่องพิมพ์, สลิป & คิวพิมพ์ (Phase 10) | MiniMark" },
+      { title: "จัดการเครื่องพิมพ์, สลิป & คิวพิมพ์ (Phase 10) | โชห่วยยุค90s" },
       {
         name: "description",
         content:
@@ -85,7 +85,7 @@ export const Route = createFileRoute("/printers")({
       },
       {
         property: "og:title",
-        content: "จัดการเครื่องพิมพ์, สลิป & คิวพิมพ์ (Phase 10) | MiniMark",
+        content: "จัดการเครื่องพิมพ์, สลิป & คิวพิมพ์ (Phase 10) | โชห่วยยุค90s",
       },
       {
         property: "og:description",
@@ -215,7 +215,7 @@ function PrintersPage() {
     const paperWidth = printer.type === "THERMAL_80MM" ? "80mm" : "58mm";
     const testHtml = `
       <div style="text-align: center; padding: 10px 0;">
-        <h3 style="margin: 0; font-size: 14px;">=== ทดสอบพิมพ์สลิป MiniMark ===</h3>
+        <h3 style="margin: 0; font-size: 14px;">=== ทดสอบพิมพ์สลิป โชห่วยยุค90s ===</h3>
         <p style="margin: 4px 0; font-size: 11px;">เครื่องพิมพ์: ${printer.name}</p>
         <p style="margin: 2px 0; font-size: 10px;">การเชื่อมต่อ: ${printer.connection}</p>
         <p style="margin: 2px 0; font-size: 10px;">เวลาทดสอบ: ${new Date().toLocaleString("th-TH")}</p>
@@ -308,7 +308,7 @@ function PrintersPage() {
             <CardHeader className="p-4 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
                 <CardTitle className="text-base flex items-center gap-2">
-                  <Printer className="size-5 text-primary" /> เครื่องพิมพ์ทั้งหมดในระบบ MiniMark
+                  <Printer className="size-5 text-primary" /> เครื่องพิมพ์ทั้งหมดในระบบ โชห่วยยุค90s
                 </CardTitle>
                 <CardDescription className="text-xs">
                   กำหนดเครื่องพิมพ์เริ่มต้นสำหรับพิมพ์ใบเสร็จรับเงิน, ใบสั่งซื้อสินค้า
@@ -688,7 +688,7 @@ function PrintersPage() {
             <CardContent className="space-y-4">
               <div className="rounded-xl bg-black text-emerald-400 p-4 font-mono text-xs space-y-2 overflow-x-auto shadow-inner">
                 <div className="text-gray-400">
-                  // --- ESC/POS Sequence Generated for MiniMark ---
+                  // --- ESC/POS Sequence Generated for โชห่วยยุค90s ---
                 </div>
                 <div>[ESC @] Initialize printer</div>
                 <div>[ESC a 1] Align: CENTER</div>

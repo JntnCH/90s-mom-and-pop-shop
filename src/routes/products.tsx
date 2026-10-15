@@ -87,14 +87,14 @@ import {
 export const Route = createFileRoute("/products")({
   head: () => ({
     meta: [
-      { title: "ระบบจัดการสินค้า | MiniMark" },
+      { title: "ระบบจัดการสินค้า | โชห่วยยุค90s" },
       {
         name: "description",
         content:
           "ระบบจัดการสินค้าสำหรับร้านโชว์ห่วย รหัสสินค้า SKU บาร์โค้ด รูปสินค้า หมวดหมู่ ราคาทุน-ขาย สต็อกคงเหลือ และจุดสั่งซื้อ",
       },
-      { property: "og:title", content: "ระบบจัดการสินค้า | MiniMark" },
-      { property: "og:description", content: "จัดการสินค้าในร้านโชว์ห่วย MiniMark" },
+      { property: "og:title", content: "ระบบจัดการสินค้า | โชห่วยยุค90s" },
+      { property: "og:description", content: "จัดการสินค้าในร้านโชว์ห่วย โชห่วยยุค90s" },
     ],
   }),
   component: ProductsPage,

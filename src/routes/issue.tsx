@@ -92,7 +92,7 @@ import { thaiBahtText } from "@/lib/thai-baht-text";
 export const Route = createFileRoute("/issue")({
   head: () => ({
     meta: [
-      { title: "จุดขายหน้าร้าน (POS) & จ่ายสินค้าออก | MiniMark" },
+      { title: "จุดขายหน้าร้าน (POS) & จ่ายสินค้าออก | โชห่วยยุค90s" },
       {
         name: "description",
         content:
@@ -100,7 +100,7 @@ export const Route = createFileRoute("/issue")({
       },
       {
         property: "og:title",
-        content: "จุดขายหน้าร้าน (POS) & จ่ายสินค้าออก | MiniMark",
+        content: "จุดขายหน้าร้าน (POS) & จ่ายสินค้าออก | โชห่วยยุค90s",
       },
       {
         property: "og:description",

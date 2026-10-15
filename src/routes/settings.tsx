@@ -28,6 +28,7 @@ import {
   UserCheck,
   UserPlus,
   Users,
+  Store,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -102,6 +103,7 @@ import {
   type ZoneItem,
 } from "@/lib/store";
 import { toast } from "sonner";
+import { PrinterService } from "@/lib/printer-service";
 import {
   generateCategoryCode,
   getCategoryCodeSuggestions,
@@ -202,13 +204,13 @@ function isArrayOf<T>(value: unknown, guard: (item: unknown) => item is T): valu
 export const Route = createFileRoute("/settings")({
   head: () => ({
     meta: [
-      { title: "ตั้งค่าระบบ & ฐานข้อมูล | MiniMark" },
+      { title: "ตั้งค่าระบบ & ฐานข้อมูล | โชห่วยยุค90s" },
       {
         name: "description",
         content:
           "จัดการโซนสินค้า หมวดหมู่ หน่วยนับ ผู้ใช้งานและผู้ติดตาม LINE Bot, User ID และแม่แบบ Flex Message",
       },
-      { property: "og:title", content: "ตั้งค่าระบบ & ฐานข้อมูล | MiniMark" },
+      { property: "og:title", content: "ตั้งค่าระบบ & ฐานข้อมูล | โชห่วยยุค90s" },
       {
         property: "og:description",
         content: "จัดการข้อมูลหลักและการเชื่อมต่อ LINE พร้อมฐานข้อมูลผู้ใช้งาน",
@@ -220,6 +222,7 @@ export const Route = createFileRoute("/settings")({
 
 function SettingsPage() {
   const [activeTab, setActiveTab] = useState("followers");
+  const [storeName, setStoreName] = useState(() => getSystemStoreName());
 
   // Zone State
   const [zones, setZones] = useState<ZoneItem[]>([]);
@@ -291,6 +294,17 @@ function SettingsPage() {
     setUnits(MasterStore.getUnits());
     setFollowers(MasterStore.getFollowers());
   }, []);
+
+  const handleSaveStoreName = () => {
+    const trimmedName = storeName.trim();
+    if (!trimmedName) {
+      toast.error("กรุณาระบุชื่อร้าน");
+      return;
+    }
+    const updated = PrinterService.saveReceiptConfig({ storeName: trimmedName });
+    setStoreName(updated.storeName);
+    toast.success("บันทึกชื่อร้านเรียบร้อย");
+  };
 
   const syncWithCentralServer = useCallback(async (syncLiveLineFollowers = false) => {
     setIsSyncing(true);
@@ -895,6 +909,29 @@ function SettingsPage() {
             <AlertDescription className="text-xs">{syncStatusMsg}</AlertDescription>
           </Alert>
         ) : null}
+
+        <Card className="rounded-2xl border-primary/20 bg-primary/5">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Store className="size-4 text-primary" /> ชื่อร้านของระบบ
+            </CardTitle>
+            <CardDescription className="text-xs">
+              ชื่อนี้จะแสดงในเมนูหลัก ใบเสร็จ เอกสาร และข้อความที่ส่งผ่าน LINE
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col sm:flex-row gap-2">
+            <Input
+              value={storeName}
+              onChange={(event) => setStoreName(event.target.value)}
+              placeholder="เช่น โชห่วยยุค90s"
+              className="h-10 bg-background"
+              maxLength={80}
+            />
+            <Button onClick={handleSaveStoreName} className="h-10 shrink-0 gap-1.5">
+              <Check className="size-4" /> บันทึกชื่อร้าน
+            </Button>
+          </CardContent>
+        </Card>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
           {/* Responsive Mobile Tabs Grid */}

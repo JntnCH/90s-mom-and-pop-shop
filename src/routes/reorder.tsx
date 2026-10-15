@@ -161,7 +161,7 @@ function getPurchaseOrderFlexItems(po: PurchaseOrderRecord): OrderFlexItem[] {
 export const Route = createFileRoute("/reorder")({
   head: () => ({
     meta: [
-      { title: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | MiniMark" },
+      { title: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | โชห่วยยุค90s" },
       {
         name: "description",
         content:
@@ -169,7 +169,7 @@ export const Route = createFileRoute("/reorder")({
       },
       {
         property: "og:title",
-        content: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | MiniMark",
+        content: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | โชห่วยยุค90s",
       },
       {
         property: "og:description",

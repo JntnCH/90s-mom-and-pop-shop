@@ -51,7 +51,7 @@ export default {
       return new Response(
         JSON.stringify({
           status: "ok",
-          service: "MiniMark",
+          service: "โชห่วยยุค90s",
           uptime: typeof process !== "undefined" && process.uptime ? process.uptime() : 0,
           timestamp: new Date().toISOString(),
         }),

@@ -225,7 +225,7 @@ export function BackupRestoreTab() {
               <Download className="size-5 text-primary" /> สำรองข้อมูลลงเครื่อง (Export JSON)
             </CardTitle>
             <CardDescription className="text-xs">
-              ดาวน์โหลดชุดข้อมูลทั้งหมดของร้าน MiniMark เป็นไฟล์มาตรฐาน JSON
+              ดาวน์โหลดชุดข้อมูลทั้งหมดของร้าน โชห่วยยุค90s เป็นไฟล์มาตรฐาน JSON
               สำหรับจัดเก็บภายนอกหรือย้ายเครื่อง
             </CardDescription>
           </CardHeader>
@@ -294,7 +294,7 @@ export function BackupRestoreTab() {
               <Upload className="size-5 text-emerald-600" /> กู้คืนข้อมูลจากไฟล์ (Restore JSON)
             </CardTitle>
             <CardDescription className="text-xs">
-              นำเข้าไฟล์สำรองข้อมูลของระบบ MiniMark (.json) เพื่อกู้คืนสินค้าและประวัติการทำงาน
+              นำเข้าไฟล์สำรองข้อมูลของระบบ โชห่วยยุค90s (.json) เพื่อกู้คืนสินค้าและประวัติการทำงาน
             </CardDescription>
           </CardHeader>
 
@@ -395,7 +395,7 @@ export function BackupRestoreTab() {
               คืนค่าเริ่มต้นจากโรงงาน (Factory Reset & Seed Demo Data)
             </div>
             <div className="text-muted-foreground text-[11px]">
-              ล้างข้อมูลทั้งหมด และคืนค่ากลับสู่ชุดสินค้าตัวอย่างเริ่มต้นของร้าน MiniMark
+              ล้างข้อมูลทั้งหมด และคืนค่ากลับสู่ชุดสินค้าตัวอย่างเริ่มต้นของร้าน โชห่วยยุค90s
             </div>
           </div>
           <Button
@@ -540,7 +540,7 @@ export function BackupRestoreTab() {
                 ? "ประวัติการรับเข้า-เบิกออก, PO และคิวพิมพ์จะถูกล้างทั้งหมด (สินค้าคงเดิม)"
                 : dangerAction === "CLEAR_MOCK"
                   ? "สินค้าตัวอย่าง, สต็อกทดลอง, PO และประวัติทั้งหมดจะถูกล้างออก เพื่อให้คุณเริ่มต้นบันทึกข้อมูลสินค้าจริงของร้าน"
-                  : "ข้อมูลทั้งหมดจะถูกลบและแทนที่ด้วยชุดข้อมูลเริ่มต้นของ MiniMark"}
+                  : "ข้อมูลทั้งหมดจะถูกลบและแทนที่ด้วยชุดข้อมูลเริ่มต้นของ โชห่วยยุค90s"}
             </DialogDescription>
           </DialogHeader>
 

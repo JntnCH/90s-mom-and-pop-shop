@@ -5,7 +5,7 @@ describe("order-export LINE Flex Message builder", () => {
   const samplePayload: ExportOrderPayload = {
     orderNumber: "PO-20261014-001",
     createdAt: "14/10/2026 10:30",
-    storeName: "ร้าน โชห่วยยุค 90s",
+    storeName: "โชห่วยยุค90s",
     supplierName: "ยี่ปั๊ว เจริญพาณิชย์",
     items: [
       {
@@ -41,7 +41,7 @@ describe("order-export LINE Flex Message builder", () => {
     const record = flex as Record<string, unknown>;
     expect(record["type"]).toBe("flex");
     expect(typeof record["altText"]).toBe("string");
-    expect(record["altText"]).toContain("ร้าน โชห่วยยุค 90s");
+    expect(record["altText"]).toContain("โชห่วยยุค90s");
 
     const contents = record["contents"] as Record<string, unknown>;
     expect(contents).toBeDefined();

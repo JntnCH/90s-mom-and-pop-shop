@@ -67,13 +67,16 @@ import { AuthService, type StaffUser } from "@/lib/auth-rbac";
 export const Route = createFileRoute("/analytics")({
   head: () => ({
     meta: [
-      { title: "รายงานยอดขาย & วิเคราะห์กำไร | MiniMark" },
+      { title: "รายงานยอดขาย & วิเคราะห์กำไร | โชห่วยยุค90s" },
       {
         name: "description",
         content: "รายงานวิเคราะห์ยอดขาย สินค้าขายดี อัตรากำไรขั้นต้น และสินค้าค้างสต็อก",
       },
-      { property: "og:title", content: "รายงานยอดขาย & วิเคราะห์กำไร | MiniMark" },
-      { property: "og:description", content: "รายงานวิเคราะห์ยอดขายและอัตรากำไรของร้าน MiniMark" },
+      { property: "og:title", content: "รายงานยอดขาย & วิเคราะห์กำไร | โชห่วยยุค90s" },
+      {
+        property: "og:description",
+        content: "รายงานวิเคราะห์ยอดขายและอัตรากำไรของร้าน โชห่วยยุค90s",
+      },
     ],
   }),
   component: AnalyticsPage,

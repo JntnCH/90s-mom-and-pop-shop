@@ -199,8 +199,8 @@ export function StaffManagementTab() {
         <CardHeader className="p-4 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <CardTitle className="text-base flex items-center gap-2">
-              <Users className="size-5 text-primary" /> พนักงาน & ผู้ใช้งานในระบบ MiniMark (Phase
-              11)
+              <Users className="size-5 text-primary" /> พนักงาน & ผู้ใช้งานในระบบ โชห่วยยุค90s
+              (Phase 11)
             </CardTitle>
             <CardDescription className="text-xs">
               กำหนดบทบาทและสิทธิ์การเข้าถึงฟังก์ชันต่างๆ ของพนักงานแต่ละคนด้วยรหัส PIN 4 หลัก
@@ -334,7 +334,7 @@ export function StaffManagementTab() {
             Permissions Matrix)
           </CardTitle>
           <CardDescription className="text-xs">
-            เปรียบเทียบสิทธิ์การเข้าถึงแต่ละระบบย่อยตามบทบาทหน้าที่ในร้าน MiniMark
+            เปรียบเทียบสิทธิ์การเข้าถึงแต่ละระบบย่อยตามบทบาทหน้าที่ในร้าน โชห่วยยุค90s
           </CardDescription>
         </CardHeader>
 
@@ -416,7 +416,7 @@ export function StaffManagementTab() {
               {editingUser ? "แก้ไขข้อมูลพนักงาน" : "เพิ่มพนักงานใหม่"}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              กำหนดบทบาทหน้าที่และรหัส PIN สำหรับใช้งานระบบ MiniMark
+              กำหนดบทบาทหน้าที่และรหัส PIN สำหรับใช้งานระบบ โชห่วยยุค90s
             </DialogDescription>
           </DialogHeader>
 

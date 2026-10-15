@@ -1,21 +1,29 @@
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Menu, ScanLine, Store } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { UserSwitcher } from "@/components/auth/UserSwitcher";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { mobileNavItems, navItems } from "@/lib/nav";
+import { DEFAULT_STORE_NAME, getSystemStoreName } from "@/lib/flex-templates";
 import { cn } from "@/lib/utils";
 
 function Brand() {
+  const [storeName, setStoreName] = useState(DEFAULT_STORE_NAME);
+  useEffect(() => {
+    const loadStoreName = () => setStoreName(getSystemStoreName());
+    loadStoreName();
+    window.addEventListener("minimark_receipt_config_change", loadStoreName);
+    return () => window.removeEventListener("minimark_receipt_config_change", loadStoreName);
+  }, []);
   return (
     <div className="flex items-center gap-3 px-4 py-5">
       <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
         <Store className="size-5" />
       </span>
       <span className="leading-tight">
-        <span className="block text-base font-bold text-foreground">MiniMark</span>
+        <span className="block text-base font-bold text-foreground">{storeName}</span>
         <span className="block text-xs text-muted-foreground">ระบบจัดการร้านโชว์ห่วย</span>
       </span>
     </div>
@@ -52,7 +60,14 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
 
 export function AppLayout({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
+  const [storeName, setStoreName] = useState(DEFAULT_STORE_NAME);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  useEffect(() => {
+    const loadStoreName = () => setStoreName(getSystemStoreName());
+    loadStoreName();
+    window.addEventListener("minimark_receipt_config_change", loadStoreName);
+    return () => window.removeEventListener("minimark_receipt_config_change", loadStoreName);
+  }, []);
 
   return (
     <div className="min-h-screen bg-background text-foreground lg:flex">
@@ -106,7 +121,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
               <span className="flex size-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <Store className="size-4" />
               </span>
-              <span className="text-base font-bold text-foreground">MiniMark</span>
+              <span className="text-base font-bold text-foreground">{storeName}</span>
             </Link>
           </div>
 

@@ -1,6 +1,6 @@
 /**
  * Sales Analytics & Profit Margins Engine (Phase 13)
- * MiniMark Grocery & Retail Store Management
+ * โชห่วยยุค90s Grocery & Retail Store Management
  */
 
 import { MasterStore, type CategoryItem, type ProductItem, type StockMovementLog } from "./store";
@@ -344,7 +344,7 @@ export const AnalyticsService = {
     const rows: string[] = [];
 
     // Header
-    rows.push(`"รายงานวิเคราะห์ยอดขายและอัตรากำไร - MiniMark"`);
+    rows.push(`"รายงานวิเคราะห์ยอดขายและอัตรากำไร - โชห่วยยุค90s"`);
     rows.push(`"ช่วงเวลา:", "${summary.timeRange}"`);
     rows.push(`"ยอดขายรวม (บาท):", "${summary.totalRevenue.toFixed(2)}"`);
     rows.push(`"ต้นทุนรวม (บาท):", "${summary.totalCogs.toFixed(2)}"`);

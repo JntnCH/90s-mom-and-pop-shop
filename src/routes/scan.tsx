@@ -72,13 +72,13 @@ import {
 export const Route = createFileRoute("/scan")({
   head: () => ({
     meta: [
-      { title: "สแกน & สร้างบาร์โค้ด | MiniMark" },
+      { title: "สแกน & สร้างบาร์โค้ด | โชห่วยยุค90s" },
       {
         name: "description",
         content:
           "สแกนบาร์โค้ดด้วยกล้องเพื่อดูรายละเอียดสินค้าครบถ้วน ตรวจสอบ Check Digit และพิมพ์บาร์โค้ด",
       },
-      { property: "og:title", content: "สแกน & สร้างบาร์โค้ด | MiniMark" },
+      { property: "og:title", content: "สแกน & สร้างบาร์โค้ด | โชห่วยยุค90s" },
       {
         property: "og:description",
         content: "สแกนบาร์โค้ดและ QR Code เพื่อดูรายละเอียดสินค้าครบวงจร",

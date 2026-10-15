@@ -75,13 +75,13 @@ import {
 export const Route = createFileRoute("/receive")({
   head: () => ({
     meta: [
-      { title: "ตรวจรับสินค้าเข้าสต็อก | MiniMark" },
+      { title: "ตรวจรับสินค้าเข้าสต็อก | โชห่วยยุค90s" },
       {
         name: "description",
         content:
           "ระบบตรวจรับสินค้าเข้าสต็อก ตรวจเช็คเป็นรายไอเทม ตรวจสอบจำนวนที่ได้รับ ส่วนต่างขาด/เกิน และเลือกหน่วยนับ",
       },
-      { property: "og:title", content: "ตรวจรับสินค้าเข้าสต็อก | MiniMark" },
+      { property: "og:title", content: "ตรวจรับสินค้าเข้าสต็อก | โชห่วยยุค90s" },
       {
         property: "og:description",
         content: "ตรวจรับสินค้าเข้า เช็ครายการ ได้สินค้าจริง ขาดเท่าไหร่ และปรับปรุงสต็อกเรียลไทม์",

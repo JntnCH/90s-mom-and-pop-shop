@@ -42,13 +42,13 @@ import { MasterStore, type ReceiveItem, type StockMovementLog } from "@/lib/stor
 export const Route = createFileRoute("/history")({
   head: () => ({
     meta: [
-      { title: "ประวัติรายการ & Movement Log | MiniMark" },
+      { title: "ประวัติรายการ & Movement Log | โชห่วยยุค90s" },
       {
         name: "description",
         content:
           "ประวัติความเคลื่อนไหวสต็อกสินค้า (Stock Movement) รับเข้า จ่ายออก ปรับยอด และประวัติการสแกน",
       },
-      { property: "og:title", content: "ประวัติรายการ & Movement Log | MiniMark" },
+      { property: "og:title", content: "ประวัติรายการ & Movement Log | โชห่วยยุค90s" },
       { property: "og:description", content: "ประวัติรายการความเคลื่อนไหวสต็อกสินค้า" },
     ],
   }),

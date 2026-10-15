@@ -80,7 +80,7 @@ export function GoogleSheetsSyncTab() {
   const [exportMode, setExportMode] = useState<"new" | "existing">("new");
   const [newSheetTitle, setNewSheetTitle] = useState(() => {
     const today = new Date().toLocaleDateString("th-TH").replace(/\//g, "-");
-    return `MiniMark - สินค้า & สต็อก (${today})`;
+    return `โชห่วยยุค90s - สินค้า & สต็อก (${today})`;
   });
   const [selectedSpreadsheetId, setSelectedSpreadsheetId] = useState<string>("");
   const [spreadsheetMetadata, setSpreadsheetMetadata] = useState<{
@@ -222,7 +222,7 @@ export function GoogleSheetsSyncTab() {
     try {
       const rows = buildProductExportRows(products);
       if (exportMode === "new") {
-        const title = newSheetTitle.trim() || "MiniMark Product Catalog";
+        const title = newSheetTitle.trim() || "โชห่วยยุค90s Product Catalog";
         const res = await createNewSpreadsheet(title, "สินค้าทั้งหมด", rows);
         setLastExportUrl(res.spreadsheetUrl);
         toast.success(`ส่งออกสินค้า ${products.length} รายการสู่ Google Sheets สำเร็จ!`);
@@ -298,7 +298,7 @@ export function GoogleSheetsSyncTab() {
     const dataRowCount = importPreviewRows.length - 1;
     setConfirmConfig({
       title: "ยืนยันการนำเข้าข้อมูลสินค้าสู่ระบบร้านค้า?",
-      description: `ระบบจะนำข้อมูลจำนวน ${dataRowCount} รายการ จาก Google Sheets เข้ามาบันทึกและอัปเดตสินค้าในร้าน MiniMark ข้อมูลบาร์โค้ดที่มีอยู่เดิมจะถูกอัปเดตราคาและสต็อก`,
+      description: `ระบบจะนำข้อมูลจำนวน ${dataRowCount} รายการ จาก Google Sheets เข้ามาบันทึกและอัปเดตสินค้าในร้าน โชห่วยยุค90s ข้อมูลบาร์โค้ดที่มีอยู่เดิมจะถูกอัปเดตราคาและสต็อก`,
       onConfirm: async () => {
         await executeImportProducts();
       },
@@ -539,7 +539,7 @@ export function GoogleSheetsSyncTab() {
                     <Input
                       value={newSheetTitle}
                       onChange={(e) => setNewSheetTitle(e.target.value)}
-                      placeholder="เช่น MiniMark - รายการสินค้า 2026"
+                      placeholder="เช่น โชห่วยยุค90s - รายการสินค้า 2026"
                       className="rounded-xl h-10 text-xs"
                     />
                   </div>
