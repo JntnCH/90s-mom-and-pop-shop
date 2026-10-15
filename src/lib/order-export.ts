@@ -8,7 +8,8 @@
  * - Image Canvas Snapshot
  */
 
-import { getSystemStoreName } from "./flex-templates";
+import { getSystemStoreName, type PurchaseOrderFlexOptions } from "./flex-templates";
+import { formatDailyOrderFlexMessage, type OrderFlexItem } from "./line-service";
 
 export interface ExportOrderItem {
   productName: string;
@@ -158,6 +159,83 @@ export function exportOrderToJSON(order: ExportOrderPayload) {
   const jsonStr = JSON.stringify(order, null, 2);
   const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8;" });
   downloadBlob(blob, `PO_${order.orderNumber}.json`);
+}
+
+/**
+ * 3.1 Build populated LINE Flex Message object from order payload
+ */
+export function buildOrderFlexMessageFromPayload(
+  order: ExportOrderPayload,
+  options?: Partial<PurchaseOrderFlexOptions>,
+) {
+  const items: OrderFlexItem[] = order.items.map((i) => ({
+    name: i.productName,
+    quantity: i.quantity,
+    unitName: i.unitName,
+    costPrice: i.costPrice,
+    barcode: i.barcode,
+    categoryName: i.categoryName,
+    zoneName: i.zoneName,
+    priceEstimate: i.total,
+    note: order.note,
+  }));
+
+  return formatDailyOrderFlexMessage(items, order.createdAt, order.storeName, {
+    orderNumber: order.orderNumber,
+    supplierName: order.supplierName,
+    note: order.note,
+    ...options,
+  });
+}
+
+/**
+ * 3.2 Export as LINE Flex Message JSON (.json) ready for LINE Flex Simulator or LINE Bot
+ */
+export function exportOrderToFlexJSON(
+  order: ExportOrderPayload,
+  options?: Partial<PurchaseOrderFlexOptions>,
+) {
+  const flexObj = buildOrderFlexMessageFromPayload(order, options);
+  downloadJsonFile(flexObj, `PO_${order.orderNumber}_flex.json`);
+}
+
+/**
+ * Downloads arbitrary JSON data as a formatted .json file
+ */
+export function downloadJsonFile(data: unknown, filename: string) {
+  const jsonStr = typeof data === "string" ? data : JSON.stringify(data, null, 2);
+  const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8;" });
+  downloadBlob(blob, filename.endsWith(".json") ? filename : `${filename}.json`);
+}
+
+/**
+ * Universal clipboard copy with hidden textarea fallback for iframes
+ */
+export async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback below
+    }
+  }
+  try {
+    const textArea = document.createElement("textarea");
+    textArea.value = text;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    textArea.style.top = "-9999px";
+    textArea.style.opacity = "0";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand("copy");
+    document.body.removeChild(textArea);
+    return Boolean(successful);
+  } catch {
+    return false;
+  }
 }
 
 /**

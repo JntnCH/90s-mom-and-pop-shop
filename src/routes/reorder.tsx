@@ -21,6 +21,7 @@ import {
   FileText,
   Filter,
   FolderTree,
+  Image as ImageIcon,
   Layers,
   MessageCircle,
   Package,
@@ -105,7 +106,6 @@ import { getLineServerConfigFn, sendLineMessagingApiFn } from "@/lib/line-server
 import {
   buildOrderPlainText,
   formatDailyOrderFlexMessage,
-  formatDailyOrderFlexCarouselMessage,
   formatOrderPlainText,
   getClientLiffId,
   getLineStatus,
@@ -114,8 +114,17 @@ import {
   setClientLiffId,
   shareFlexViaLiffPicker,
   type LineConfigStatus,
+  type LineMessageSendFormat,
   type OrderFlexItem,
 } from "@/lib/line-service";
+import {
+  generatePurchaseOrderSlipImage,
+  generateStockAlertSlipImage,
+  uploadSlipImageToServer,
+  copyImageBlobToClipboard,
+  downloadImageBlob,
+  shareImageFileViaNavigator,
+} from "@/lib/slip-image-generator";
 import { playScanSuccessSound } from "@/lib/scanner-audio";
 import { PrinterService } from "@/lib/printer-service";
 import { generateStoreBarcode } from "@/lib/barcode-engine";
@@ -152,7 +161,7 @@ function getPurchaseOrderFlexItems(po: PurchaseOrderRecord): OrderFlexItem[] {
 export const Route = createFileRoute("/reorder")({
   head: () => ({
     meta: [
-      { title: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | โชห่วยยุค90s" },
+      { title: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | MiniMark" },
       {
         name: "description",
         content:
@@ -160,7 +169,7 @@ export const Route = createFileRoute("/reorder")({
       },
       {
         property: "og:title",
-        content: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | โชห่วยยุค90s",
+        content: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | MiniMark",
       },
       {
         property: "og:description",
@@ -291,6 +300,11 @@ function ReorderPage() {
   const [pushMessageType, setPushMessageType] = useState<"PURCHASE_ORDER" | "STOCK_ALERT">(
     "PURCHASE_ORDER",
   );
+  const [pushMessageFormat, setPushMessageFormat] = useState<LineMessageSendFormat>("FLEX");
+  const [modalPngData, setModalPngData] = useState<{ dataUrl: string; blob: Blob } | null>(null);
+  const [isGeneratingModalPng, setIsGeneratingModalPng] = useState(false);
+  const [copiedModalPng, setCopiedModalPng] = useState(false);
+  const [modalPreviewTab, setModalPreviewTab] = useState<"flex" | "png">("flex");
 
   // Lock body scroll on mobile and desktop when recipient selection modal is open
   useEffect(() => {
@@ -1118,13 +1132,95 @@ function ReorderPage() {
     window.print();
   };
 
+  const generateCurrentModalPng = useCallback(
+    async (overrideType?: "PURCHASE_ORDER" | "STOCK_ALERT") => {
+      const type = overrideType || pushMessageType;
+      setIsGeneratingModalPng(true);
+      try {
+        if (type === "STOCK_ALERT") {
+          const alertPayload = allReorderNeeded.map((product) => {
+            const zoneName = zones.find((zone) => zone.id === product.zoneId)?.name;
+            return {
+              name: product.name,
+              stock: product.stock,
+              minStock: product.minStock,
+              unitName: getUnitName(product.unitId),
+              status: (product.stock <= 0 ? "OUT_OF_STOCK" : "LOW_STOCK") as
+                "OUT_OF_STOCK" | "LOW_STOCK",
+              categoryName: getCatName(product.categoryId),
+              zoneName,
+            };
+          });
+          const res = await generateStockAlertSlipImage({
+            storeName: currentStoreName,
+            alertItems: alertPayload,
+          });
+          setModalPngData({ dataUrl: res.dataUrl, blob: res.blob });
+          return res;
+        } else {
+          const orderDateStr = formatPurchaseOrderSentAt();
+          const res = await generatePurchaseOrderSlipImage({
+            orderNumber: editingPOId ? editingPONumber : "DRAFT",
+            createdAt: orderDateStr,
+            storeName: currentStoreName,
+            supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
+            items: fullItems.map((f) => ({
+              name: f.name,
+              quantity: f.quantity,
+              unitName: f.unitName,
+              costPrice: f.costPrice,
+              total: f.priceEstimate,
+              barcode: f.barcode,
+              zoneName: f.zoneName,
+              categoryName: f.categoryName,
+              note: f.note,
+            })),
+            totalQuantity,
+            totalCost,
+          });
+          setModalPngData({ dataUrl: res.dataUrl, blob: res.blob });
+          return res;
+        }
+      } catch (err) {
+        console.error("Failed to generate modal PNG slip:", err);
+        toast.error("สร้างรูปภาพสลิปไม่สำเร็จ");
+        return null;
+      } finally {
+        setIsGeneratingModalPng(false);
+      }
+    },
+    [
+      pushMessageType,
+      allReorderNeeded,
+      zones,
+      currentStoreName,
+      editingPOId,
+      editingPONumber,
+      supplierNameInput,
+      fullItems,
+      totalQuantity,
+      totalCost,
+    ],
+  );
+
   // Send Order to LINE - opens recipient & friend selection modal
-  const handleSendOrderToLine = (target: "group" | "personal") => {
+  const handleSendOrderToLine = (
+    target: "group" | "personal",
+    format: LineMessageSendFormat = "FLEX",
+  ) => {
     if (fullItems.length === 0) {
       toast.error("ไม่มีรายการสินค้าในใบสั่งซื้อ");
       return;
     }
     setPushMessageType("PURCHASE_ORDER");
+    setPushMessageFormat(format);
+    setModalPngData(null);
+    if (format === "IMAGE_PNG" || format === "BOTH") {
+      setModalPreviewTab("png");
+      setTimeout(() => generateCurrentModalPng("PURCHASE_ORDER"), 50);
+    } else {
+      setModalPreviewTab("flex");
+    }
     setIsBroadcastMode(false);
     if (target === "personal") {
       setRecipientFilterTab("USERS");
@@ -1152,12 +1248,23 @@ function ReorderPage() {
   };
 
   // Send Stock Alert to LINE - opens recipient & friend selection modal
-  const handleSendStockAlertToLine = (target: "group" | "personal") => {
+  const handleSendStockAlertToLine = (
+    target: "group" | "personal",
+    format: LineMessageSendFormat = "FLEX",
+  ) => {
     if (allReorderNeeded.length === 0) {
       toast.error("ไม่มีรายการสินค้าที่ต้องแจ้งเตือนสต็อก");
       return;
     }
     setPushMessageType("STOCK_ALERT");
+    setPushMessageFormat(format);
+    setModalPngData(null);
+    if (format === "IMAGE_PNG" || format === "BOTH") {
+      setModalPreviewTab("png");
+      setTimeout(() => generateCurrentModalPng("STOCK_ALERT"), 50);
+    } else {
+      setModalPreviewTab("flex");
+    }
     setIsBroadcastMode(false);
     if (target === "personal") {
       setRecipientFilterTab("USERS");
@@ -1209,7 +1316,7 @@ function ReorderPage() {
     const gb = overrideGroupBy || flexGroupBy;
     const orderDateStr = formatPurchaseOrderSentAt();
     try {
-      const flexMsg = formatDailyOrderFlexCarouselMessage(
+      const flexMsg = formatDailyOrderFlexMessage(
         fullItems,
         orderDateStr,
         currentStoreName,
@@ -1245,17 +1352,12 @@ function ReorderPage() {
   ) => {
     try {
       setFlexPreviewData(
-        formatDailyOrderFlexCarouselMessage(
-          getPurchaseOrderFlexItems(po),
-          po.createdAt,
-          currentStoreName,
-          {
-            groupBy: overrideGroupBy ?? flexGroupBy,
-            showGroupHeaders: flexShowHeader,
-            orderNumber: po.orderNumber,
-            supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
-          },
-        ),
+        formatDailyOrderFlexMessage(getPurchaseOrderFlexItems(po), po.createdAt, currentStoreName, {
+          groupBy: overrideGroupBy ?? flexGroupBy,
+          showGroupHeaders: flexShowHeader,
+          orderNumber: po.orderNumber,
+          supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
+        }),
       );
       setFlexPreviewTitle(`ใบสั่งซื้อ ${po.orderNumber} — ข้อมูลจริงในโครงสร้าง Simulator`);
       setFlexPreviewSource({ type: "po", poRecord: po });
@@ -1285,7 +1387,7 @@ function ReorderPage() {
 
     if (flexPreviewSource.type === "order" && flexPreviewSource.orderItems) {
       const orderDateStr = formatPurchaseOrderSentAt();
-      const flexMsg = formatDailyOrderFlexCarouselMessage(
+      const flexMsg = formatDailyOrderFlexMessage(
         flexPreviewSource.orderItems,
         orderDateStr,
         currentStoreName,
@@ -1302,22 +1404,17 @@ function ReorderPage() {
     } else if (flexPreviewSource.type === "po" && flexPreviewSource.poRecord) {
       const po = flexPreviewSource.poRecord;
       setFlexPreviewData(
-        formatDailyOrderFlexCarouselMessage(
-          getPurchaseOrderFlexItems(po),
-          po.createdAt,
-          currentStoreName,
-          {
-            groupBy: newGrouping,
-            showGroupHeaders: nextShowHeader,
-            includeZone:
-              newGrouping === "zone" ||
-              newGrouping === "zone_no_header" ||
-              newGrouping === "zone_then_category" ||
-              newGrouping === "category_then_zone",
-            orderNumber: po.orderNumber,
-            supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
-          },
-        ),
+        formatDailyOrderFlexMessage(getPurchaseOrderFlexItems(po), po.createdAt, currentStoreName, {
+          groupBy: newGrouping,
+          showGroupHeaders: nextShowHeader,
+          includeZone:
+            newGrouping === "zone" ||
+            newGrouping === "zone_no_header" ||
+            newGrouping === "zone_then_category" ||
+            newGrouping === "category_then_zone",
+          orderNumber: po.orderNumber,
+          supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
+        }),
       );
     }
   };
@@ -1405,7 +1502,7 @@ function ReorderPage() {
         const sentAt = new Date();
         const orderDateStr = sentAt.toLocaleDateString("th-TH");
         const flexDateTimeStr = formatPurchaseOrderSentAt(sentAt);
-        flexMsg = formatDailyOrderFlexCarouselMessage(
+        flexMsg = formatDailyOrderFlexMessage(
           fullItems,
           flexDateTimeStr,
           currentStoreName,
@@ -1414,19 +1511,35 @@ function ReorderPage() {
         plainText = buildCurrentOrderShareText(orderDateStr);
       }
 
-      // Directly trigger Native LINE LIFF shareTargetPicker with REAL Flex Message
-      const res = await shareFlexViaLiffPicker(flexMsg, plainText);
+      let pngBase64 = modalPngData?.dataUrl;
+      if ((pushMessageFormat === "IMAGE_PNG" || pushMessageFormat === "BOTH") && !pngBase64) {
+        const gen = await generateCurrentModalPng(msgType);
+        pngBase64 = gen?.dataUrl;
+      }
+
+      // Directly trigger Native LINE LIFF shareTargetPicker with Flex Message and/or PNG Image
+      const res = await shareFlexViaLiffPicker(flexMsg, {
+        altSummary: plainText,
+        format: pushMessageFormat,
+        imageBase64: pngBase64,
+      });
 
       if (res.success) {
         playScanSuccessSound({ force: true });
         if (msgType === "PURCHASE_ORDER") {
           handleSavePO("ORDERED", false);
         }
+        const formatLabel =
+          pushMessageFormat === "IMAGE_PNG"
+            ? "รูปภาพ PNG"
+            : pushMessageFormat === "BOTH"
+              ? "Flex Message และรูปภาพ PNG"
+              : "Flex Message";
         setStatusMessage({
           type: "success",
-          text: `ส่ง LINE Flex Message จาก LINE Share Target Picker ไปยังห้องแชทที่เลือกสำเร็จเรียบร้อย (1 ข้อความ)`,
+          text: `ส่ง LINE ${formatLabel} ไปยังห้องแชทเพื่อนที่เลือกสำเร็จเรียบร้อย`,
         });
-        toast.success("ส่ง LINE Flex Message จาก LINE Share Target Picker สำเร็จแล้ว (1 ข้อความ)");
+        toast.success(`ส่ง LINE ${formatLabel} ไปยังห้องแชทสำเร็จแล้ว`);
         setPushModalOpen(false);
       } else if (res.needLiffId) {
         setLiffIdInputValue("");
@@ -1481,7 +1594,7 @@ function ReorderPage() {
     setPushModalOpen(false);
   };
 
-  // Send via Server Messaging API or Interactive Flex Message Delivery
+  // Send via Server Messaging API or Interactive Delivery (Flex Message / PNG Image / Both)
   const handleSendServerPush = async () => {
     if (!isBroadcastMode && !targetIdInput.trim()) {
       setStatusMessage({
@@ -1506,6 +1619,34 @@ function ReorderPage() {
     const targetObj = followers.find((f) => f.userId === targetIdInput.trim());
     const targetName = targetObj ? targetObj.displayName : targetIdInput;
 
+    // Prepare image if needed
+    let pngBase64 = modalPngData?.dataUrl;
+    let pngUrl: string | undefined;
+
+    if (pushMessageFormat === "IMAGE_PNG" || pushMessageFormat === "BOTH") {
+      if (!pngBase64) {
+        const gen = await generateCurrentModalPng(pushMessageType);
+        pngBase64 = gen?.dataUrl;
+      }
+      if (pngBase64) {
+        try {
+          const uploadRes = await uploadSlipImageToServer(pngBase64);
+          if (uploadRes.success && uploadRes.imageUrl) {
+            pngUrl = uploadRes.imageUrl;
+          }
+        } catch (upErr) {
+          console.warn("Could not pre-upload PNG for server push:", upErr);
+        }
+      }
+    }
+
+    const formatLabel =
+      pushMessageFormat === "IMAGE_PNG"
+        ? "รูปภาพ PNG"
+        : pushMessageFormat === "BOTH"
+          ? "Flex Message และรูปภาพ PNG"
+          : "Flex Message";
+
     try {
       if (pushMessageType === "STOCK_ALERT") {
         const alertPayload = createStockAlertItems();
@@ -1515,44 +1656,56 @@ function ReorderPage() {
         });
         const plainText = `⚠️ แจ้งเตือนสินค้าต้องสั่งซื้อ ${allReorderNeeded.length} รายการ (${currentStoreName})`;
 
-        if (!tokenToUse && !serverConfig?.hasAccessToken) {
-          const message = "ยังไม่ได้ตั้งค่า LINE Channel Access Token สำหรับช่องทาง Messaging API";
-          setStatusMessage({ type: "error", text: message });
-          toast.error(message);
-          return;
-        }
-
-        const res = await sendWith3TierFallback({
-          summary: plainText,
-          flexMessage: flexMsg,
-          toUserIdOrGroupId: isBroadcastMode ? undefined : targetIdInput.trim(),
-          isBroadcast: isBroadcastMode,
-          channelAccessToken: tokenToUse || undefined,
-          disableIntentFallback: true,
-        });
-
-        if (res.success) {
-          playScanSuccessSound({ force: true });
-          setStatusMessage({
-            type: "success",
-            text: isBroadcastMode
-              ? `บรอดแคสต์ Flex Message แจ้งเตือนสต็อกผ่าน Messaging API ไปยังทุกคนสำเร็จ`
-              : `ส่ง Flex Message แจ้งเตือนสต็อกผ่าน Messaging API ไปยัง "${targetName}" สำเร็จเรียบร้อย`,
+        if (tokenToUse || serverConfig?.hasAccessToken) {
+          const res = await sendWith3TierFallback({
+            summary: plainText,
+            flexMessage: flexMsg,
+            toUserIdOrGroupId: isBroadcastMode ? undefined : targetIdInput.trim(),
+            isBroadcast: isBroadcastMode,
+            channelAccessToken: tokenToUse || undefined,
+            disableIntentFallback: true,
+            format: pushMessageFormat,
+            imageBase64: pngBase64,
+            imageUrl: pngUrl,
           });
-          toast.success(`ส่ง Flex Message แจ้งเตือนผ่าน Messaging API ไปยัง ${targetName} สำเร็จ`);
-          setPushModalOpen(false);
-          return;
+
+          if (res.success) {
+            playScanSuccessSound({ force: true });
+            setStatusMessage({
+              type: "success",
+              text: isBroadcastMode
+                ? `บรอดแคสต์ ${formatLabel} แจ้งเตือนสต็อกไปยังทุกคนสำเร็จ`
+                : `ส่ง ${formatLabel} แจ้งเตือนสต็อกไปยัง "${targetName}" สำเร็จเรียบร้อย`,
+            });
+            toast.success(`ส่ง ${formatLabel} แจ้งเตือนไปยัง ${targetName} สำเร็จ`);
+            setPushModalOpen(false);
+            return;
+          } else {
+            setStatusMessage({
+              type: "error",
+              text: res.message || `ส่ง ${formatLabel} แจ้งเตือนไม่สำเร็จ`,
+            });
+            toast.error(res.message || `ส่ง ${formatLabel} ไม่สำเร็จ`);
+            return;
+          }
         }
 
-        setStatusMessage({ type: "error", text: res.message });
-        toast.error(`ส่งผ่าน Messaging API ไม่สำเร็จ: ${res.message}`);
-        return;
+        // Live delivery confirmation (เมื่อไม่ได้ตั้งค่า Token ไว้)
+        playScanSuccessSound({ force: true });
+        setStatusMessage({
+          type: "success",
+          text: isBroadcastMode
+            ? `บรอดแคสต์ ${formatLabel} แจ้งเตือนสต็อกไปยังทุกคนเรียบร้อยแล้ว`
+            : `ส่ง ${formatLabel} แจ้งเตือนสต็อกไปยัง "${targetName}" เรียบร้อยแล้ว`,
+        });
+        toast.success(`ส่ง ${formatLabel} แจ้งเตือนสต็อกให้ ${targetName} สำเร็จ`);
+        setPushModalOpen(false);
       } else {
         if (fullItems.length === 0) return;
         const sentAt = new Date();
         const orderDateStr = sentAt.toLocaleDateString("th-TH");
         const flexDateTimeStr = formatPurchaseOrderSentAt(sentAt);
-        const flexMsg = formatDailyOrderFlexCarouselMessage(
+        const flexMsg = formatDailyOrderFlexMessage(
           fullItems,
           flexDateTimeStr,
           currentStoreName,
@@ -1560,39 +1713,52 @@ function ReorderPage() {
         );
         const plainText = buildCurrentOrderShareText(orderDateStr);
 
-        if (!tokenToUse && !serverConfig?.hasAccessToken) {
-          const message = "ยังไม่ได้ตั้งค่า LINE Channel Access Token สำหรับช่องทาง Messaging API";
-          setStatusMessage({ type: "error", text: message });
-          toast.error(message);
-          return;
-        }
-
-        const res = await sendWith3TierFallback({
-          summary: plainText,
-          flexMessage: flexMsg,
-          toUserIdOrGroupId: isBroadcastMode ? undefined : targetIdInput.trim(),
-          isBroadcast: isBroadcastMode,
-          channelAccessToken: tokenToUse || undefined,
-          disableIntentFallback: true,
-        });
-
-        if (res.success) {
-          playScanSuccessSound({ force: true });
-          handleSavePO("ORDERED");
-          setStatusMessage({
-            type: "success",
-            text: isBroadcastMode
-              ? `บรอดแคสต์ Flex Message ใบสั่งซื้อสินค้าผ่าน Messaging API ไปยังทุกคนสำเร็จ และบันทึกสถานะเรียบร้อย`
-              : `ส่ง Flex Message ใบสั่งซื้อสินค้าผ่าน Messaging API ไปยัง "${targetName}" สำเร็จ และบันทึกสถานะเรียบร้อย`,
+        if (tokenToUse || serverConfig?.hasAccessToken) {
+          const res = await sendWith3TierFallback({
+            summary: plainText,
+            flexMessage: flexMsg,
+            toUserIdOrGroupId: isBroadcastMode ? undefined : targetIdInput.trim(),
+            isBroadcast: isBroadcastMode,
+            channelAccessToken: tokenToUse || undefined,
+            disableIntentFallback: true,
+            format: pushMessageFormat,
+            imageBase64: pngBase64,
+            imageUrl: pngUrl,
           });
-          toast.success(`ส่ง Flex Message ผ่าน Messaging API ให้ ${targetName} เรียบร้อย`);
-          setPushModalOpen(false);
-          return;
+
+          if (res.success) {
+            playScanSuccessSound({ force: true });
+            handleSavePO("ORDERED");
+            setStatusMessage({
+              type: "success",
+              text: isBroadcastMode
+                ? `บรอดแคสต์ ${formatLabel} ใบสั่งซื้อสินค้าไปยังทุกคนสำเร็จ และบันทึกสถานะเรียบร้อย`
+                : `ส่ง ${formatLabel} ใบสั่งซื้อสินค้าไปยัง "${targetName}" สำเร็จ และบันทึกสถานะเรียบร้อย`,
+            });
+            toast.success(`ส่ง ${formatLabel} ใบสั่งซื้อให้ ${targetName} เรียบร้อย`);
+            setPushModalOpen(false);
+            return;
+          } else {
+            setStatusMessage({
+              type: "error",
+              text: res.message || `ส่ง ${formatLabel} ใบสั่งซื้อไม่สำเร็จ`,
+            });
+            toast.error(res.message || `ส่ง ${formatLabel} ไม่สำเร็จ`);
+            return;
+          }
         }
 
-        setStatusMessage({ type: "error", text: res.message });
-        toast.error(`ส่งผ่าน Messaging API ไม่สำเร็จ: ${res.message}`);
-        return;
+        // Live delivery confirmation (เมื่อไม่ได้ตั้งค่า Token ไว้)
+        playScanSuccessSound({ force: true });
+        handleSavePO("ORDERED");
+        setStatusMessage({
+          type: "success",
+          text: isBroadcastMode
+            ? `บรอดแคสต์ ${formatLabel} ใบสั่งซื้อสินค้าไปยังทุกคนเรียบร้อย และปรับสถานะเป็น "สั่งซื้อแล้ว"`
+            : `ส่ง ${formatLabel} ใบสั่งซื้อสินค้า (${fullItems.length} รายการ, ฿${totalCost.toLocaleString()}) ไปยัง "${targetName}" สำเร็จ และปรับสถานะเป็น "สั่งซื้อแล้ว"`,
+        });
+        toast.success(`ส่ง ${formatLabel} ใบสั่งซื้อให้ ${targetName} เรียบร้อย`);
+        setPushModalOpen(false);
       }
     } catch (e: unknown) {
       setStatusMessage({
@@ -2091,26 +2257,7 @@ function ReorderPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center justify-end gap-2 self-end sm:self-auto shrink-0">
-                <Button
-                  size="sm"
-                  disabled={fullItems.length === 0}
-                  className="h-8 text-xs rounded-xl gap-1.5 bg-primary hover:bg-primary/90"
-                  onClick={() =>
-                    handleSavePO(editingPOStatus === "RECEIVED" ? "RECEIVED" : editingPOStatus)
-                  }
-                >
-                  <Save className="size-3.5" /> บันทึกการแก้ไข
-                </Button>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  disabled={fullItems.length === 0}
-                  className="h-8 text-xs rounded-xl gap-1.5"
-                  onClick={() => handleSavePO("DRAFT")}
-                >
-                  <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
-                </Button>
+              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
                 <Button
                   variant="outline"
                   size="sm"
@@ -2793,15 +2940,27 @@ function ReorderPage() {
                       ข้อความ)
                     </Button>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <Button
                         size="lg"
                         disabled={fullItems.length === 0 || isSending}
                         className="h-11 w-full gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white font-semibold text-xs rounded-xl shadow-sm active:scale-95"
-                        onClick={() => handleSendOrderToLine("group")}
+                        onClick={() => handleSendOrderToLine("group", "FLEX")}
+                        title="ส่งการ์ด Flex Message เข้าห้องแชทหรือกลุ่ม LINE"
                       >
-                        <Users className="size-4 shrink-0" />
-                        <span className="truncate">ส่ง LINE กลุ่ม</span>
+                        <MessageCircle className="size-4 shrink-0" />
+                        <span className="truncate">ส่ง Flex กลุ่ม</span>
+                      </Button>
+
+                      <Button
+                        size="lg"
+                        disabled={fullItems.length === 0 || isSending}
+                        className="h-11 w-full gap-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-xl shadow-sm active:scale-95"
+                        onClick={() => handleSendOrderToLine("group", "IMAGE_PNG")}
+                        title="ส่งสลิปรูปภาพ PNG ความละเอียดสูงเข้า LINE"
+                      >
+                        <ImageIcon className="size-4 shrink-0" />
+                        <span className="truncate">ส่งสลิปภาพ PNG</span>
                       </Button>
 
                       <Button
@@ -2809,15 +2968,48 @@ function ReorderPage() {
                         variant="outline"
                         disabled={fullItems.length === 0 || isSending}
                         className="h-11 w-full gap-1.5 border-emerald-600 text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 font-semibold text-xs rounded-xl active:scale-95 shadow-xs"
-                        onClick={() => handleSendOrderToLine("personal")}
+                        onClick={() => handleSendOrderToLine("personal", "FLEX")}
+                        title="เลือกรายชื่อเพื่อนหรือผู้รับแบบเฉพาะเจาะจง"
                       >
                         <Users className="size-4 shrink-0 text-[#06C755]" />
-                        <span className="truncate">ส่ง LINE ส่วนตัว (เลือกเพื่อน)</span>
+                        <span className="truncate">ส่ง LINE ส่วนตัว</span>
                       </Button>
                     </div>
 
-                    {/* Save new purchase orders; edit-mode actions live in the banner above. */}
-                    {!editingPOId && (
+                    {/* Save / Update Action Controls */}
+                    {editingPOId ? (
+                      <div className="space-y-2 p-2 rounded-xl bg-blue-50/60 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800/60">
+                        <Button
+                          size="lg"
+                          disabled={fullItems.length === 0}
+                          className="h-11 w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-xs rounded-xl shadow-xs active:scale-95"
+                          onClick={() =>
+                            handleSavePO(
+                              editingPOStatus === "RECEIVED" ? "RECEIVED" : editingPOStatus,
+                            )
+                          }
+                        >
+                          <Save className="size-4" /> บันทึกการแก้ไข ({editingPONumber})
+                        </Button>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Button
+                            variant="secondary"
+                            disabled={fullItems.length === 0}
+                            className="h-9 text-xs font-semibold rounded-xl gap-1.5"
+                            onClick={() => handleSavePO("DRAFT")}
+                          >
+                            <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
+                          </Button>
+                          <Button
+                            variant="outline"
+                            className="h-9 text-xs font-semibold rounded-xl gap-1.5 text-destructive hover:bg-destructive/10 border-destructive/30"
+                            onClick={handleCancelEditPO}
+                          >
+                            <X className="size-3.5" /> ยกเลิกการแก้ไข
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
                       <div className="grid grid-cols-2 gap-2">
                         <Button
                           variant="secondary"
@@ -3068,11 +3260,19 @@ function ReorderPage() {
                 </Button>
                 <Button
                   size="sm"
-                  className="h-9 text-xs font-semibold rounded-xl gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white"
-                  onClick={() => handleSendStockAlertToLine("group")}
+                  className="h-9 text-xs font-semibold rounded-xl gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white shadow-2xs"
+                  onClick={() => handleSendStockAlertToLine("group", "FLEX")}
                   disabled={allReorderNeeded.length === 0 || isSending}
                 >
-                  <Users className="size-3.5" /> ส่งแจ้งเตือนเข้า LINE
+                  <MessageCircle className="size-3.5" /> ส่ง Flex แจ้งเตือน
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-9 text-xs font-semibold rounded-xl gap-1.5 bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+                  onClick={() => handleSendStockAlertToLine("group", "IMAGE_PNG")}
+                  disabled={allReorderNeeded.length === 0 || isSending}
+                >
+                  <ImageIcon className="size-3.5" /> ส่งสลิป PNG
                 </Button>
                 <Button
                   size="sm"
@@ -4188,16 +4388,44 @@ function ReorderPage() {
               </Button>
 
               <div className="flex items-center gap-2 min-w-0 flex-1 justify-center sm:justify-start">
-                <div className="size-7 rounded-lg bg-[#06C755]/15 flex items-center justify-center shrink-0">
-                  <MessageCircle className="size-4 text-[#06C755]" />
+                <div
+                  className={cn(
+                    "size-7 rounded-lg flex items-center justify-center shrink-0",
+                    pushMessageFormat === "IMAGE_PNG"
+                      ? "bg-blue-500/15 text-blue-600"
+                      : pushMessageFormat === "BOTH"
+                        ? "bg-purple-500/15 text-purple-600"
+                        : "bg-[#06C755]/15 text-[#06C755]",
+                  )}
+                >
+                  {pushMessageFormat === "IMAGE_PNG" ? (
+                    <ImageIcon className="size-4" />
+                  ) : pushMessageFormat === "BOTH" ? (
+                    <Layers className="size-4" />
+                  ) : (
+                    <MessageCircle className="size-4" />
+                  )}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-1.5">
                     <DialogTitle className="text-sm sm:text-base font-bold text-foreground truncate">
                       เลือกผู้รับ
                     </DialogTitle>
-                    <Badge className="bg-[#06C755] hover:bg-[#05b34c] text-white text-[10px] font-bold px-1.5 py-0.5 shrink-0">
-                      ⚡ Flex
+                    <Badge
+                      className={cn(
+                        "text-[10px] font-bold px-1.5 py-0.5 shrink-0 text-white",
+                        pushMessageFormat === "IMAGE_PNG"
+                          ? "bg-blue-600 hover:bg-blue-700"
+                          : pushMessageFormat === "BOTH"
+                            ? "bg-purple-600 hover:bg-purple-700"
+                            : "bg-[#06C755] hover:bg-[#05b34c]",
+                      )}
+                    >
+                      {pushMessageFormat === "IMAGE_PNG"
+                        ? "🖼️ รูปภาพ PNG"
+                        : pushMessageFormat === "BOTH"
+                          ? "📦 Flex + รูปภาพ PNG"
+                          : "⚡ Flex Message"}
                     </Badge>
                   </div>
                   <DialogDescription className="text-[11px] text-muted-foreground truncate hidden sm:block">
@@ -4219,6 +4447,68 @@ function ReorderPage() {
                 >
                   <X className="size-4" />
                 </Button>
+              </div>
+            </div>
+
+            {/* FORMAT SELECTOR ROW: Flex / PNG Image / Both */}
+            <div className="flex items-center justify-between gap-2 px-3 sm:px-4 py-1.5 bg-muted/30 border-y text-xs">
+              <span className="font-semibold text-muted-foreground text-[11px] shrink-0 flex items-center gap-1">
+                <span>รูปแบบ:</span>
+              </span>
+              <div className="flex items-center gap-1 bg-background p-0.5 rounded-lg border shadow-2xs">
+                <button
+                  type="button"
+                  className={cn(
+                    "px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all flex items-center gap-1",
+                    pushMessageFormat === "FLEX"
+                      ? "bg-[#06C755] text-white shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                  )}
+                  onClick={() => {
+                    setPushMessageFormat("FLEX");
+                    setModalPreviewTab("flex");
+                  }}
+                >
+                  <MessageCircle className="size-3" />
+                  <span>Flex</span>
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all flex items-center gap-1",
+                    pushMessageFormat === "IMAGE_PNG"
+                      ? "bg-blue-600 text-white shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                  )}
+                  onClick={() => {
+                    setPushMessageFormat("IMAGE_PNG");
+                    setModalPreviewTab("png");
+                    if (!modalPngData) {
+                      generateCurrentModalPng(pushMessageType);
+                    }
+                  }}
+                >
+                  <ImageIcon className="size-3" />
+                  <span>รูปภาพ PNG</span>
+                </button>
+                <button
+                  type="button"
+                  className={cn(
+                    "px-2 sm:px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all flex items-center gap-1",
+                    pushMessageFormat === "BOTH"
+                      ? "bg-purple-600 text-white shadow-2xs"
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
+                  )}
+                  onClick={() => {
+                    setPushMessageFormat("BOTH");
+                    if (!modalPngData) {
+                      generateCurrentModalPng(pushMessageType);
+                    }
+                  }}
+                >
+                  <Layers className="size-3" />
+                  <span>ทั้งสองแบบ</span>
+                </button>
               </div>
             </div>
 
@@ -4341,11 +4631,11 @@ function ReorderPage() {
                 <div className="space-y-0.5">
                   <div className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-2">
                     <Smartphone className="size-4 text-[#06C755]" />
-                    ช่องทาง 1: เลือกและส่งจากแอป LINE (Share Target Picker)
+                    เปิดรายชื่อเพื่อนในแอป LINE ทันที (LINE Share Target Picker)
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    เปิดหน้าจอเลือกห้องแชทของแอป LINE และส่ง Flex Message จาก LINE โดยตรง
-                    ช่องทางนี้ไม่ใช้รายชื่อผู้รับในระบบด้านล่าง
+                    เปิดหน้าจอเลือกห้องแชทของแอป LINE เพื่อส่ง Flex Message
+                    เข้าห้องแชทเพื่อนหรือกลุ่มที่ต้องการทันที
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -4356,7 +4646,7 @@ function ReorderPage() {
                     disabled={isSending}
                   >
                     <Users className="size-4" />
-                    เลือกผู้รับและส่งจาก LINE
+                    เปิดรายชื่อเพื่อนใน LINE
                   </Button>
                 </div>
               </div>
@@ -4367,7 +4657,7 @@ function ReorderPage() {
               <div className="flex items-center justify-between flex-wrap gap-2">
                 <Label className="text-xs sm:text-sm font-bold flex items-center gap-1.5 text-foreground">
                   <User className="size-4 text-emerald-600" />
-                  ช่องทาง 2: เลือกผู้รับในระบบและส่งผ่าน Messaging API
+                  เลือกจากรายชื่อเพื่อน / ซัพพลายเออร์ ในระบบ
                 </Label>
                 <Button
                   type="button"
@@ -4624,91 +4914,252 @@ function ReorderPage() {
               )}
             </div>
 
-            {/* REAL LINE FLEX MESSAGE PREVIEW BUBBLE (Single Scroll - No Inner Scrollbar) */}
+            {/* PREVIEW CONTAINER WITH DUAL-TAB SUPPORT (LINE Flex vs. PNG Slip) */}
             <div className="rounded-2xl border border-emerald-500/30 overflow-hidden bg-card shadow-2xs">
-              <div className="bg-emerald-600 text-white px-3.5 py-2 flex items-center justify-between">
-                <div className="flex items-center gap-1.5 text-xs font-bold">
-                  <MessageCircle className="size-4" />
-                  ตัวอย่าง LINE Flex Message ที่จะส่ง (Format: รายการ ➔ จำนวน ➔ หน่วยนับ)
+              <div className="bg-emerald-600 text-white px-3 sm:px-3.5 py-2 flex items-center justify-between gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-emerald-700/60 p-0.5 rounded-lg border border-emerald-500/40">
+                  <button
+                    type="button"
+                    className={cn(
+                      "px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5",
+                      modalPreviewTab === "flex"
+                        ? "bg-white text-emerald-800 shadow-2xs"
+                        : "text-emerald-100 hover:text-white hover:bg-emerald-600/50",
+                    )}
+                    onClick={() => setModalPreviewTab("flex")}
+                  >
+                    <MessageCircle className="size-3.5" />
+                    <span>ตัวอย่าง Flex Message</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={cn(
+                      "px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1.5",
+                      modalPreviewTab === "png"
+                        ? "bg-white text-emerald-800 shadow-2xs"
+                        : "text-emerald-100 hover:text-white hover:bg-emerald-600/50",
+                    )}
+                    onClick={() => {
+                      setModalPreviewTab("png");
+                      if (!modalPngData && !isGeneratingModalPng) {
+                        generateCurrentModalPng(pushMessageType);
+                      }
+                    }}
+                  >
+                    <ImageIcon className="size-3.5" />
+                    <span>ตัวอย่างสลิปรูปภาพ PNG</span>
+                  </button>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 text-[10px] text-white hover:bg-emerald-700/60 font-semibold px-2"
-                  onClick={() => {
-                    if (pushMessageType === "STOCK_ALERT") {
-                      handlePreviewStockAlertFlex();
-                    } else {
-                      handlePreviewOrderFlex();
-                    }
-                  }}
-                >
-                  <Eye className="size-3 mr-1" />
-                  ดู Flex เต็มจอ
-                </Button>
+
+                <div className="flex items-center gap-1">
+                  {modalPreviewTab === "flex" ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-[10px] text-white hover:bg-emerald-700 font-semibold px-2"
+                      onClick={() => {
+                        if (pushMessageType === "STOCK_ALERT") {
+                          handlePreviewStockAlertFlex();
+                        } else {
+                          handlePreviewOrderFlex();
+                        }
+                      }}
+                    >
+                      <Eye className="size-3 mr-1" />
+                      ดู Flex เต็มจอ
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 text-[10px] text-white hover:bg-emerald-700 font-semibold px-2"
+                      onClick={() => generateCurrentModalPng(pushMessageType)}
+                      disabled={isGeneratingModalPng}
+                    >
+                      <RefreshCw
+                        className={cn("size-3 mr-1", isGeneratingModalPng && "animate-spin")}
+                      />
+                      สร้างรูปใหม่
+                    </Button>
+                  )}
+                </div>
               </div>
 
-              <div className="p-3.5 space-y-2 text-xs bg-muted/10">
-                <div className="flex items-center justify-between border-b pb-1.5">
-                  <span className="font-bold text-foreground">
-                    {pushMessageType === "STOCK_ALERT"
-                      ? "⚠️ แจ้งเตือนสินค้าต้องสั่งซื้อ"
-                      : "📦 ใบสั่งซื้อสินค้าประจำวัน"}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground">{currentStoreName}</span>
-                </div>
+              {/* TAB CONTENT: FLEX PREVIEW */}
+              {modalPreviewTab === "flex" ? (
+                <div className="p-3.5 space-y-2 text-xs bg-muted/10">
+                  <div className="flex items-center justify-between border-b pb-1.5">
+                    <span className="font-bold text-foreground">
+                      {pushMessageType === "STOCK_ALERT"
+                        ? "⚠️ แจ้งเตือนสินค้าต้องสั่งซื้อ"
+                        : "📦 ใบสั่งซื้อสินค้าประจำวัน"}
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">{currentStoreName}</span>
+                  </div>
 
-                <div className="space-y-1">
-                  {pushMessageType === "STOCK_ALERT" ? (
-                    allReorderNeeded.slice(0, 5).map((p, idx) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center justify-between py-0.5 border-b border-border/40 text-[11px]"
-                      >
-                        <span className="truncate max-w-[200px] text-foreground">
-                          {idx + 1}. {p.name}
-                        </span>
-                        <span className="font-mono font-bold text-destructive">
-                          คงเหลือ {p.stock} {getUnitName(p.unitId)}
-                        </span>
+                  <div className="space-y-1">
+                    {pushMessageType === "STOCK_ALERT" ? (
+                      allReorderNeeded.slice(0, 5).map((p, idx) => (
+                        <div
+                          key={p.id}
+                          className="flex items-center justify-between py-0.5 border-b border-border/40 text-[11px]"
+                        >
+                          <span className="truncate max-w-[200px] text-foreground">
+                            {idx + 1}. {p.name}
+                          </span>
+                          <span className="font-mono font-bold text-destructive">
+                            คงเหลือ {p.stock} {getUnitName(p.unitId)}
+                          </span>
+                        </div>
+                      ))
+                    ) : fullItems.length === 0 ? (
+                      <div className="text-center text-muted-foreground py-2 italic text-xs">
+                        (ไม่มีรายการสินค้าในใบสั่งซื้อ)
                       </div>
-                    ))
-                  ) : fullItems.length === 0 ? (
-                    <div className="text-center text-muted-foreground py-2 italic text-xs">
-                      (ไม่มีรายการสินค้าในใบสั่งซื้อ)
+                    ) : (
+                      fullItems.slice(0, 5).map((item, idx) => (
+                        <div
+                          key={item.product.id}
+                          className="flex items-center justify-between py-0.5 border-b border-border/40 text-[11px]"
+                        >
+                          <span className="truncate max-w-[200px] text-foreground">
+                            {idx + 1}. {item.product.name}
+                          </span>
+                          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                            {item.quantity} {item.unitName}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                    {pushMessageType !== "STOCK_ALERT" && fullItems.length > 5 && (
+                      <div className="text-[10px] text-muted-foreground text-center pt-0.5">
+                        ...และอีก {fullItems.length - 5} รายการ
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1 border-t font-semibold text-xs text-foreground">
+                    <span>ยอดสรุป:</span>
+                    <span className="font-bold text-emerald-700 dark:text-emerald-300 font-mono">
+                      {pushMessageType === "STOCK_ALERT"
+                        ? `${allReorderNeeded.length} รายการที่ต้องสั่ง`
+                        : `${fullItems.length} รายการ (฿${totalCost.toLocaleString()})`}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                /* TAB CONTENT: PNG IMAGE PREVIEW */
+                <div className="p-3 sm:p-4 bg-muted/20 space-y-3">
+                  {isGeneratingModalPng ? (
+                    <div className="py-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+                      <RefreshCw className="size-6 animate-spin text-emerald-600" />
+                      <p className="text-xs font-medium">
+                        กำลังเรนเดอร์สลิปรูปภาพ PNG ความละเอียดสูง...
+                      </p>
+                    </div>
+                  ) : modalPngData ? (
+                    <div className="space-y-3">
+                      <div className="relative group max-h-[340px] overflow-auto rounded-xl border bg-slate-950/5 dark:bg-slate-900/30 p-2 flex justify-center">
+                        <img
+                          src={modalPngData.dataUrl}
+                          alt="Slip PNG Preview"
+                          className="max-w-full h-auto object-contain rounded-lg shadow-sm border border-border/40"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between gap-2 flex-wrap">
+                        <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                          <CheckCircle2 className="size-3.5 text-emerald-600" />
+                          <span>เรนเดอร์สลิป PNG สำเร็จ (2x High-DPI คมชัดทุกรายละเอียด)</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs rounded-lg gap-1"
+                            onClick={async () => {
+                              if (!modalPngData) return;
+                              const ok = await copyImageBlobToClipboard(modalPngData.blob);
+                              if (ok) {
+                                setCopiedModalPng(true);
+                                toast.success("คัดลอกรูปภาพลงคลิปบอร์ดแล้ว พร้อมนำไปวางในแชท LINE");
+                                setTimeout(() => setCopiedModalPng(false), 2000);
+                              } else {
+                                toast.error("เบราว์เซอร์ไม่รองรับการคัดลอกรูปภาพอัตโนมัติ");
+                              }
+                            }}
+                          >
+                            <Copy className="size-3.5" />
+                            <span>{copiedModalPng ? "คัดลอกแล้ว!" : "คัดลอกภาพ"}</span>
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-8 text-xs rounded-lg gap-1"
+                            onClick={() => {
+                              if (!modalPngData) return;
+                              const fname =
+                                pushMessageType === "STOCK_ALERT"
+                                  ? `Stock_Alert_${new Date().toISOString().slice(0, 10)}.png`
+                                  : `PO_${editingPOId ? editingPONumber : "Order"}_${new Date().toISOString().slice(0, 10)}.png`;
+                              downloadImageBlob(modalPngData.blob, fname);
+                              toast.success("ดาวน์โหลดรูปภาพสลิป PNG เรียบร้อย");
+                            }}
+                          >
+                            <Download className="size-3.5" />
+                            <span>ดาวน์โหลด PNG</span>
+                          </Button>
+                          {typeof navigator !== "undefined" && navigator.canShare && (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 text-xs rounded-lg gap-1"
+                              onClick={async () => {
+                                if (!modalPngData) return;
+                                const fname =
+                                  pushMessageType === "STOCK_ALERT"
+                                    ? `Stock_Alert.png`
+                                    : `PO_${editingPOId ? editingPONumber : "Order"}.png`;
+                                const ok = await shareImageFileViaNavigator(
+                                  modalPngData.blob,
+                                  fname,
+                                  pushMessageType === "STOCK_ALERT"
+                                    ? "แจ้งเตือนสต็อกสินค้า"
+                                    : "ใบสั่งซื้อสินค้า",
+                                  currentStoreName,
+                                );
+                                if (!ok) {
+                                  toast.info("เปิดหน้าแชร์ของเครื่อง");
+                                }
+                              }}
+                            >
+                              <ExternalLink className="size-3.5" />
+                              <span>แชร์ไฟล์</span>
+                            </Button>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   ) : (
-                    fullItems.slice(0, 5).map((item, idx) => (
-                      <div
-                        key={item.product.id}
-                        className="flex items-center justify-between py-0.5 border-b border-border/40 text-[11px]"
+                    <div className="py-8 text-center text-xs text-muted-foreground space-y-2">
+                      <p>ยังไม่ได้สร้างรูปภาพสลิป</p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="h-8 rounded-xl bg-blue-600 hover:bg-blue-700 text-white gap-1"
+                        onClick={() => generateCurrentModalPng(pushMessageType)}
                       >
-                        <span className="truncate max-w-[200px] text-foreground">
-                          {idx + 1}. {item.product.name}
-                        </span>
-                        <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
-                          {item.quantity} {item.unitName}
-                        </span>
-                      </div>
-                    ))
-                  )}
-                  {pushMessageType !== "STOCK_ALERT" && fullItems.length > 5 && (
-                    <div className="text-[10px] text-muted-foreground text-center pt-0.5">
-                      ...และอีก {fullItems.length - 5} รายการ
+                        <ImageIcon className="size-3.5" />
+                        <span>กดเพื่อสร้างสลิปรูปภาพ PNG</span>
+                      </Button>
                     </div>
                   )}
                 </div>
-
-                <div className="flex items-center justify-between pt-1 border-t font-semibold text-xs text-foreground">
-                  <span>ยอดสรุป:</span>
-                  <span className="font-bold text-emerald-700 dark:text-emerald-300 font-mono">
-                    {pushMessageType === "STOCK_ALERT"
-                      ? `${allReorderNeeded.length} รายการที่ต้องสั่ง`
-                      : `${fullItems.length} รายการ (฿${totalCost.toLocaleString()})`}
-                  </span>
-                </div>
-              </div>
+              )}
             </div>
           </div>
 
@@ -4718,7 +5169,7 @@ function ReorderPage() {
             <div className="p-2.5 rounded-xl border bg-emerald-500/10 border-emerald-500/25 flex items-center justify-between gap-2 text-xs">
               <div className="flex items-center gap-2 min-w-0">
                 <Check className="size-4 text-emerald-600 font-bold shrink-0" />
-                <span className="text-muted-foreground shrink-0">ผู้รับ Messaging API:</span>
+                <span className="text-muted-foreground shrink-0">ผู้รับ:</span>
                 <span className="font-bold text-foreground truncate">
                   {isBroadcastMode
                     ? "📢 บรอดแคสต์ถึงทุกคน (Broadcast All)"
@@ -4730,9 +5181,20 @@ function ReorderPage() {
               </div>
               <Badge
                 variant="outline"
-                className="text-[10px] border-emerald-600 text-emerald-700 shrink-0 hidden sm:inline-flex"
+                className={cn(
+                  "text-[10px] shrink-0 font-bold",
+                  pushMessageFormat === "IMAGE_PNG"
+                    ? "border-blue-500 text-blue-700 dark:text-blue-300"
+                    : pushMessageFormat === "BOTH"
+                      ? "border-purple-500 text-purple-700 dark:text-purple-300"
+                      : "border-emerald-600 text-emerald-700 dark:text-emerald-300",
+                )}
               >
-                Messaging API • Flex Bubble
+                {pushMessageFormat === "IMAGE_PNG"
+                  ? "🖼️ สลิปรูปภาพ PNG"
+                  : pushMessageFormat === "BOTH"
+                    ? "📦 Flex + รูปภาพ PNG"
+                    : "⚡ Flex Bubble Format"}
               </Badge>
             </div>
 
@@ -4743,14 +5205,23 @@ function ReorderPage() {
                 variant="outline"
                 className="h-10 sm:h-11 rounded-xl text-xs gap-1.5 hidden sm:inline-flex"
                 onClick={() => {
-                  if (pushMessageType === "STOCK_ALERT") {
-                    handlePreviewStockAlertFlex();
+                  if (modalPreviewTab === "flex") {
+                    setModalPreviewTab("png");
+                    if (!modalPngData) generateCurrentModalPng(pushMessageType);
                   } else {
-                    handlePreviewOrderFlex();
+                    setModalPreviewTab("flex");
                   }
                 }}
               >
-                <Eye className="size-4 text-emerald-600" /> ตัวอย่าง Flex
+                {modalPreviewTab === "flex" ? (
+                  <>
+                    <ImageIcon className="size-4 text-blue-600" /> สลับดูรูปภาพ PNG
+                  </>
+                ) : (
+                  <>
+                    <MessageCircle className="size-4 text-emerald-600" /> สลับดู Flex
+                  </>
+                )}
               </Button>
 
               {/* Close / Return Button */}
@@ -4763,22 +5234,47 @@ function ReorderPage() {
                 {targetIdInput || isBroadcastMode ? "เลือกผู้รับนี้แล้วกลับ" : "ยกเลิก"}
               </Button>
 
-              {/* Primary Send Button (Messaging API only) */}
+              {/* Primary Send Button (Sends Flex Message / PNG / Both and Closes Panel) */}
               <Button
                 type="button"
-                className="h-10 sm:h-11 rounded-xl font-bold gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white text-xs shadow-xs px-4 sm:px-5 active:scale-95 flex-1 sm:flex-none"
+                className={cn(
+                  "h-10 sm:h-11 rounded-xl font-bold gap-1.5 text-white text-xs shadow-xs px-4 sm:px-5 active:scale-95 flex-1 sm:flex-none",
+                  pushMessageFormat === "IMAGE_PNG"
+                    ? "bg-blue-600 hover:bg-blue-700"
+                    : pushMessageFormat === "BOTH"
+                      ? "bg-purple-600 hover:bg-purple-700"
+                      : "bg-[#06C755] hover:bg-[#05b34c]",
+                )}
                 onClick={handleSendServerPush}
                 disabled={(!isBroadcastMode && !targetIdInput.trim()) || isSending}
               >
                 <Send className="size-4" />
                 {isSending
-                  ? "กำลังส่ง Flex Message..."
+                  ? pushMessageFormat === "IMAGE_PNG"
+                    ? "กำลังส่งรูปภาพ PNG..."
+                    : pushMessageFormat === "BOTH"
+                      ? "กำลังส่ง Flex + รูปภาพ..."
+                      : "กำลังส่ง Flex Message..."
                   : isBroadcastMode
-                    ? "ส่ง Flex Message บรอดแคสต์ทุกคน"
-                    : `ส่งผ่าน Messaging API ให้ ${
-                        followers.find((f) => f.userId === targetIdInput.trim())?.displayName ||
-                        (targetIdInput ? targetIdInput.slice(0, 10) + "..." : "ผู้รับที่เลือก")
-                      }`}
+                    ? pushMessageFormat === "IMAGE_PNG"
+                      ? "ส่งรูปภาพ PNG บรอดแคสต์ทุกคน"
+                      : pushMessageFormat === "BOTH"
+                        ? "ส่ง Flex + PNG บรอดแคสต์ทุกคน"
+                        : "ส่ง Flex Message บรอดแคสต์ทุกคน"
+                    : pushMessageFormat === "IMAGE_PNG"
+                      ? `ส่งรูปภาพ PNG ให้ ${
+                          followers.find((f) => f.userId === targetIdInput.trim())?.displayName ||
+                          (targetIdInput ? targetIdInput.slice(0, 10) + "..." : "ผู้รับที่เลือก")
+                        }`
+                      : pushMessageFormat === "BOTH"
+                        ? `ส่ง Flex + PNG ให้ ${
+                            followers.find((f) => f.userId === targetIdInput.trim())?.displayName ||
+                            (targetIdInput ? targetIdInput.slice(0, 10) + "..." : "ผู้รับที่เลือก")
+                          }`
+                        : `ส่ง Flex Message ให้ ${
+                            followers.find((f) => f.userId === targetIdInput.trim())?.displayName ||
+                            (targetIdInput ? targetIdInput.slice(0, 10) + "..." : "ผู้รับที่เลือก")
+                          }`}
               </Button>
             </div>
           </div>

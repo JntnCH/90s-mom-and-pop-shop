@@ -65,6 +65,68 @@ export default {
       );
     }
 
+    // Serve LINE PNG Image Messages for Messaging API & LIFF Target Picker
+    if (url.pathname.startsWith("/api/line-image")) {
+      const { getLineImage, storeLineImageFromBase64 } = await import("./lib/line-image-storage");
+
+      // Handle upload of image (POST /api/line-image/upload)
+      if (url.pathname === "/api/line-image/upload" && request.method === "POST") {
+        try {
+          const body = (await request.json()) as { imageBase64?: string; id?: string };
+          if (!body.imageBase64) {
+            return new Response(
+              JSON.stringify({ success: false, error: "imageBase64 is required" }),
+              { status: 400, headers: { "content-type": "application/json" } },
+            );
+          }
+
+          const imageId = storeLineImageFromBase64(body.imageBase64, body.id);
+          const proto =
+            request.headers.get("x-forwarded-proto") || url.protocol.replace(":", "") || "https";
+          const host =
+            request.headers.get("x-forwarded-host") || request.headers.get("host") || url.host;
+          const imageUrl = `${proto}://${host}/api/line-image/${imageId}.png`;
+
+          return new Response(JSON.stringify({ success: true, imageId, imageUrl }), {
+            status: 200,
+            headers: {
+              "content-type": "application/json",
+              "access-control-allow-origin": "*",
+            },
+          });
+        } catch (err) {
+          return new Response(JSON.stringify({ success: false, error: String(err) }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          });
+        }
+      }
+
+      // Handle retrieve of image (GET /api/line-image/:id[.png])
+      if (request.method === "GET") {
+        const pathParts = url.pathname.split("/").filter(Boolean);
+        const filename = pathParts[pathParts.length - 1] || "";
+        const stored = getLineImage(filename);
+
+        if (stored) {
+          return new Response(new Uint8Array(stored.buffer), {
+            status: 200,
+            headers: {
+              "content-type": stored.contentType || "image/png",
+              "cache-control": "public, max-age=604800, immutable",
+              "content-disposition": `inline; filename="${filename}"`,
+              "access-control-allow-origin": "*",
+            },
+          });
+        }
+
+        return new Response("Image not found or expired", {
+          status: 404,
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        });
+      }
+    }
+
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

@@ -29,7 +29,6 @@ export interface PurchaseOrderFlexTemplateData {
   note?: string | undefined;
   groupBy?: FlexItemGroupBy | undefined;
   showGroupHeaders?: boolean | undefined;
-  itemIndexOffset?: number | undefined;
 }
 
 export type FlexSimulatorMessage = JsonRecord & {
@@ -299,7 +298,7 @@ function getItemValue(
         : formatMoney(data.totalCost);
     case "index":
     case "number":
-      return index === undefined ? undefined : String(index + 1 + (data.itemIndexOffset ?? 0));
+      return index === undefined ? undefined : String(index + 1);
     case "groupname":
     case "group":
     case "headertitle":
@@ -310,7 +309,7 @@ function getItemValue(
       return data.items
         .map(
           (orderItem, itemIndex) =>
-            `${itemIndex + 1 + (data.itemIndexOffset ?? 0)}. ${orderItem.productName} — ${orderItem.quantity} ${orderItem.unitName}`,
+            `${itemIndex + 1}. ${orderItem.productName} — ${orderItem.quantity} ${orderItem.unitName}`,
         )
         .join("\n");
     default:
@@ -389,7 +388,7 @@ function renderItemRow(
     if (currentCell === 0) {
       const numberingMatch = rawText.match(/^(\s*)\d+([.)]\s*)/);
       const numbering = numberingMatch
-        ? `${numberingMatch[1]}${index + 1 + (data.itemIndexOffset ?? 0)}${numberingMatch[2]}`
+        ? `${numberingMatch[1]}${index + 1}${numberingMatch[2]}`
         : "";
       replacement = `${numbering}${item.productName}`;
     } else if (currentCell === 1) {

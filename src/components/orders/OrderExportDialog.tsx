@@ -5,6 +5,7 @@ import {
   FileCode2,
   FileSpreadsheet,
   FileText,
+  MessageCircle,
   Printer,
   Share2,
 } from "lucide-react";
@@ -23,6 +24,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   exportOrderToCSV,
+  exportOrderToFlexJSON,
   exportOrderToJSON,
   exportOrderToTXT,
   printOrderAsPDF,
@@ -85,6 +87,42 @@ export function OrderExportDialog({ open, onOpenChange, orderPayload }: OrderExp
             </span>
             <span>{orderPayload.createdAt}</span>
           </div>
+        </div>
+
+        {/* Featured Option: LINE Flex Message (.JSON) */}
+        <div className="pt-1 pb-0.5">
+          <button
+            type="button"
+            className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-[#06C755]/40 bg-emerald-50/60 dark:bg-emerald-950/30 hover:border-[#06C755] hover:bg-emerald-100/50 dark:hover:bg-emerald-950/50 transition-all text-left group active:scale-98"
+            onClick={() => {
+              exportOrderToFlexJSON(orderPayload);
+              toast.success(
+                "ดาวน์โหลดไฟล์ LINE Flex Message (.json) สำเร็จ พร้อมใช้ใน LINE Simulator",
+              );
+            }}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="size-9 rounded-xl bg-[#06C755] text-white flex items-center justify-center shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                <MessageCircle className="size-5 fill-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-xs font-bold text-emerald-900 dark:text-emerald-100">
+                    LINE Flex Message (.JSON)
+                  </span>
+                  <Badge className="bg-[#06C755] text-white text-[9px] h-4 px-1.5 font-semibold">
+                    ยอดนิยม
+                  </Badge>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                  โครงสร้าง Flex Message สำเร็จรูปสำหรับ LINE Simulator & LINE Bot
+                </p>
+              </div>
+            </div>
+            <div className="size-8 rounded-lg bg-emerald-600/10 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shrink-0 ml-2">
+              <Download className="size-4" />
+            </div>
+          </button>
         </div>
 
         {/* File Format Options Grid */}

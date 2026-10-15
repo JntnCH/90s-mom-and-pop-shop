@@ -96,9 +96,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "โชห่วยยุค90s — ระบบจัดการร้านโชห่วยยุค90s" },
-      { name: "description", content: "จัดการสินค้า สต็อก และการสั่งซื้อสำหรับร้านโชห่วยยุค90s" },
-      { property: "og:title", content: "โชห่วยยุค90s— ระบบจัดการร้านโชห่วยยุค90s" },
+      { title: "MiniMark — ระบบจัดการร้านโชว์ห่วย" },
+      { name: "description", content: "จัดการสินค้า สต็อก และการสั่งซื้อสำหรับร้านโชว์ห่วย" },
+      { property: "og:title", content: "MiniMark — ระบบจัดการร้านโชว์ห่วย" },
       {
         property: "og:description",
         content: "จัดการสินค้า สต็อก และการสั่งซื้อสำหรับร้านโชว์ห่วย",

@@ -115,19 +115,6 @@ describe("Flex Message Template Customization (Separated Qty/Unit & Large Font)"
     expect(requiredAt(productRow.contents, 2).size).toBe("md");
   });
 
-  it("continues item numbering when rendering the next Flex card", () => {
-    const flex = createPurchaseOrderFlexBubble(
-      [
-        { name: "รายการที่ 21", quantity: 1, unitName: "ชิ้น" },
-        { name: "รายการที่ 22", quantity: 1, unitName: "ชิ้น" },
-      ],
-      { groupBy: "none", showGroupHeaders: false, itemIndexOffset: 20 },
-    );
-
-    expect(JSON.stringify(flex)).toContain("21. รายการที่ 21");
-    expect(JSON.stringify(flex)).toContain("22. รายการที่ 22");
-  });
-
   it("always enforces 3 columns (รายการสินค้า, จำนวน, หน่วยนับ) without 2 columns", () => {
     const flex = createPurchaseOrderFlexBubble(
       [

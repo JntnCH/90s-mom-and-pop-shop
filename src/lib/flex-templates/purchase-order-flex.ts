@@ -41,7 +41,6 @@ export interface PurchaseOrderFlexOptions {
   fontSize?: ("large" | "medium") | undefined;
   separateQuantityUnit?: boolean | undefined;
   includeZone?: boolean | undefined;
-  itemIndexOffset?: number | undefined;
 }
 
 /**
@@ -100,7 +99,7 @@ export function createPurchaseOrderFlexBubble(
   const groupedList = groupAndSortFlexItems(items, { groupBy, includeZone });
 
   const itemRows: Record<string, unknown>[] = [];
-  let globalIndex = options.itemIndexOffset ?? 0;
+  let globalIndex = 0;
 
   groupedList.forEach((grp, grpIdx) => {
     // Add stylish group header banner if enabled and multiple or named groups exist

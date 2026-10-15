@@ -18,10 +18,15 @@ import type {
   ZoneItem,
 } from "./store";
 
+export type LineMessageSendFormat = "FLEX" | "IMAGE_PNG" | "BOTH";
+
 export interface SendLineOrderPayload {
   toUserIdOrGroupId?: string | undefined;
   orderSummary: string;
   flexMessage?: unknown;
+  imageBase64?: string | undefined;
+  imageUrl?: string | undefined;
+  format?: LineMessageSendFormat | undefined;
   channelAccessToken?: string | undefined;
   isBroadcast?: boolean;
 }
@@ -653,21 +658,42 @@ export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
     }
 
     // Prepare message payload
+    let rawFlex = data.flexMessage;
+    if (typeof rawFlex === "string") {
+      try {
+        rawFlex = JSON.parse(rawFlex);
+      } catch {
+        // ignore
+      }
+    }
+
     let messageObj: unknown;
-    if (data.flexMessage && typeof data.flexMessage === "object") {
-      const flexData = data.flexMessage as Record<string, unknown>;
+    if (rawFlex && typeof rawFlex === "object") {
+      const flexData = rawFlex as Record<string, unknown>;
+      const altSummary = (data.orderSummary || "LINE Flex Message").trim() || "LINE Flex Message";
       if (flexData["type"] === "flex") {
-        messageObj = flexData;
+        const altText =
+          typeof flexData["altText"] === "string" && flexData["altText"].trim()
+            ? flexData["altText"]
+            : altSummary;
+        messageObj = {
+          ...flexData,
+          altText,
+        };
       } else if (flexData["type"] === "bubble" || flexData["type"] === "carousel") {
         messageObj = {
           type: "flex",
-          altText: data.orderSummary || "LINE Flex Message",
+          altText: altSummary,
           contents: flexData,
         };
       } else if (flexData["contents"]) {
+        const altText =
+          typeof flexData["altText"] === "string" && flexData["altText"].trim()
+            ? flexData["altText"]
+            : altSummary;
         messageObj = {
           type: "flex",
-          altText: (flexData["altText"] as string) || data.orderSummary || "LINE Flex Message",
+          altText,
           contents: flexData["contents"],
         };
       } else {
@@ -683,6 +709,57 @@ export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
       };
     }
 
+    // Prepare Image Message if requested
+    const sendFormat = data.format || "FLEX";
+    let imageMessageObj: Record<string, unknown> | null = null;
+
+    if (sendFormat === "IMAGE_PNG" || sendFormat === "BOTH") {
+      let finalImageUrl = data.imageUrl?.trim() || "";
+
+      if (!finalImageUrl && data.imageBase64?.trim()) {
+        try {
+          const { storeLineImageFromBase64 } = await import("./line-image-storage");
+          const imageId = storeLineImageFromBase64(data.imageBase64);
+          const baseOrigin =
+            process.env["APP_URL"] ||
+            process.env["VERCEL_URL"] ||
+            process.env["RENDER_EXTERNAL_URL"] ||
+            "https://ais-dev-jc3utk43pgkkismwy5v6xn-837009735838.asia-east1.run.app";
+          const cleanOrigin = baseOrigin.startsWith("http") ? baseOrigin : `https://${baseOrigin}`;
+          finalImageUrl = `${cleanOrigin}/api/line-image/${imageId}.png`;
+        } catch (imgErr) {
+          console.warn("Could not cache base64 image on server:", imgErr);
+        }
+      }
+
+      if (finalImageUrl) {
+        imageMessageObj = {
+          type: "image",
+          originalContentUrl: finalImageUrl,
+          previewImageUrl: finalImageUrl,
+        };
+      }
+    }
+
+    // Assemble final messages array for LINE API
+    let messagesToSend: unknown[] = [];
+    if (sendFormat === "IMAGE_PNG") {
+      if (imageMessageObj) {
+        messagesToSend = [imageMessageObj];
+      } else {
+        // Fallback to text if image URL generation failed
+        messagesToSend = [messageObj];
+      }
+    } else if (sendFormat === "BOTH") {
+      if (imageMessageObj) {
+        messagesToSend = [messageObj, imageMessageObj];
+      } else {
+        messagesToSend = [messageObj];
+      }
+    } else {
+      messagesToSend = [messageObj];
+    }
+
     try {
       const endpoint = isBroadcast
         ? "https://api.line.me/v2/bot/message/broadcast"
@@ -691,8 +768,8 @@ export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
 
       for (const recipient of recipients) {
         const requestBody = isBroadcast
-          ? { messages: [messageObj] }
-          : { to: recipient, messages: [messageObj] };
+          ? { messages: messagesToSend }
+          : { to: recipient, messages: messagesToSend };
 
         const result = await callLineMessagingApiWithRetry(endpoint, token, requestBody);
 

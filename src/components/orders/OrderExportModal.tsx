@@ -8,17 +8,29 @@ import {
   FileCode,
   Image as ImageIcon,
   Loader2,
+  MessageCircle,
   MessageSquare,
   Printer,
   Share2,
+  SlidersHorizontal,
+  Sparkles,
 } from "lucide-react";
-import React, { useRef, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   createNewSpreadsheet,
   getGoogleAccessToken,
   signInWithGoogle,
 } from "@/lib/google-sheets-service";
+import { FlexMessageVisualizer } from "@/components/line/FlexMessageVisualizer";
+import type { FlexItemGroupBy } from "@/lib/flex-templates";
+import {
+  buildOrderFlexMessageFromPayload,
+  copyTextToClipboard,
+  downloadJsonFile,
+} from "@/lib/order-export";
+import { shareFlexViaLiffPicker } from "@/lib/line-service";
+import { shareImageFileViaNavigator } from "@/lib/slip-image-generator";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -62,13 +74,49 @@ interface OrderExportModalProps {
 }
 
 export function OrderExportModal({ open, onOpenChange, payload }: OrderExportModalProps) {
-  const [activeTab, setActiveTab] = useState<"pdf" | "excel" | "image" | "text" | "json">("pdf");
+  const [activeTab, setActiveTab] = useState<"pdf" | "excel" | "image" | "flex" | "text" | "json">(
+    "pdf",
+  );
   const [copiedText, setCopiedText] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageBlobUrl, setImageBlobUrl] = useState<string | null>(null);
   const printDocRef = useRef<HTMLDivElement>(null);
   const [isExportingGoogleSheets, setIsExportingGoogleSheets] = useState(false);
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState<string | null>(null);
+  const [isSendingLineImage, setIsSendingLineImage] = useState(false);
+
+  const [flexGroupBy, setFlexGroupBy] = useState<FlexItemGroupBy>("category_no_header");
+  const [copiedFlexJson, setCopiedFlexJson] = useState(false);
+
+  const currentFlexMessage = useMemo(() => {
+    if (!payload) return null;
+    return buildOrderFlexMessageFromPayload(payload, {
+      groupBy: flexGroupBy,
+      showGroupHeaders:
+        flexGroupBy !== "none" &&
+        flexGroupBy !== "category_no_header" &&
+        flexGroupBy !== "zone_no_header",
+    });
+  }, [payload, flexGroupBy]);
+
+  const handleDownloadFlexJSON = () => {
+    if (!payload || !currentFlexMessage) return;
+    downloadJsonFile(currentFlexMessage, `PO_${payload.orderNumber}_flex.json`);
+    toast.success("ดาวน์โหลดไฟล์ LINE Flex Message (.json) สำเร็จ");
+  };
+
+  const handleCopyFlexJSON = async () => {
+    if (!currentFlexMessage) return;
+    const jsonStr = JSON.stringify(currentFlexMessage, null, 2);
+    const success = await copyTextToClipboard(jsonStr);
+    if (success) {
+      setCopiedFlexJson(true);
+      toast.success("คัดลอก Flex Message JSON สำเร็จ นำไปวางใน LINE Simulator ได้ทันที");
+      setTimeout(() => setCopiedFlexJson(false), 2000);
+    } else {
+      toast.error("ไม่สามารถคัดลอกได้ กรุณาใช้ปุ่มดาวน์โหลด .json");
+    }
+  };
 
   if (!payload) return null;
 
@@ -413,6 +461,67 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
     }
   };
 
+  const handleShareImageToLine = async () => {
+    try {
+      setIsSendingLineImage(true);
+      let dataUrl = "";
+      if (imageCanvasRef.current) {
+        dataUrl = imageCanvasRef.current.toDataURL("image/png");
+      }
+      if (!dataUrl) {
+        handleGenerateImage();
+        await new Promise((r) => setTimeout(r, 200));
+        if (imageCanvasRef.current) {
+          dataUrl = imageCanvasRef.current.toDataURL("image/png");
+        }
+      }
+      if (!dataUrl) {
+        toast.error("กรุณากดสร้างรูปภาพสลิปก่อนส่งเข้า LINE");
+        return;
+      }
+
+      const res = await shareFlexViaLiffPicker(null, {
+        format: "IMAGE_PNG",
+        imageBase64: dataUrl,
+        altSummary: `📦 รูปภาพสลิปใบสั่งซื้อ ${payload.orderNumber} (${payload.storeName})`,
+      });
+
+      if (res.success) {
+        toast.success("ส่งรูปภาพสลิป PNG เข้าแชท LINE สำเร็จแล้ว");
+      } else if (res.needLiffId) {
+        toast.error("กรุณาระบุ LINE LIFF ID ในการตั้งค่า LINE ก่อนเปิดแผ่นเลือกเพื่อน");
+      } else {
+        toast.error(res.message || "ส่งรูปภาพเข้า LINE ไม่สำเร็จ");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSendingLineImage(false);
+    }
+  };
+
+  const handleWebShareImage = async () => {
+    if (!imageBlobUrl) {
+      handleGenerateImage();
+      return;
+    }
+    try {
+      const response = await fetch(imageBlobUrl);
+      const blob = await response.blob();
+      const ok = await shareImageFileViaNavigator(
+        blob,
+        `PO-${payload.orderNumber}-slip.png`,
+        `ใบสั่งซื้อ ${payload.orderNumber}`,
+        `ใบสั่งซื้อ ${payload.orderNumber} จาก ${payload.storeName}`,
+      );
+      if (!ok) {
+        toast.info("เปิดการแชร์บนอุปกรณ์");
+      }
+    } catch {
+      toast.error("ไม่สามารถแชร์รูปภาพได้");
+    }
+  };
+
   // 4. Plain Text Formatted
   const formattedText = `📦 ใบสั่งซื้อสินค้า (Purchase Order) — ${payload.storeName}
 เลขที่: ${payload.orderNumber}
@@ -471,24 +580,31 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
           }}
           className="space-y-4 pt-2"
         >
-          <TabsList className="grid grid-cols-5 w-full h-11 p-1 bg-muted rounded-xl">
-            <TabsTrigger value="pdf" className="text-xs gap-1.5 rounded-lg font-medium">
+          <TabsList className="grid grid-cols-3 sm:grid-cols-6 w-full h-auto p-1 bg-muted rounded-xl gap-1">
+            <TabsTrigger value="pdf" className="text-xs gap-1.5 rounded-lg font-medium py-2">
               <FileText className="size-3.5" />
               <span className="hidden sm:inline">เอกสาร</span> PDF / A4
             </TabsTrigger>
-            <TabsTrigger value="excel" className="text-xs gap-1.5 rounded-lg font-medium">
+            <TabsTrigger value="excel" className="text-xs gap-1.5 rounded-lg font-medium py-2">
               <FileSpreadsheet className="size-3.5 text-emerald-600" />
               Excel / CSV
             </TabsTrigger>
-            <TabsTrigger value="image" className="text-xs gap-1.5 rounded-lg font-medium">
+            <TabsTrigger value="image" className="text-xs gap-1.5 rounded-lg font-medium py-2">
               <ImageIcon className="size-3.5 text-blue-600" />
               <span className="hidden sm:inline">รูปภาพ</span> สลิป PNG
             </TabsTrigger>
-            <TabsTrigger value="text" className="text-xs gap-1.5 rounded-lg font-medium">
+            <TabsTrigger
+              value="flex"
+              className="text-xs gap-1.5 rounded-lg font-medium py-2 text-[#06C755] dark:text-[#06C755] data-[state=active]:bg-background data-[state=active]:text-[#06C755] data-[state=active]:font-bold"
+            >
+              <MessageCircle className="size-3.5 fill-[#06C755]/20" />
+              <span className="hidden sm:inline">LINE</span> Flex
+            </TabsTrigger>
+            <TabsTrigger value="text" className="text-xs gap-1.5 rounded-lg font-medium py-2">
               <MessageSquare className="size-3.5 text-amber-600" />
               ข้อความแชท
             </TabsTrigger>
-            <TabsTrigger value="json" className="text-xs gap-1.5 rounded-lg font-medium">
+            <TabsTrigger value="json" className="text-xs gap-1.5 rounded-lg font-medium py-2">
               <FileCode className="size-3.5 text-purple-600" />
               JSON Data
             </TabsTrigger>
@@ -715,6 +831,18 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
               </p>
               <div className="flex flex-wrap gap-2 pt-2">
                 <Button
+                  className="gap-2 rounded-xl font-bold bg-[#06C755] hover:bg-[#05b34c] text-white shadow-2xs"
+                  onClick={handleShareImageToLine}
+                  disabled={isSendingLineImage || isGeneratingImage}
+                >
+                  {isSendingLineImage ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <MessageCircle className="size-4" />
+                  )}
+                  {isSendingLineImage ? "กำลังส่ง..." : "ส่งรูปภาพสลิปเข้า LINE (Share Picker)"}
+                </Button>
+                <Button
                   className="gap-2 rounded-xl font-semibold bg-blue-600 hover:bg-blue-700 text-white"
                   onClick={handleDownloadImage}
                   disabled={isGeneratingImage}
@@ -727,8 +855,18 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                   onClick={handleCopyImageToClipboard}
                   disabled={!imageBlobUrl || isGeneratingImage}
                 >
-                  <Copy className="size-4" /> คัดลอกรูปภาพลง Clipboard (Copy Image)
+                  <Copy className="size-4" /> คัดลอกภาพลง Clipboard
                 </Button>
+                {typeof navigator !== "undefined" && navigator.canShare && (
+                  <Button
+                    variant="outline"
+                    className="gap-2 rounded-xl font-semibold border-muted-foreground/30 text-foreground"
+                    onClick={handleWebShareImage}
+                    disabled={isGeneratingImage}
+                  >
+                    <Share2 className="size-4" /> แชร์รูปภาพ (Share)
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -749,6 +887,99 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                   กดเพื่อสร้างตัวอย่างภาพสลิป
                 </Button>
               )}
+            </div>
+          </TabsContent>
+
+          {/* TAB: LINE FLEX MESSAGE */}
+          <TabsContent value="flex" className="space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 bg-muted/40 p-3 rounded-xl border">
+              <div>
+                <h3 className="font-semibold text-xs sm:text-sm text-foreground flex items-center gap-1.5">
+                  <MessageCircle className="size-4 text-[#06C755]" />
+                  LINE Flex Message (สำหรับแอป LINE & LINE Simulator)
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  โครงสร้าง Flex Message พร้อมรายการสินค้าจริง สำหรับดาวน์โหลดไปวางใน LINE Simulator
+                  หรือส่งผ่าน LINE Bot API
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-8.5 text-xs rounded-xl gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+                  onClick={handleCopyFlexJSON}
+                >
+                  {copiedFlexJson ? (
+                    <Check className="size-3.5 text-emerald-600" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
+                  {copiedFlexJson ? "คัดลอกแล้ว!" : "คัดลอก Flex JSON"}
+                </Button>
+                <Button
+                  size="sm"
+                  className="h-8.5 text-xs rounded-xl font-bold gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white shadow-xs"
+                  onClick={handleDownloadFlexJSON}
+                >
+                  <Download className="size-3.5" />
+                  ดาวน์โหลด Flex (.json)
+                </Button>
+                <Button
+                  asChild
+                  size="sm"
+                  variant="outline"
+                  className="h-8.5 text-xs rounded-xl gap-1 text-muted-foreground hover:text-foreground"
+                >
+                  <a
+                    href="https://developers.line.biz/flex-simulator/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink className="size-3" /> เปิด Simulator
+                  </a>
+                </Button>
+              </div>
+            </div>
+
+            {/* Flex Options / Grouping Customizer */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-muted/30 border text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-foreground">
+                <SlidersHorizontal className="size-3.5 text-emerald-600" />
+                <span>การจัดกลุ่มสินค้าใน Flex Message:</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  className="h-8 rounded-lg border border-input bg-background px-2.5 text-xs font-semibold shadow-xs"
+                  value={flexGroupBy}
+                  onChange={(e) => setFlexGroupBy(e.target.value as FlexItemGroupBy)}
+                >
+                  <option value="category_no_header">
+                    🏷️ ตามหมวดหมู่ (ไม่แสดงหมวดหมู่ใน Flex - แนะนำ)
+                  </option>
+                  <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
+                  <option value="zone_no_header">📍 ตามโซน (ไม่แสดงแถบหัวข้อใน Flex)</option>
+                  <option value="category">🏷️ ตามหมวดหมู่สินค้า (แสดงแถบหัวข้อหมวด)</option>
+                  <option value="zone">📍 ตามโซนจัดวางสินค้า (แสดงแถบหัวข้อโซน)</option>
+                  <option value="zone_then_category">
+                    📍 โซน ➔ 🏷️ หมวดหมู่สินค้า (แสดงแถบหัวข้อ)
+                  </option>
+                </select>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300 shrink-0"
+                >
+                  อัปเดตทันที
+                </Badge>
+              </div>
+            </div>
+
+            {/* Universal Visual Preview */}
+            <div className="rounded-xl border overflow-hidden">
+              <FlexMessageVisualizer
+                flexData={currentFlexMessage}
+                title={`LINE Flex — ใบสั่งซื้อ ${payload.orderNumber}`}
+              />
             </div>
           </TabsContent>
 

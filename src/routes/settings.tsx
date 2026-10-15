@@ -202,13 +202,13 @@ function isArrayOf<T>(value: unknown, guard: (item: unknown) => item is T): valu
 export const Route = createFileRoute("/settings")({
   head: () => ({
     meta: [
-      { title: "ตั้งค่าระบบ & ฐานข้อมูล |โชห่วยยุค90s" },
+      { title: "ตั้งค่าระบบ & ฐานข้อมูล | MiniMark" },
       {
         name: "description",
         content:
           "จัดการโซนสินค้า หมวดหมู่ หน่วยนับ ผู้ใช้งานและผู้ติดตาม LINE Bot, User ID และแม่แบบ Flex Message",
       },
-      { property: "og:title", content: "ตั้งค่าระบบ & ฐานข้อมูล | โชห่วยยุค90s" },
+      { property: "og:title", content: "ตั้งค่าระบบ & ฐานข้อมูล | MiniMark" },
       {
         property: "og:description",
         content: "จัดการข้อมูลหลักและการเชื่อมต่อ LINE พร้อมฐานข้อมูลผู้ใช้งาน",

@@ -1,6 +1,7 @@
-import { Check, Code2, Copy, MessageCircle, Send, Smartphone } from "lucide-react";
+import { Check, Code2, Copy, Download, MessageCircle, Send, Smartphone } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { copyTextToClipboard, downloadJsonFile } from "@/lib/order-export";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -90,15 +91,31 @@ export function FlexMessageVisualizer({
 
   const altText = payload?.altText || "LINE Flex Message";
 
-  const handleCopyJson = () => {
+  const handleCopyJson = async () => {
     try {
-      navigator.clipboard.writeText(JSON.stringify(flexData, null, 2));
-      setCopied(true);
-      toast.success("คัดลอก JSON สำเร็จ");
-      setTimeout(() => setCopied(false), 2000);
+      const jsonStr = JSON.stringify(flexData, null, 2);
+      const ok = await copyTextToClipboard(jsonStr);
+      if (ok) {
+        setCopied(true);
+        toast.success("คัดลอก JSON สำเร็จ");
+        setTimeout(() => setCopied(false), 2000);
+      } else {
+        toast.error("ไม่สามารถคัดลอกได้ กรุณาใช้ปุ่มส่งออก .json");
+      }
     } catch {
-      toast.error("ไม่สามารถคัดลอกได้");
+      toast.error("เกิดข้อผิดพลาดในการคัดลอก");
     }
+  };
+
+  const handleDownloadJson = () => {
+    if (!flexData) return;
+    const cleanTitle = (title || "flex_message")
+      .toLowerCase()
+      .replace(/[^a-z0-9_-]/g, "_")
+      .replace(/_+/g, "_")
+      .slice(0, 40);
+    downloadJsonFile(flexData, `${cleanTitle}.json`);
+    toast.success("ดาวน์โหลดไฟล์ LINE Flex Message (.json) สำเร็จ");
   };
 
   return (
@@ -128,6 +145,17 @@ export function FlexMessageVisualizer({
               </TabsTrigger>
             </TabsList>
           </Tabs>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-2 text-xs rounded-lg gap-1 font-semibold text-emerald-700 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+            onClick={handleDownloadJson}
+            title="ดาวน์โหลดไฟล์ .json สำหรับ LINE Simulator"
+          >
+            <Download className="size-3.5" />
+            <span className="hidden sm:inline">ส่งออก .json</span>
+          </Button>
 
           <Button
             variant="outline"

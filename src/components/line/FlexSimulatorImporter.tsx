@@ -4,6 +4,7 @@ import {
   CheckCircle2,
   Code2,
   Copy,
+  Download,
   ExternalLink,
   FileCode2,
   Layers,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
+import { copyTextToClipboard, downloadJsonFile } from "@/lib/order-export";
 
 import { FlexMessageVisualizer } from "@/components/line/FlexMessageVisualizer";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -183,12 +185,24 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
     }
   };
 
-  const handleCopyJson = () => {
-    if (typeof navigator !== "undefined" && navigator.clipboard) {
-      navigator.clipboard.writeText(rawJson);
+  const handleCopyJson = async () => {
+    const success = await copyTextToClipboard(rawJson);
+    if (success) {
       setCopied(true);
       toast.success("คัดลอก JSON สำเร็จ นำไปวางที่ LINE Flex Message Simulator ได้ทันที");
       setTimeout(() => setCopied(false), 2500);
+    } else {
+      toast.error("ไม่สามารถคัดลอกได้ กรุณาใช้ปุ่มส่งออก .json เพื่อดาวน์โหลดไฟล์");
+    }
+  };
+
+  const handleDownloadJson = () => {
+    try {
+      const obj = rawJson.trim() ? JSON.parse(rawJson) : parsedFlex;
+      downloadJsonFile(obj, "po_flex_simulator.json");
+      toast.success("ดาวน์โหลดไฟล์ LINE Flex Message (.json) สำเร็จ");
+    } catch {
+      toast.error("JSON มีข้อผิดพลาด ไม่สามารถส่งออกไฟล์ได้");
     }
   };
 
@@ -324,6 +338,15 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
                 <Copy className="size-3.5" />
               )}
               คัดลอก JSON ไปวางที่ LINE Simulator
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleDownloadJson}
+              className="h-9 text-xs rounded-xl gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+            >
+              <Download className="size-3.5" />
+              ส่งออกไฟล์ JSON (.json)
             </Button>
             <Button
               asChild
@@ -520,6 +543,17 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
               </Button>
 
               <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleDownloadJson}
+                  disabled={Boolean(parseError)}
+                  className="h-9 text-xs rounded-xl font-semibold text-emerald-700 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/20 gap-1.5"
+                >
+                  <Download className="size-3.5" />
+                  ส่งออก .json
+                </Button>
+
                 <Button
                   size="sm"
                   variant="outline"

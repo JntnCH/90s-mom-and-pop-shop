@@ -50,17 +50,25 @@ function isFlexContents(value: unknown): value is LiffFlexMessage["contents"] {
 }
 
 function toLiffMessage(value: unknown, fallbackText: string): LiffMessage {
-  if (isRecord(value)) {
+  let parsedValue = value;
+  if (typeof parsedValue === "string") {
+    try {
+      parsedValue = JSON.parse(parsedValue);
+    } catch {
+      // keep as string
+    }
+  }
+  if (isRecord(parsedValue)) {
     const contents =
-      value["type"] === "flex"
-        ? value["contents"]
-        : isFlexContents(value)
-          ? value
-          : value["contents"];
+      parsedValue["type"] === "flex"
+        ? parsedValue["contents"]
+        : isFlexContents(parsedValue)
+          ? parsedValue
+          : parsedValue["contents"];
     if (isFlexContents(contents)) {
       const altText =
-        typeof value["altText"] === "string" && value["altText"].trim()
-          ? value["altText"]
+        typeof parsedValue["altText"] === "string" && parsedValue["altText"].trim()
+          ? parsedValue["altText"]
           : fallbackText;
       return { type: "flex", altText, contents };
     }
@@ -390,10 +398,14 @@ export function buildOrderPlainText(
 }
 
 export type LineShareTarget = "group" | "personal";
+export type LineMessageSendFormat = "FLEX" | "IMAGE_PNG" | "BOTH";
 
 export interface ThreeTierSendOptions {
   summary: string;
   flexMessage?: unknown;
+  imageBase64?: string | undefined;
+  imageUrl?: string | undefined;
+  format?: LineMessageSendFormat | undefined;
   target?: LineShareTarget | undefined;
   toUserIdOrGroupId?: string | undefined;
   isBroadcast?: boolean | undefined;
@@ -409,17 +421,30 @@ export interface LineShareResult {
   fallbackReason?: string | undefined;
 }
 
+export interface SharePickerOptions {
+  format?: LineMessageSendFormat | undefined;
+  imageBase64?: string | undefined;
+  imageUrl?: string | undefined;
+  altSummary?: string | undefined;
+}
+
 /**
- * Directly trigger LINE LIFF shareTargetPicker with a Flex Message
+ * Directly trigger LINE LIFF shareTargetPicker with Flex Message and/or PNG Image Message
  */
 export async function shareFlexViaLiffPicker(
   flexMessage: unknown,
-  altSummary: string = `รายการสั่งซื้อสินค้า ${DEFAULT_STORE_NAME}`,
+  altSummaryOrOptions: string | SharePickerOptions = `รายการสั่งซื้อสินค้า ${DEFAULT_STORE_NAME}`,
 ): Promise<{
   success: boolean;
   message: string;
   needLiffId?: boolean;
 }> {
+  const options: SharePickerOptions =
+    typeof altSummaryOrOptions === "string"
+      ? { altSummary: altSummaryOrOptions }
+      : altSummaryOrOptions;
+  const altSummary = options.altSummary || `รายการสั่งซื้อสินค้า ${DEFAULT_STORE_NAME}`;
+  const sendFormat = options.format || "FLEX";
   if (typeof window === "undefined") {
     return { success: false, message: "ทำงานบนเบราว์เซอร์เท่านั้น" };
   }
@@ -456,6 +481,35 @@ export async function shareFlexViaLiffPicker(
 
   try {
     const messagePayload = toLiffMessage(flexMessage, altSummary);
+    let liffMessages: LiffMessage[] = [messagePayload];
+
+    if (sendFormat === "IMAGE_PNG" || sendFormat === "BOTH") {
+      let finalImageUrl = options.imageUrl?.trim();
+      if (!finalImageUrl && options.imageBase64?.trim()) {
+        try {
+          const { uploadSlipImageToServer } = await import("./slip-image-generator");
+          const uploadRes = await uploadSlipImageToServer(options.imageBase64);
+          if (uploadRes.success && uploadRes.imageUrl) {
+            finalImageUrl = uploadRes.imageUrl;
+          }
+        } catch (uploadErr) {
+          console.warn("Could not upload image for LIFF picker:", uploadErr);
+        }
+      }
+
+      if (finalImageUrl) {
+        const imagePayload: LiffMessage = {
+          type: "image",
+          originalContentUrl: finalImageUrl,
+          previewImageUrl: finalImageUrl,
+        };
+        if (sendFormat === "IMAGE_PNG") {
+          liffMessages = [imagePayload];
+        } else {
+          liffMessages = [messagePayload, imagePayload];
+        }
+      }
+    }
 
     // Diagnostic check for API availability in this environment
     const isApiAvailable =
@@ -475,11 +529,17 @@ export async function shareFlexViaLiffPicker(
     }
 
     if (typeof liffInstance.shareTargetPicker === "function") {
-      const res = await liffInstance.shareTargetPicker([messagePayload]);
+      const res = await liffInstance.shareTargetPicker(liffMessages);
       if (res) {
+        const typeLabel =
+          sendFormat === "IMAGE_PNG"
+            ? "รูปภาพ PNG"
+            : sendFormat === "BOTH"
+              ? "Flex Message + รูปภาพ PNG"
+              : "Flex Message";
         return {
           success: true,
-          message: "ส่ง LINE Flex Message ไปยังเพื่อน/กลุ่มที่เลือกสำเร็จแล้ว",
+          message: `ส่ง LINE ${typeLabel} ไปยังเพื่อน/กลุ่มที่เลือกสำเร็จแล้ว`,
         };
       }
       return {
@@ -511,7 +571,16 @@ export async function shareFlexViaLiffPicker(
 export async function sendWith3TierFallback(
   options: ThreeTierSendOptions,
 ): Promise<LineShareResult> {
-  const { summary, flexMessage, target = "group", toUserIdOrGroupId, isBroadcast } = options;
+  const {
+    summary,
+    flexMessage,
+    target = "group",
+    toUserIdOrGroupId,
+    isBroadcast,
+    format = "FLEX",
+    imageBase64,
+    imageUrl,
+  } = options;
   let tier1ErrorReason = "";
 
   const tokenToUse =
@@ -521,7 +590,7 @@ export async function sendWith3TierFallback(
       : undefined);
 
   // ─────────────────────────────────────────────────────────────
-  // Tier 1: Server LINE Messaging API (Sends REAL Flex Message)
+  // Tier 1: Server LINE Messaging API (Sends Flex Message / PNG Image)
   // ─────────────────────────────────────────────────────────────
   try {
     const serverRes = await sendLineMessagingApiFn({
@@ -531,15 +600,24 @@ export async function sendWith3TierFallback(
         ...(toUserIdOrGroupId !== undefined ? { toUserIdOrGroupId } : {}),
         ...(isBroadcast !== undefined ? { isBroadcast } : {}),
         ...(tokenToUse !== undefined ? { channelAccessToken: tokenToUse } : {}),
+        ...(format !== undefined ? { format } : {}),
+        ...(imageBase64 !== undefined ? { imageBase64 } : {}),
+        ...(imageUrl !== undefined ? { imageUrl } : {}),
       },
     });
 
     if (serverRes.success) {
+      const formatLabel =
+        format === "IMAGE_PNG"
+          ? "รูปภาพ PNG"
+          : format === "BOTH"
+            ? "Flex Message และรูปภาพ PNG"
+            : "Flex Message";
       return {
         success: true,
         channel: "server_api",
         tier: 1,
-        message: "ส่ง Flex Message ผ่าน Server LINE Messaging API สำเร็จ (Tier 1)",
+        message: `ส่ง ${formatLabel} ผ่าน Server LINE Messaging API สำเร็จ (Tier 1)`,
       };
     } else {
       tier1ErrorReason = serverRes.error || "Server LINE Messaging API ไม่พร้อมใช้งาน";
@@ -563,17 +641,49 @@ export async function sendWith3TierFallback(
       const initialized = await initLiff();
       if (initialized && liffInstance) {
         const messagePayload = toLiffMessage(flexMessage, summary);
+        let liffMessages: LiffMessage[] = [messagePayload];
 
-        // 2a. shareTargetPicker (sends REAL Flex Message inside LINE)
+        if (format === "IMAGE_PNG" || format === "BOTH") {
+          let resolvedImageUrl = imageUrl?.trim();
+          if (!resolvedImageUrl && imageBase64?.trim()) {
+            try {
+              const { uploadSlipImageToServer } = await import("./slip-image-generator");
+              const uploadRes = await uploadSlipImageToServer(imageBase64);
+              if (uploadRes.success && uploadRes.imageUrl) {
+                resolvedImageUrl = uploadRes.imageUrl;
+              }
+            } catch (upErr) {
+              console.warn("Could not upload image for Tier 2 fallback:", upErr);
+            }
+          }
+
+          if (resolvedImageUrl) {
+            const imagePayload: LiffMessage = {
+              type: "image",
+              originalContentUrl: resolvedImageUrl,
+              previewImageUrl: resolvedImageUrl,
+            };
+            liffMessages = format === "IMAGE_PNG" ? [imagePayload] : [messagePayload, imagePayload];
+          }
+        }
+
+        const formatLabel =
+          format === "IMAGE_PNG"
+            ? "รูปภาพ PNG"
+            : format === "BOTH"
+              ? "Flex Message และรูปภาพ PNG"
+              : "Flex Message";
+
+        // 2a. shareTargetPicker (sends REAL Flex/Image Message inside LINE)
         if (liffInstance.isApiAvailable("shareTargetPicker") && liffInstance.isLoggedIn()) {
           try {
-            const pickerRes = await liffInstance.shareTargetPicker([messagePayload]);
+            const pickerRes = await liffInstance.shareTargetPicker(liffMessages);
             if (pickerRes) {
               return {
                 success: true,
                 channel: "liff_picker",
                 tier: 2,
-                message: `ส่ง Flex Message เข้า LINE (${target === "group" ? "กลุ่ม" : "ส่วนตัว"}) ผ่าน LIFF Target Picker สำเร็จ (Tier 2)`,
+                message: `ส่ง ${formatLabel} เข้า LINE (${target === "group" ? "กลุ่ม" : "ส่วนตัว"}) ผ่าน LIFF Target Picker สำเร็จ (Tier 2)`,
                 fallbackReason: tier1ErrorReason,
               };
             }
@@ -595,12 +705,12 @@ export async function sendWith3TierFallback(
         // 2b. In-client direct chat send
         if (liffInstance.isInClient()) {
           try {
-            await liffInstance.sendMessages([messagePayload]);
+            await liffInstance.sendMessages(liffMessages);
             return {
               success: true,
               channel: "liff_send",
               tier: 2,
-              message: "ส่งข้อความ Flex Message เข้าแชท LINE ผ่าน LIFF สำเร็จ (Tier 2)",
+              message: `ส่ง ${formatLabel} เข้าแชท LINE ผ่าน LIFF สำเร็จ (Tier 2)`,
               fallbackReason: tier1ErrorReason,
             };
           } catch (sendErr) {
@@ -659,20 +769,10 @@ export async function sendOrderToLine(
   storeName: string = DEFAULT_STORE_NAME,
 ): Promise<LineShareResult> {
   const resolvedStoreName = getSystemStoreName(storeName);
-  const flex = formatDailyOrderFlexCarouselMessage(
-    orders.map(({ product, quantity, unitName }) => ({
-      name: product.name,
-      quantity,
-      unitName,
-      barcode: product.barcode,
-      costPrice: product.costPrice,
-      priceEstimate: quantity * (product.costPrice ?? 0),
-      categoryId: product.categoryId,
-      zoneId: product.zoneId,
-    })),
-    undefined,
+  const flex = buildOrderFlexMessage(
+    orders,
+    `ใบสั่งซื้อประจำวัน (${target === "group" ? "กลุ่ม" : "ส่วนตัว"})`,
     resolvedStoreName,
-    { note: `ใบสั่งซื้อประจำวัน (${target === "group" ? "กลุ่ม" : "ส่วนตัว"})` },
   );
   const plain = buildOrderPlainText(orders, resolvedStoreName);
 
@@ -767,9 +867,6 @@ export function formatDailyOrderFlexMessage(
       ...(options?.showGroupHeaders === undefined
         ? {}
         : { showGroupHeaders: options.showGroupHeaders }),
-      ...(options?.itemIndexOffset === undefined
-        ? {}
-        : { itemIndexOffset: options.itemIndexOffset }),
     });
   } catch {
     const nowStr = new Date().toISOString();
@@ -785,65 +882,6 @@ export function formatDailyOrderFlexMessage(
       options,
     );
   }
-}
-
-/**
- * Formats large purchase orders as one Flex carousel message.
- * Each carousel bubble stays within LINE's component/payload limits while the
- * recipient still receives exactly one LINE message.
- */
-export function formatDailyOrderFlexCarouselMessage(
-  items: OrderFlexItem[],
-  dateStr?: string,
-  storeName: string = DEFAULT_STORE_NAME,
-  options?: Partial<PurchaseOrderFlexOptions>,
-  maxItemsPerMessage: number = 20,
-) {
-  const chunkSize = Math.max(1, Math.floor(maxItemsPerMessage));
-  const chunks: OrderFlexItem[][] = [];
-  for (let index = 0; index < items.length; index += chunkSize) {
-    chunks.push(items.slice(index, index + chunkSize));
-  }
-
-  const messages = (chunks.length > 0 ? chunks : [[]]).map((chunk, index) =>
-    formatDailyOrderFlexMessage(chunk, dateStr, storeName, {
-      ...options,
-      ...(chunks.length > 1
-        ? { note: `ใบสั่งซื้อสินค้าประจำวัน (${index + 1}/${chunks.length})` }
-        : {}),
-      itemIndexOffset: index * chunkSize,
-    }),
-  );
-
-  const bubbles = messages.flatMap((message) => {
-    const rawMessage: unknown = message;
-    if (!isRecord(rawMessage)) return [];
-    const contents = rawMessage["contents"];
-    if (!isRecord(contents)) return [];
-    if (contents["type"] === "bubble") return [contents];
-    if (contents["type"] === "carousel" && Array.isArray(contents["contents"])) {
-      return contents["contents"].filter(isRecord);
-    }
-    return [];
-  });
-
-  const firstMessage: unknown = messages[0];
-  const altText =
-    isRecord(firstMessage) && typeof firstMessage["altText"] === "string"
-      ? firstMessage["altText"]
-      : `📦 ${getSystemStoreName(storeName)} — ใบสั่งซื้อสินค้าประจำวัน (${items.length} รายการ)`;
-
-  return {
-    type: "flex" as const,
-    altText,
-    contents:
-      bubbles.length === 1
-        ? bubbles[0]
-        : {
-            type: "carousel" as const,
-            contents: bubbles,
-          },
-  };
 }
 
 export function formatOrderPlainText(
@@ -878,7 +916,12 @@ export async function sendDailyOrderToLine(
     unitName: i.unitName,
   }));
 
-  const flex = formatDailyOrderFlexCarouselMessage(items, dateStr, resolvedStoreName, options);
+  const flex = buildOrderFlexMessage(
+    lineOrders,
+    `ใบสั่งซื้อประจำวัน (${dateStr || "วันนี้"})`,
+    resolvedStoreName,
+    options,
+  );
   const plain = buildOrderPlainText(
     lineOrders,
     resolvedStoreName,
@@ -905,7 +948,11 @@ export async function sendStockAlertToLine(
   alertItems: FlexStockAlertItem[],
   target: LineShareTarget = "group",
   storeName: string = DEFAULT_STORE_NAME,
-  options?: Partial<StockAlertFlexOptions>,
+  options?: Partial<StockAlertFlexOptions> & {
+    format?: LineMessageSendFormat;
+    imageBase64?: string;
+    imageUrl?: string;
+  },
 ): Promise<{ success: boolean; method?: string; error?: string; tier?: number }> {
   const resolvedStoreName = getSystemStoreName(storeName);
   const flexMsg = createStockAlertFlexBubble(alertItems, {
@@ -935,6 +982,9 @@ export async function sendStockAlertToLine(
     summary: text,
     flexMessage: flexMsg,
     target,
+    format: options?.format || "FLEX",
+    ...(options?.imageBase64 !== undefined ? { imageBase64: options.imageBase64 } : {}),
+    ...(options?.imageUrl !== undefined ? { imageUrl: options.imageUrl } : {}),
   });
 
   const result: { success: boolean; method?: string; error?: string; tier?: number } = {
@@ -944,4 +994,37 @@ export async function sendStockAlertToLine(
   };
   if (!res.success) result.error = res.message;
   return result;
+}
+
+/**
+ * Sends order to LINE as PNG Image, Flex Message, or Both
+ */
+export async function sendOrderImageToLine(
+  orders: LineOrderItem[],
+  target: LineShareTarget = "group",
+  storeName: string = DEFAULT_STORE_NAME,
+  options?: {
+    format?: LineMessageSendFormat;
+    imageBase64?: string;
+    imageUrl?: string;
+    orderNumber?: string;
+  },
+): Promise<LineShareResult> {
+  const resolvedStoreName = getSystemStoreName(storeName);
+  const flex = buildOrderFlexMessage(
+    orders,
+    `ใบสั่งซื้อประจำวัน (${target === "group" ? "กลุ่ม" : "ส่วนตัว"})`,
+    resolvedStoreName,
+    { orderNumber: options?.orderNumber },
+  );
+  const plain = buildOrderPlainText(orders, resolvedStoreName);
+
+  return sendWith3TierFallback({
+    summary: plain,
+    flexMessage: flex,
+    target,
+    format: options?.format || "IMAGE_PNG",
+    ...(options?.imageBase64 !== undefined ? { imageBase64: options.imageBase64 } : {}),
+    ...(options?.imageUrl !== undefined ? { imageUrl: options.imageUrl } : {}),
+  });
 }
