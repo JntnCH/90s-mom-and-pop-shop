@@ -48,8 +48,7 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
-import { toast } from "sonner";
+import { useCallback, useEffect, useRef, useState } from "react";import { toast } from "sonner";
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
