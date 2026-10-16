@@ -93,8 +93,15 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
+  createFullBleedPurchaseOrderFlexBubble,
+  createPurchaseOrderFlexBubble,
+  createPurchaseOrderFlexCarousel,
+  createPurchaseOrderFlex,
   createStockAlertFlexBubble,
+  createStockAlertFlexCarousel,
+  createStockAlertFlex,
   DEFAULT_STORE_NAME,
+  type FlexContainerType,
   type FlexItemGroupBy,
   getSystemStoreName,
   groupAndSortFlexItems,
@@ -124,6 +131,7 @@ import {
   copyImageBlobToClipboard,
   downloadImageBlob,
   shareImageFileViaNavigator,
+  type SlipDesignStyle,
 } from "@/lib/slip-image-generator";
 import { playScanSuccessSound } from "@/lib/scanner-audio";
 import { PrinterService } from "@/lib/printer-service";
@@ -305,6 +313,7 @@ function ReorderPage() {
   const [isGeneratingModalPng, setIsGeneratingModalPng] = useState(false);
   const [copiedModalPng, setCopiedModalPng] = useState(false);
   const [modalPreviewTab, setModalPreviewTab] = useState<"flex" | "png">("flex");
+  const [slipDesignStyle, setSlipDesignStyle] = useState<SlipDesignStyle>("full_bleed_rich");
 
   // Lock body scroll on mobile and desktop when recipient selection modal is open
   useEffect(() => {
@@ -377,6 +386,17 @@ function ReorderPage() {
   const [editingPOStatus, setEditingPOStatus] = useState<
     "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED"
   >("DRAFT");
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<Date | null>(null);
+  const [flexContainerType, setFlexContainerType] = useState<FlexContainerType>(() => {
+    try {
+      return (
+        (localStorage.getItem("minimark_flex_container_type") as FlexContainerType) || "carousel"
+      );
+    } catch {
+      return "carousel";
+    }
+  });
+  const [modalImageDisplayMode, setModalImageDisplayMode] = useState<"full" | "mockup">("full");
 
   // Delete Item Confirmation Dialog State
   const [itemToDelete, setItemToDelete] = useState<{
@@ -400,9 +420,46 @@ function ReorderPage() {
     setPurchaseOrders(allPOs);
   }, []);
 
-  // 1. Initial load on mount: Check saved draft or seed low-stock items once
+  // 1. Initial load on mount: Check active editing PO, saved draft, or seed low-stock items
   useEffect(() => {
     reloadData();
+
+    // Check if an existing PO was actively being edited before navigating away
+    try {
+      const activePOId = localStorage.getItem("minimark_active_editing_po_id");
+      if (activePOId) {
+        const allPOs = MasterStore.getPurchaseOrders();
+        const activePO = allPOs.find((p) => p.id === activePOId);
+        if (activePO) {
+          setEditingPOId(activePO.id);
+          setEditingPONumber(activePO.orderNumber);
+          setEditingPOCreatedAt(activePO.createdAt);
+          setEditingPOStatus(activePO.status);
+          setSupplierNameInput(activePO.supplierName || "");
+          const allProds = MasterStore.getProducts();
+          const loadedItems: OrderCartItem[] = activePO.items.map((i) => {
+            const matchedProd = allProds.find((p) => p.id === i.productId);
+            return {
+              productId: i.productId,
+              productName: i.productName || matchedProd?.name || "",
+              barcode: i.barcode || matchedProd?.barcode,
+              quantity: Math.max(1, i.quantity || 1),
+              unitId: i.unitId || matchedProd?.unitId || "unit-piece",
+              unitName: i.unitName,
+              costPrice: i.costPrice !== undefined ? i.costPrice : matchedProd?.costPrice || 0,
+              note: i.note,
+            };
+          });
+          setOrderList(loadedItems);
+          setActiveTab("create_po");
+          setLastAutoSavedAt(new Date());
+          return;
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     const draft = MasterStore.getDraftPurchaseOrder();
     if (draft && draft.orderList && draft.orderList.length > 0) {
       setOrderList(draft.orderList);
@@ -411,6 +468,7 @@ function ReorderPage() {
         setCalculationStrategy(draft.calculationStrategy as ReorderStrategy);
       }
       setHasRestoredDraft(true);
+      setLastAutoSavedAt(draft.savedAt ? new Date(draft.savedAt) : new Date());
     } else {
       const allProds = MasterStore.getProducts();
       const lowStockItems = allProds.filter((p) => p.isActive !== false && p.stock <= p.minStock);
@@ -433,22 +491,121 @@ function ReorderPage() {
     }
   }, [reloadData]);
 
-  // Auto-save draft PO whenever orderList or supplierNameInput changes (only when not editing an existing PO)
+  const orderListRef = useRef(orderList);
+  orderListRef.current = orderList;
+  const supplierNameRef = useRef(supplierNameInput);
+  supplierNameRef.current = supplierNameInput;
+  const editingPOIdRef = useRef(editingPOId);
+  editingPOIdRef.current = editingPOId;
+  const calculationStrategyRef = useRef(calculationStrategy);
+  calculationStrategyRef.current = calculationStrategy;
+
+  // Guarantee all draft edits are saved when navigating away or unmounting
   useEffect(() => {
-    if (editingPOId) return; // Never overwrite draft when editing an existing PO
-    if (orderList.length > 0) {
-      MasterStore.saveDraftPurchaseOrder({
-        orderList: orderList.map(({ productId, quantity, unitId, costPrice, note }) => ({
-          productId,
-          quantity,
-          unitId,
-          ...(costPrice !== undefined ? { costPrice } : {}),
-          ...(note !== undefined ? { note } : {}),
-        })),
-        supplierName: supplierNameInput,
-        calculationStrategy,
-      });
+    const flushDraftAutoSave = () => {
+      const curId = editingPOIdRef.current;
+      const curList = orderListRef.current;
+      const curSupplier = supplierNameRef.current;
+      if (curId && curList.length > 0) {
+        const allProds = MasterStore.getProducts();
+        const updatedItems = curList.map((item) => {
+          const prod = allProds.find((p) => p.id === item.productId);
+          return {
+            productId: item.productId,
+            productName: item.productName || prod?.name || "",
+            barcode: item.barcode || prod?.barcode,
+            quantity: item.quantity,
+            unitId: item.unitId,
+            unitName: item.unitName || (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
+            costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
+            note: item.note,
+          };
+        });
+        const totalQty = updatedItems.reduce((sum, i) => sum + i.quantity, 0);
+        const totalCst = updatedItems.reduce((sum, i) => sum + i.quantity * (i.costPrice || 0), 0);
+        MasterStore.updatePurchaseOrder(curId, {
+          supplierName: curSupplier.trim() || undefined,
+          items: updatedItems,
+          totalQuantity: totalQty,
+          totalCost: totalCst,
+        });
+        try {
+          localStorage.setItem("minimark_active_editing_po_id", curId);
+        } catch {
+          /* ignore */
+        }
+      } else if (!curId && curList.length > 0) {
+        MasterStore.saveDraftPurchaseOrder({
+          orderList: curList,
+          supplierName: curSupplier,
+          calculationStrategy: calculationStrategyRef.current,
+        });
+      }
+    };
+
+    window.addEventListener("beforeunload", flushDraftAutoSave);
+
+    return () => {
+      window.removeEventListener("beforeunload", flushDraftAutoSave);
+      flushDraftAutoSave();
+    };
+  }, []);
+
+  // Auto-save: Auto-saves draft changes immediately whether editing an existing PO or new draft
+  useEffect(() => {
+    if (orderList.length === 0) return;
+
+    if (editingPOId) {
+      // When editing an existing draft PO: Auto-save back to MasterStore so navigating away NEVER loses edits!
+      const currentPO = MasterStore.getPurchaseOrderById(editingPOId);
+      if (currentPO) {
+        const allProds = MasterStore.getProducts();
+        const updatedItems = orderList.map((item) => {
+          const prod = allProds.find((p) => p.id === item.productId);
+          return {
+            productId: item.productId,
+            productName: item.productName || prod?.name || "",
+            barcode: item.barcode || prod?.barcode,
+            quantity: item.quantity,
+            unitId: item.unitId,
+            unitName: item.unitName || (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
+            costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
+            note: item.note,
+          };
+        });
+        const totalQty = updatedItems.reduce((sum, i) => sum + i.quantity, 0);
+        const totalCst = updatedItems.reduce((sum, i) => sum + i.quantity * (i.costPrice || 0), 0);
+
+        MasterStore.updatePurchaseOrder(editingPOId, {
+          supplierName: supplierNameInput.trim() || undefined,
+          items: updatedItems,
+          totalQuantity: totalQty,
+          totalCost: totalCst,
+        });
+        setPurchaseOrders(MasterStore.getPurchaseOrders());
+        setLastAutoSavedAt(new Date());
+      }
+      try {
+        localStorage.setItem("minimark_active_editing_po_id", editingPOId);
+      } catch {
+        /* ignore */
+      }
+      return;
     }
+
+    // When creating a new order: Auto-save to PO draft
+    MasterStore.saveDraftPurchaseOrder({
+      orderList: orderList.map(({ productId, quantity, unitId, costPrice, note }) => ({
+        productId,
+        quantity,
+        unitId,
+        ...(costPrice !== undefined ? { costPrice } : {}),
+        ...(note !== undefined ? { note } : {}),
+      })),
+      supplierName: supplierNameInput,
+      calculationStrategy,
+    });
+    setLastAutoSavedAt(new Date());
   }, [orderList, supplierNameInput, calculationStrategy, editingPOId]);
 
   const handleClearDraft = () => {
@@ -636,6 +793,11 @@ function ReorderPage() {
   };
 
   const handleEditPO = (po: PurchaseOrderRecord) => {
+    try {
+      localStorage.setItem("minimark_active_editing_po_id", po.id);
+    } catch {
+      /* ignore */
+    }
     setEditingPOId(po.id);
     setEditingPONumber(po.orderNumber);
     setEditingPOCreatedAt(po.createdAt);
@@ -659,11 +821,17 @@ function ReorderPage() {
 
     setOrderList(loadedItems);
     setHasRestoredDraft(false);
+    setLastAutoSavedAt(new Date());
     setActiveTab("create_po");
     toast.info(`กำลังแก้ไขใบสั่งซื้อ ${po.orderNumber}`);
   };
 
   const handleCancelEditPO = () => {
+    try {
+      localStorage.removeItem("minimark_active_editing_po_id");
+    } catch {
+      /* ignore */
+    }
     setEditingPOId(null);
     setEditingPONumber("");
     setEditingPOCreatedAt("");
@@ -1002,6 +1170,11 @@ function ReorderPage() {
       });
 
       if (updated) {
+        try {
+          localStorage.removeItem("minimark_active_editing_po_id");
+        } catch {
+          /* ignore */
+        }
         setPurchaseOrders(MasterStore.getPurchaseOrders());
         MasterStore.clearDraftPurchaseOrder();
         setOrderList([]);
@@ -1021,6 +1194,12 @@ function ReorderPage() {
         }
         return updated;
       }
+    }
+
+    try {
+      localStorage.removeItem("minimark_active_editing_po_id");
+    } catch {
+      /* ignore */
     }
 
     const poRecord = MasterStore.savePurchaseOrder({
@@ -1133,8 +1312,9 @@ function ReorderPage() {
   };
 
   const generateCurrentModalPng = useCallback(
-    async (overrideType?: "PURCHASE_ORDER" | "STOCK_ALERT") => {
+    async (overrideType?: "PURCHASE_ORDER" | "STOCK_ALERT", overrideStyle?: SlipDesignStyle) => {
       const type = overrideType || pushMessageType;
+      const chosenStyle = overrideStyle || slipDesignStyle;
       setIsGeneratingModalPng(true);
       try {
         if (type === "STOCK_ALERT") {
@@ -1154,6 +1334,7 @@ function ReorderPage() {
           const res = await generateStockAlertSlipImage({
             storeName: currentStoreName,
             alertItems: alertPayload,
+            style: chosenStyle,
           });
           setModalPngData({ dataUrl: res.dataUrl, blob: res.blob });
           return res;
@@ -1164,6 +1345,7 @@ function ReorderPage() {
             createdAt: orderDateStr,
             storeName: currentStoreName,
             supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
+            style: chosenStyle,
             items: fullItems.map((f) => ({
               name: f.name,
               quantity: f.quantity,
@@ -1191,6 +1373,7 @@ function ReorderPage() {
     },
     [
       pushMessageType,
+      slipDesignStyle,
       allReorderNeeded,
       zones,
       currentStoreName,
@@ -1291,8 +1474,12 @@ function ReorderPage() {
     setPushModalOpen(true);
   };
 
-  // Flex Preview Handlers with Grouping Support
-  const currentOrderFlexOptions = (groupBy = flexGroupBy, showHeaders = flexShowHeader) => ({
+  // Flex Preview Handlers with Grouping & Container Type (Carousel vs Bubble) Support
+  const currentOrderFlexOptions = (
+    groupBy = flexGroupBy,
+    showHeaders = flexShowHeader,
+    containerType = flexContainerType,
+  ) => ({
     groupBy,
     showGroupHeaders: showHeaders,
     includeZone:
@@ -1302,6 +1489,7 @@ function ReorderPage() {
       groupBy === "category_then_zone",
     orderNumber: editingPOId ? editingPONumber : "DRAFT",
     supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
+    containerType,
   });
 
   const buildCurrentOrderShareText = (
@@ -1311,19 +1499,27 @@ function ReorderPage() {
   ) =>
     `${formatOrderPlainText(fullItems, dateStr, currentStoreName, groupBy, showHeaders)}\nเลขที่ใบสั่งซื้อ: ${editingPOId ? editingPONumber : "DRAFT"}\nซัพพลายเออร์: ${supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป"}`;
 
-  const handlePreviewOrderFlex = (overrideGroupBy?: FlexItemGroupBy) => {
+  const handlePreviewOrderFlex = (
+    overrideGroupBy?: FlexItemGroupBy,
+    overrideContainerType?: FlexContainerType,
+  ) => {
     if (fullItems.length === 0) return;
     const gb = overrideGroupBy || flexGroupBy;
+    const ct = overrideContainerType || flexContainerType;
     const orderDateStr = formatPurchaseOrderSentAt();
     try {
       const flexMsg = formatDailyOrderFlexMessage(
         fullItems,
         orderDateStr,
         currentStoreName,
-        currentOrderFlexOptions(gb),
+        currentOrderFlexOptions(gb, flexShowHeader, ct),
       );
       setFlexPreviewData(flexMsg);
-      setFlexPreviewTitle("ตัวอย่างข้อมูลใบสั่งซื้อจริงในโครงสร้าง LINE Simulator ล่าสุด");
+      setFlexPreviewTitle(
+        ct === "carousel"
+          ? "ตัวอย่าง LINE Flex แบบ 1. Carousel (สไลด์หลายการ์ด)"
+          : "ตัวอย่าง LINE Flex แบบ 2. Bubble (การ์ดยาวเดี่ยว)",
+      );
       setFlexPreviewSource({ type: "order", orderItems: fullItems });
       setFlexPreviewOpen(true);
     } catch (error) {
@@ -1331,17 +1527,26 @@ function ReorderPage() {
     }
   };
 
-  const handlePreviewStockAlertFlex = (overrideGroupBy?: FlexItemGroupBy) => {
+  const handlePreviewStockAlertFlex = (
+    overrideGroupBy?: FlexItemGroupBy,
+    overrideContainerType?: FlexContainerType,
+  ) => {
     if (allReorderNeeded.length === 0) return;
     const gb = overrideGroupBy || flexGroupBy;
+    const ct = overrideContainerType || flexContainerType;
     const alertPayload = createStockAlertItems();
-    const flexMsg = createStockAlertFlexBubble(alertPayload, {
+    const flexMsg = createStockAlertFlex(alertPayload, {
       storeName: currentStoreName,
       groupBy: gb,
       showGroupHeaders: flexShowHeader,
+      containerType: ct,
     });
     setFlexPreviewData(flexMsg);
-    setFlexPreviewTitle(`แจ้งเตือนสินค้าต้องสั่งซื้อ (${allReorderNeeded.length} รายการ)`);
+    setFlexPreviewTitle(
+      ct === "carousel"
+        ? `แจ้งเตือนสต็อกแบบ Carousel (${allReorderNeeded.length} รายการ)`
+        : `แจ้งเตือนสต็อกแบบ Bubble (${allReorderNeeded.length} รายการ)`,
+    );
     setFlexPreviewSource({ type: "alert", alertItems: alertPayload });
     setFlexPreviewOpen(true);
   };
@@ -1349,17 +1554,24 @@ function ReorderPage() {
   const handlePreviewPOHistoryFlex = (
     po: PurchaseOrderRecord,
     overrideGroupBy?: FlexItemGroupBy,
+    overrideContainerType?: FlexContainerType,
   ) => {
     try {
+      const ct = overrideContainerType || flexContainerType;
       setFlexPreviewData(
         formatDailyOrderFlexMessage(getPurchaseOrderFlexItems(po), po.createdAt, currentStoreName, {
           groupBy: overrideGroupBy ?? flexGroupBy,
           showGroupHeaders: flexShowHeader,
           orderNumber: po.orderNumber,
           supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
+          containerType: ct,
         }),
       );
-      setFlexPreviewTitle(`ใบสั่งซื้อ ${po.orderNumber} — ข้อมูลจริงในโครงสร้าง Simulator`);
+      setFlexPreviewTitle(
+        ct === "carousel"
+          ? `ใบสั่งซื้อ ${po.orderNumber} (แบบ 1. Carousel)`
+          : `ใบสั่งซื้อ ${po.orderNumber} (แบบ 2. Bubble)`,
+      );
       setFlexPreviewSource({ type: "po", poRecord: po });
       setFlexPreviewOpen(true);
     } catch (error) {
@@ -1391,14 +1603,15 @@ function ReorderPage() {
         flexPreviewSource.orderItems,
         orderDateStr,
         currentStoreName,
-        currentOrderFlexOptions(newGrouping, nextShowHeader),
+        currentOrderFlexOptions(newGrouping, nextShowHeader, flexContainerType),
       );
       setFlexPreviewData(flexMsg);
     } else if (flexPreviewSource.type === "alert" && flexPreviewSource.alertItems) {
-      const flexMsg = createStockAlertFlexBubble(flexPreviewSource.alertItems, {
+      const flexMsg = createStockAlertFlex(flexPreviewSource.alertItems, {
         storeName: currentStoreName,
         groupBy: newGrouping,
         showGroupHeaders: nextShowHeader,
+        containerType: flexContainerType,
       });
       setFlexPreviewData(flexMsg);
     } else if (flexPreviewSource.type === "po" && flexPreviewSource.poRecord) {
@@ -1414,7 +1627,64 @@ function ReorderPage() {
             newGrouping === "category_then_zone",
           orderNumber: po.orderNumber,
           supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
+          containerType: flexContainerType,
         }),
+      );
+    }
+  };
+
+  const handleUpdateContainerType = (newContainerType: FlexContainerType) => {
+    setFlexContainerType(newContainerType);
+    try {
+      localStorage.setItem("minimark_flex_container_type", newContainerType);
+    } catch {
+      /* ignore */
+    }
+
+    if (!flexPreviewSource) return;
+
+    if (flexPreviewSource.type === "order" && flexPreviewSource.orderItems) {
+      const orderDateStr = formatPurchaseOrderSentAt();
+      const flexMsg = formatDailyOrderFlexMessage(
+        flexPreviewSource.orderItems,
+        orderDateStr,
+        currentStoreName,
+        currentOrderFlexOptions(flexGroupBy, flexShowHeader, newContainerType),
+      );
+      setFlexPreviewData(flexMsg);
+      setFlexPreviewTitle(
+        newContainerType === "carousel"
+          ? "ตัวอย่าง LINE Flex แบบ 1. Carousel (สไลด์หลายการ์ด)"
+          : "ตัวอย่าง LINE Flex แบบ 2. Bubble (การ์ดยาวเดี่ยว)",
+      );
+    } else if (flexPreviewSource.type === "alert" && flexPreviewSource.alertItems) {
+      const flexMsg = createStockAlertFlex(flexPreviewSource.alertItems, {
+        storeName: currentStoreName,
+        groupBy: flexGroupBy,
+        showGroupHeaders: flexShowHeader,
+        containerType: newContainerType,
+      });
+      setFlexPreviewData(flexMsg);
+      setFlexPreviewTitle(
+        newContainerType === "carousel"
+          ? `แจ้งเตือนสต็อกแบบ Carousel (${allReorderNeeded.length} รายการ)`
+          : `แจ้งเตือนสต็อกแบบ Bubble (${allReorderNeeded.length} รายการ)`,
+      );
+    } else if (flexPreviewSource.type === "po" && flexPreviewSource.poRecord) {
+      const po = flexPreviewSource.poRecord;
+      setFlexPreviewData(
+        formatDailyOrderFlexMessage(getPurchaseOrderFlexItems(po), po.createdAt, currentStoreName, {
+          groupBy: flexGroupBy,
+          showGroupHeaders: flexShowHeader,
+          orderNumber: po.orderNumber,
+          supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
+          containerType: newContainerType,
+        }),
+      );
+      setFlexPreviewTitle(
+        newContainerType === "carousel"
+          ? `ใบสั่งซื้อ ${po.orderNumber} (แบบ 1. Carousel)`
+          : `ใบสั่งซื้อ ${po.orderNumber} (แบบ 2. Bubble)`,
       );
     }
   };
@@ -1916,7 +2186,38 @@ function ReorderPage() {
       {/* Main Tabs: 1. Calculator | 2. Alerts Hub | 3. Create PO | 4. PO History (Phase 6) */}
       <Tabs
         value={activeTab}
-        onValueChange={(val) => setActiveTab(val as typeof activeTab)}
+        onValueChange={(val) => {
+          if (editingPOId && orderList.length > 0) {
+            const allProds = MasterStore.getProducts();
+            const updatedItems = orderList.map((item) => {
+              const prod = allProds.find((p) => p.id === item.productId);
+              return {
+                productId: item.productId,
+                productName: item.productName || prod?.name || "",
+                barcode: item.barcode || prod?.barcode,
+                quantity: item.quantity,
+                unitId: item.unitId,
+                unitName:
+                  item.unitName || (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
+                costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
+                note: item.note,
+              };
+            });
+            const totalQty = updatedItems.reduce((sum, i) => sum + i.quantity, 0);
+            const totalCst = updatedItems.reduce(
+              (sum, i) => sum + i.quantity * (i.costPrice || 0),
+              0,
+            );
+            MasterStore.updatePurchaseOrder(editingPOId, {
+              supplierName: supplierNameInput.trim() || undefined,
+              items: updatedItems,
+              totalQuantity: totalQty,
+              totalCost: totalCst,
+            });
+            setPurchaseOrders(MasterStore.getPurchaseOrders());
+          }
+          setActiveTab(val as typeof activeTab);
+        }}
         className="space-y-4"
       >
         <TabsList className="grid grid-cols-2 sm:grid-cols-4 max-w-3xl h-auto p-1.5 rounded-2xl bg-muted gap-1">
@@ -2240,28 +2541,57 @@ function ReorderPage() {
         <TabsContent value="create_po" className="space-y-4">
           {/* EDITING PO BANNER */}
           {editingPOId ? (
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 rounded-2xl bg-blue-500/10 border-2 border-blue-500/30 text-blue-900 dark:text-blue-200 shadow-xs animate-in fade-in">
-              <div className="flex items-center gap-3">
-                <div className="size-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                  <Pencil className="size-4" />
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 p-4 rounded-2xl bg-blue-500/10 border-2 border-blue-500/30 text-blue-900 dark:text-blue-200 shadow-sm animate-in fade-in">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="size-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Pencil className="size-5" />
                 </div>
-                <div>
+                <div className="min-w-0">
                   <div className="font-bold text-sm sm:text-base flex items-center gap-2 flex-wrap">
                     <span>กำลังแก้ไขใบสั่งซื้อ:</span>
                     <span className="font-mono text-primary font-bold">{editingPONumber}</span>
                     {getStatusBadge(editingPOStatus)}
                   </div>
-                  <div className="text-xs text-muted-foreground mt-0.5">
-                    สร้างเมื่อ {editingPOCreatedAt} • เมื่อกด "บันทึกการแก้ไข"
-                    ระบบจะอัปเดตใบสั่งซื้อเดิมทันที (ไม่สร้างใบใหม่)
+                  <div className="text-xs text-muted-foreground mt-0.5 flex items-center gap-2 flex-wrap">
+                    <span>สร้างเมื่อ {editingPOCreatedAt}</span>
+                    {lastAutoSavedAt && (
+                      <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1">
+                        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        บันทึกอัตโนมัติแล้ว{" "}
+                        {lastAutoSavedAt.toLocaleTimeString("th-TH", {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}{" "}
+                        น.
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  disabled={fullItems.length === 0}
+                  className="h-9 px-3.5 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
+                  onClick={() =>
+                    handleSavePO(editingPOStatus === "RECEIVED" ? "RECEIVED" : editingPOStatus)
+                  }
+                >
+                  <Save className="size-4" /> บันทึกการแก้ไข
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={fullItems.length === 0}
+                  className="h-9 px-3 text-xs font-semibold rounded-xl gap-1.5"
+                  onClick={() => handleSavePO("DRAFT")}
+                >
+                  <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="h-8 text-xs rounded-xl hover:bg-destructive/10 hover:text-destructive"
+                  className="h-9 px-2.5 text-xs font-semibold rounded-xl gap-1 text-destructive hover:bg-destructive/10 border-destructive/30"
                   onClick={handleCancelEditPO}
                 >
                   <X className="size-3.5 mr-1" /> ยกเลิกการแก้ไข
@@ -2314,6 +2644,87 @@ function ReorderPage() {
                   />
                 </div>
               </Card>
+
+              {/* TOP ACTION TOOLBAR FOR PO ITEMS */}
+              <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-card border border-border/80 shadow-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-foreground">
+                    {editingPOId ? `การดำเนินการ (${editingPONumber}):` : "การดำเนินการใบสั่งซื้อ:"}
+                  </span>
+                  {lastAutoSavedAt && (
+                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium hidden sm:inline-flex items-center gap-1">
+                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      บันทึกอัตโนมัติแล้ว
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {editingPOId ? (
+                    <>
+                      <Button
+                        size="sm"
+                        disabled={fullItems.length === 0}
+                        className="h-8.5 px-3 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
+                        onClick={() =>
+                          handleSavePO(
+                            editingPOStatus === "RECEIVED" ? "RECEIVED" : editingPOStatus,
+                          )
+                        }
+                      >
+                        <Save className="size-3.5" /> บันทึกการแก้ไข
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={fullItems.length === 0}
+                        className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1.5"
+                        onClick={() => handleSavePO("DRAFT")}
+                      >
+                        <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1 text-destructive hover:bg-destructive/10 border-destructive/30"
+                        onClick={handleCancelEditPO}
+                      >
+                        <X className="size-3.5" /> ยกเลิกการแก้ไข
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        disabled={fullItems.length === 0}
+                        className="h-8.5 px-3.5 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
+                        onClick={() => handleSavePO("ORDERED")}
+                      >
+                        <Save className="size-3.5" /> ยืนยันสั่งซื้อ
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={fullItems.length === 0}
+                        className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1.5"
+                        onClick={() => handleSavePO("DRAFT")}
+                      >
+                        <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
+                      </Button>
+                      {orderList.length > 0 && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-8.5 px-2 text-xs text-muted-foreground hover:text-destructive rounded-xl gap-1"
+                          onClick={handleClearDraft}
+                        >
+                          <Trash2 className="size-3.5" /> ล้าง
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
 
               {/* MOBILE LIST ITEMS */}
               <div className="block md:hidden space-y-2.5">
@@ -5052,39 +5463,143 @@ function ReorderPage() {
               ) : (
                 /* TAB CONTENT: PNG IMAGE PREVIEW */
                 <div className="p-3 sm:p-4 bg-muted/20 space-y-3">
+                  {/* Design Style Selector */}
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2.5 rounded-xl bg-card border border-border/80 shadow-xs">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                      <Sparkles className="size-3.5 text-orange-500" />
+                      <span>รูปแบบภาพ PNG:</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={slipDesignStyle === "full_bleed_rich" ? "default" : "outline"}
+                        className={`h-7 px-2.5 text-xs rounded-lg font-bold gap-1 ${
+                          slipDesignStyle === "full_bleed_rich"
+                            ? "bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white shadow-xs"
+                            : "text-muted-foreground"
+                        }`}
+                        onClick={() => {
+                          setSlipDesignStyle("full_bleed_rich");
+                          generateCurrentModalPng(pushMessageType, "full_bleed_rich");
+                        }}
+                      >
+                        🌟 เต็มจอแบบตัวอย่าง (ttb Style)
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={slipDesignStyle === "receipt" ? "default" : "outline"}
+                        className={`h-7 px-2.5 text-xs rounded-lg ${
+                          slipDesignStyle === "receipt"
+                            ? "bg-emerald-600 text-white font-bold"
+                            : "text-muted-foreground"
+                        }`}
+                        onClick={() => {
+                          setSlipDesignStyle("receipt");
+                          generateCurrentModalPng(pushMessageType, "receipt");
+                        }}
+                      >
+                        📄 สลิปใบเสร็จมาตรฐาน
+                      </Button>
+                    </div>
+                  </div>
+
                   {isGeneratingModalPng ? (
                     <div className="py-12 flex flex-col items-center justify-center gap-2 text-muted-foreground">
                       <RefreshCw className="size-6 animate-spin text-emerald-600" />
                       <p className="text-xs font-medium">
-                        กำลังเรนเดอร์สลิปรูปภาพ PNG ความละเอียดสูง...
+                        กำลังเรนเดอร์ภาพ PNG เต็มจอความละเอียดสูง (1040px)...
                       </p>
                     </div>
                   ) : modalPngData ? (
                     <div className="space-y-3">
-                      <div className="relative group max-h-[340px] overflow-auto rounded-xl border bg-slate-950/5 dark:bg-slate-900/30 p-2 flex justify-center">
-                        <img
-                          src={modalPngData.dataUrl}
-                          alt="Slip PNG Preview"
-                          className="max-w-full h-auto object-contain rounded-lg shadow-sm border border-border/40"
-                        />
+                      {/* Simulated LINE Chat Phone Frame */}
+                      <div className="w-full max-w-[420px] mx-auto rounded-3xl overflow-hidden shadow-xl border border-black/15 bg-[#f7f5f2] dark:bg-[#1f2937] flex flex-col">
+                        {/* LINE Chat Header */}
+                        <div className="bg-[#f0ebe3] dark:bg-[#1a232d] px-3.5 py-2 border-b border-black/10 flex items-center justify-between text-zinc-900 dark:text-zinc-100">
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                              ‹ 99+
+                            </span>
+                            <div className="ml-1 min-w-0">
+                              <div className="flex items-center gap-1">
+                                <span className="size-3 rounded-full bg-[#06C755] text-white flex items-center justify-center text-[8px] font-bold">
+                                  ✓
+                                </span>
+                                <span className="text-xs font-bold truncate">
+                                  {currentStoreName}
+                                </span>
+                              </div>
+                              <p className="text-[9px] text-zinc-500 dark:text-zinc-400 leading-none">
+                                ตอบกลับอัตโนมัติ
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2.5 text-zinc-600 dark:text-zinc-400 text-xs">
+                            <span>🔍</span>
+                            <span>☰</span>
+                          </div>
+                        </div>
+
+                        {/* Date Divider */}
+                        <div className="py-2 flex justify-center">
+                          <span className="text-[10px] font-medium text-zinc-700 dark:text-zinc-300 bg-black/10 dark:bg-white/10 px-2.5 py-0.5 rounded-full select-none">
+                            อ. 29/9
+                          </span>
+                        </div>
+
+                        {/* Edge-to-Edge Image Container */}
+                        <div className="px-2 py-1 flex flex-col items-center">
+                          <div className="w-full rounded-2xl overflow-hidden shadow-md border border-black/10 bg-white">
+                            <img
+                              src={modalPngData.dataUrl}
+                              alt="Slip PNG Preview"
+                              className="w-full h-auto object-cover block"
+                            />
+                          </div>
+                          <div className="w-full text-right pr-2 pt-1">
+                            <span className="text-[9px] text-zinc-500 font-medium">19:00</span>
+                          </div>
+                        </div>
+
+                        {/* Simulated Bottom Menu */}
+                        <div className="mt-1 bg-[#f0ebe3] dark:bg-[#1a232d] px-3 py-1.5 border-t border-black/10 flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                          <div className="flex items-center gap-2">
+                            <span className="size-6 rounded-md bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-[10px]">
+                              ⌨️
+                            </span>
+                            <span className="text-[11px] text-zinc-400">พิมพ์ข้อความ...</span>
+                          </div>
+                          <span className="text-[11px] font-bold px-2 py-0.5 bg-zinc-200/60 dark:bg-zinc-700/60 rounded">
+                            เมนู ▲
+                          </span>
+                        </div>
                       </div>
+
                       <div className="flex items-center justify-between gap-2 flex-wrap">
                         <div className="text-[11px] text-muted-foreground flex items-center gap-1.5">
                           <CheckCircle2 className="size-3.5 text-emerald-600" />
-                          <span>เรนเดอร์สลิป PNG สำเร็จ (2x High-DPI คมชัดทุกรายละเอียด)</span>
+                          <span>
+                            {slipDesignStyle === "full_bleed_rich"
+                              ? "ภาพแบนเนอร์เต็มจอ 1040px (สไตล์ตัวอย่างรูปภาพ ttb • คมชัด 2x High-DPI)"
+                              : "เรนเดอร์สลิป PNG สำเร็จ (2x High-DPI)"}
+                          </span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="h-8 text-xs rounded-lg gap-1"
+                            className="h-8 text-xs rounded-lg gap-1 font-semibold text-orange-600 dark:text-orange-400 border-orange-500/40 hover:bg-orange-50 dark:hover:bg-orange-950/20"
                             onClick={async () => {
                               if (!modalPngData) return;
                               const ok = await copyImageBlobToClipboard(modalPngData.blob);
                               if (ok) {
                                 setCopiedModalPng(true);
-                                toast.success("คัดลอกรูปภาพลงคลิปบอร์ดแล้ว พร้อมนำไปวางในแชท LINE");
+                                toast.success(
+                                  "คัดลอกรูปภาพลงคลิปบอร์ดแล้ว พร้อมนำไปวางในแชท LINE เต็มจอ",
+                                );
                                 setTimeout(() => setCopiedModalPng(false), 2000);
                               } else {
                                 toast.error("เบราว์เซอร์ไม่รองรับการคัดลอกรูปภาพอัตโนมัติ");
@@ -5092,25 +5607,25 @@ function ReorderPage() {
                             }}
                           >
                             <Copy className="size-3.5" />
-                            <span>{copiedModalPng ? "คัดลอกแล้ว!" : "คัดลอกภาพ"}</span>
+                            <span>{copiedModalPng ? "คัดลอกแล้ว!" : "คัดลอกภาพเต็มจอ"}</span>
                           </Button>
                           <Button
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="h-8 text-xs rounded-lg gap-1"
+                            className="h-8 text-xs rounded-lg gap-1 font-semibold text-emerald-700 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
                             onClick={() => {
                               if (!modalPngData) return;
                               const fname =
                                 pushMessageType === "STOCK_ALERT"
-                                  ? `Stock_Alert_${new Date().toISOString().slice(0, 10)}.png`
-                                  : `PO_${editingPOId ? editingPONumber : "Order"}_${new Date().toISOString().slice(0, 10)}.png`;
+                                  ? `Stock_Alert_FullBleed_${new Date().toISOString().slice(0, 10)}.png`
+                                  : `PO_FullBleed_${editingPOId ? editingPONumber : "Order"}_${new Date().toISOString().slice(0, 10)}.png`;
                               downloadImageBlob(modalPngData.blob, fname);
-                              toast.success("ดาวน์โหลดรูปภาพสลิป PNG เรียบร้อย");
+                              toast.success("ดาวน์โหลดรูปภาพ PNG เต็มจอ (1040px) เรียบร้อย");
                             }}
                           >
                             <Download className="size-3.5" />
-                            <span>ดาวน์โหลด PNG</span>
+                            <span>ดาวน์โหลด PNG 1040px</span>
                           </Button>
                           {typeof navigator !== "undefined" && navigator.canShare && (
                             <Button
@@ -5122,14 +5637,14 @@ function ReorderPage() {
                                 if (!modalPngData) return;
                                 const fname =
                                   pushMessageType === "STOCK_ALERT"
-                                    ? `Stock_Alert.png`
-                                    : `PO_${editingPOId ? editingPONumber : "Order"}.png`;
+                                    ? `Stock_Alert_FullBleed.png`
+                                    : `PO_FullBleed_${editingPOId ? editingPONumber : "Order"}.png`;
                                 const ok = await shareImageFileViaNavigator(
                                   modalPngData.blob,
                                   fname,
                                   pushMessageType === "STOCK_ALERT"
-                                    ? "แจ้งเตือนสต็อกสินค้า"
-                                    : "ใบสั่งซื้อสินค้า",
+                                    ? "แจ้งเตือนสต็อกสินค้า (เต็มจอ)"
+                                    : "ใบสั่งซื้อสินค้า (เต็มจอ)",
                                   currentStoreName,
                                 );
                                 if (!ok) {
@@ -5150,11 +5665,11 @@ function ReorderPage() {
                       <Button
                         type="button"
                         size="sm"
-                        className="h-8 rounded-xl bg-blue-600 hover:bg-blue-700 text-white gap-1"
+                        className="h-8 rounded-xl bg-orange-600 hover:bg-orange-700 text-white font-bold gap-1 shadow-xs"
                         onClick={() => generateCurrentModalPng(pushMessageType)}
                       >
                         <ImageIcon className="size-3.5" />
-                        <span>กดเพื่อสร้างสลิปรูปภาพ PNG</span>
+                        <span>กดเพื่อสร้างภาพ PNG เต็มจอ (1040px)</span>
                       </Button>
                     </div>
                   )}
@@ -5283,7 +5798,7 @@ function ReorderPage() {
 
       {/* UNIVERSAL FLEX MESSAGE PREVIEW MODAL */}
       <Dialog open={flexPreviewOpen} onOpenChange={setFlexPreviewOpen}>
-        <DialogContent className="w-[96vw] max-w-xl rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+        <DialogContent className="w-[96vw] max-w-4xl rounded-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader className="pb-2">
             <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
               <MessageCircle className="size-5 text-emerald-600" /> {flexPreviewTitle}
@@ -5293,14 +5808,61 @@ function ReorderPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-muted/40 border text-xs my-1">
-            <div className="flex items-center gap-1.5 font-bold text-foreground">
-              <SlidersHorizontal className="size-3.5 text-emerald-600" />
-              <span>การจัดกลุ่มสินค้าใน Flex Message:</span>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3 rounded-xl bg-muted/40 border text-xs my-1">
+            {/* Format: 1. Carousel vs 2. Bubble */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-foreground flex items-center gap-1.5">
+                  <MessageCircle className="size-3.5 text-emerald-600" />
+                  <span>รูปแบบ Flex Message:</span>
+                </span>
+                <Badge
+                  variant="outline"
+                  className="text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+                >
+                  รองรับ 2 แบบ
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  type="button"
+                  className={`p-2 rounded-lg border text-left font-semibold transition-all ${
+                    flexContainerType === "carousel"
+                      ? "bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-xs"
+                      : "bg-background border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                  onClick={() => handleUpdateContainerType("carousel")}
+                >
+                  <div className="text-xs font-bold">1. 🎠 Carousel</div>
+                  <div className="text-[10px] font-normal text-muted-foreground">
+                    การ์ดสไลด์หลายหน้า / แยกหมวดหมู่
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  className={`p-2 rounded-lg border text-left font-semibold transition-all ${
+                    flexContainerType === "bubble"
+                      ? "bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-xs"
+                      : "bg-background border-border text-muted-foreground hover:bg-muted"
+                  }`}
+                  onClick={() => handleUpdateContainerType("bubble")}
+                >
+                  <div className="text-xs font-bold">2. 💬 Bubble</div>
+                  <div className="text-[10px] font-normal text-muted-foreground">
+                    การ์ดยาวแผ่นเดียว รวมทุกรายการ
+                  </div>
+                </button>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Grouping */}
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 font-bold text-foreground">
+                <SlidersHorizontal className="size-3.5 text-emerald-600" />
+                <span>การจัดกลุ่มสินค้าใน Flex:</span>
+              </div>
               <select
-                className="h-8 rounded-lg border border-input bg-background px-2.5 text-xs font-semibold shadow-xs"
+                className="w-full h-9 rounded-lg border border-input bg-background px-2.5 text-xs font-semibold shadow-xs"
                 value={flexGroupBy}
                 onChange={(e) => handleUpdateFlexGrouping(e.target.value as FlexItemGroupBy)}
               >
@@ -5315,12 +5877,6 @@ function ReorderPage() {
                   📍 โซน ➔ 🏷️ หมวดหมู่สินค้า (แสดงแถบหัวข้อ)
                 </option>
               </select>
-              <Badge
-                variant="outline"
-                className="text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300 shrink-0"
-              >
-                อัปเดตทันที
-              </Badge>
             </div>
           </div>
 
@@ -5329,6 +5885,9 @@ function ReorderPage() {
               flexData={flexPreviewData}
               title={flexPreviewTitle}
               className="w-full"
+              imageUrl={modalPngData?.dataUrl}
+              imageBlob={modalPngData?.blob}
+              storeName={currentStoreName}
             />
           </div>
 

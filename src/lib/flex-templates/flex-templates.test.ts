@@ -272,4 +272,45 @@ describe("Flex Message Template Customization (Separated Qty/Unit & Large Font)"
     expect(headerBanner).toBeDefined();
     expect(requiredAt(headerBanner!.contents, 0).text).toBe("📍 ตู้แช่ • 🏷️ เครื่องดื่ม");
   });
+
+  it("creates LINE Flex Carousel format with multiple cards when containerType is 'carousel'", async () => {
+    const { createPurchaseOrderFlex, createPurchaseOrderFlexCarousel } = await import("./index");
+    const testItems = [
+      {
+        name: "น้ำดื่ม 600ml",
+        quantity: 10,
+        unitName: "แพ็ค",
+        costPrice: 50,
+        categoryName: "เครื่องดื่ม",
+      },
+      {
+        name: "มาม่าต้มยำกุ้ง",
+        quantity: 24,
+        unitName: "ซอง",
+        costPrice: 6,
+        categoryName: "บะหมี่กึ่งสำเร็จรูป",
+      },
+    ];
+
+    const carousel = createPurchaseOrderFlexCarousel(testItems, {
+      storeName: "ร้าน มินิมาร์ท",
+      orderNumber: "PO-20261016-001",
+    });
+
+    expect(carousel.type).toBe("flex");
+    expect(carousel.contents.type).toBe("carousel");
+    expect(Array.isArray(carousel.contents.contents)).toBe(true);
+    expect(carousel.contents.contents.length).toBeGreaterThanOrEqual(2); // Summary card + Category card
+
+    // Test universal switcher
+    const flexViaUniversal = createPurchaseOrderFlex(testItems, {
+      containerType: "carousel",
+    });
+    expect(flexViaUniversal.contents.type).toBe("carousel");
+
+    const flexViaBubble = createPurchaseOrderFlex(testItems, {
+      containerType: "bubble",
+    });
+    expect(flexViaBubble.contents.type).toBe("bubble");
+  });
 });

@@ -40,6 +40,7 @@ interface OrderExportDialogProps {
 
 export function OrderExportDialog({ open, onOpenChange, orderPayload }: OrderExportDialogProps) {
   const [copied, setCopied] = useState(false);
+  const [flexFormat, setFlexFormat] = useState<"carousel" | "bubble">("carousel");
 
   if (!orderPayload) return null;
 
@@ -89,15 +90,47 @@ export function OrderExportDialog({ open, onOpenChange, orderPayload }: OrderExp
           </div>
         </div>
 
-        {/* Featured Option: LINE Flex Message (.JSON) */}
-        <div className="pt-1 pb-0.5">
+        {/* Featured Option: LINE Flex Message (.JSON) with 1. Carousel & 2. Bubble */}
+        <div className="pt-1 pb-0.5 space-y-1.5">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-foreground flex items-center gap-1.5">
+              <span>รูปแบบ Flex:</span>
+            </span>
+            <div className="flex items-center gap-1 bg-muted p-0.5 rounded-lg border">
+              <button
+                type="button"
+                className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-all ${
+                  flexFormat === "carousel"
+                    ? "bg-emerald-600 text-white shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setFlexFormat("carousel")}
+              >
+                1. 🎠 Carousel
+              </button>
+              <button
+                type="button"
+                className={`px-2 py-0.5 rounded-md text-[11px] font-semibold transition-all ${
+                  flexFormat === "bubble"
+                    ? "bg-emerald-600 text-white shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setFlexFormat("bubble")}
+              >
+                2. 💬 Bubble
+              </button>
+            </div>
+          </div>
+
           <button
             type="button"
             className="w-full flex items-center justify-between p-3 rounded-2xl border-2 border-[#06C755]/40 bg-emerald-50/60 dark:bg-emerald-950/30 hover:border-[#06C755] hover:bg-emerald-100/50 dark:hover:bg-emerald-950/50 transition-all text-left group active:scale-98"
             onClick={() => {
-              exportOrderToFlexJSON(orderPayload);
+              exportOrderToFlexJSON(orderPayload, { containerType: flexFormat });
               toast.success(
-                "ดาวน์โหลดไฟล์ LINE Flex Message (.json) สำเร็จ พร้อมใช้ใน LINE Simulator",
+                `ดาวน์โหลดไฟล์ LINE Flex Message (${
+                  flexFormat === "carousel" ? "1. Carousel" : "2. Bubble"
+                }) สำเร็จ พร้อมใช้ใน LINE Simulator`,
               );
             }}
           >
@@ -108,14 +141,16 @@ export function OrderExportDialog({ open, onOpenChange, orderPayload }: OrderExp
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="text-xs font-bold text-emerald-900 dark:text-emerald-100">
-                    LINE Flex Message (.JSON)
+                    LINE Flex ({flexFormat === "carousel" ? "1. Carousel" : "2. Bubble"}) (.JSON)
                   </span>
                   <Badge className="bg-[#06C755] text-white text-[9px] h-4 px-1.5 font-semibold">
-                    ยอดนิยม
+                    {flexFormat === "carousel" ? "สไลด์การ์ด" : "การ์ดยาว"}
                   </Badge>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
-                  โครงสร้าง Flex Message สำเร็จรูปสำหรับ LINE Simulator & LINE Bot
+                  {flexFormat === "carousel"
+                    ? "แบบ Carousel สไลด์หลายการ์ด แยกตามหมวดหมู่"
+                    : "แบบ Bubble การ์ดยาวแผ่นเดียว รวมทุกรายการ"}
                 </p>
               </div>
             </div>

@@ -3,6 +3,7 @@
  * Stores Zones, Categories, Units, Products, and Orders with persistence.
  */
 
+import { useEffect, useState } from "react";
 import { removeLegacySampleLineFollowers } from "./line-follower-data";
 import { generateCategoryCode } from "./category-code-generator";
 
@@ -172,6 +173,28 @@ export const DEFAULT_MOVEMENTS: StockMovementLog[] = [];
 
 export const DEFAULT_PURCHASE_ORDERS: PurchaseOrderRecord[] = [];
 
+export interface StoreProfileConfig {
+  storeName: string;
+  branchName?: string | undefined;
+  taxId?: string | undefined;
+  address?: string | undefined;
+  phone?: string | undefined;
+  headerMessage?: string | undefined;
+  footerMessage?: string | undefined;
+}
+
+export const DEFAULT_STORE_NAME = "โชห่วยยุค90s";
+
+export const DEFAULT_STORE_PROFILE: StoreProfileConfig = {
+  storeName: DEFAULT_STORE_NAME,
+  branchName: "สาขา 0001 (หน้าร้านพัฒนาการ)",
+  taxId: "0105562098765",
+  address: "123/45 ถนนพัฒนาการ แขวงสวนหลวง กรุงเทพฯ 10250",
+  phone: "02-123-4567, 081-987-6543",
+  headerMessage: "ยินดีต้อนรับสู่ โชห่วยยุค90s สินค้าคุณภาพ ราคากันเอง",
+  footerMessage: "ขอบคุณที่ใช้บริการ โชห่วยยุค90s โอกาสหน้าเชิญใหม่ครับ",
+};
+
 export const DEFAULT_PRODUCTS: ProductItem[] = [];
 
 export const STORAGE_KEYS = {
@@ -185,6 +208,8 @@ export const STORAGE_KEYS = {
   MOVEMENTS: "minimark_movements",
   PURCHASE_ORDERS: "minimark_purchase_orders",
   PO_DRAFT: "minimark_po_draft",
+  STORE_CONFIG: "minimark_store_config",
+  STORE_NAME: "minimark_store_name",
 };
 
 function safeGet<T>(key: string, fallback: T): T {
@@ -923,4 +948,135 @@ export const MasterStore = {
       // ignore
     }
   },
+
+  /**
+   * Get current store name with fallback to DEFAULT_STORE_NAME ("โชห่วยยุค90s")
+   */
+  getStoreName(): string {
+    if (typeof window === "undefined") return DEFAULT_STORE_NAME;
+    try {
+      const explicitName = localStorage.getItem(STORAGE_KEYS.STORE_NAME);
+      if (explicitName && explicitName.trim() && !isLegacyStoreName(explicitName)) {
+        return explicitName.trim();
+      }
+      const rawCfg = localStorage.getItem(STORAGE_KEYS.STORE_CONFIG);
+      if (rawCfg) {
+        const parsed = JSON.parse(rawCfg);
+        if (
+          parsed?.storeName &&
+          typeof parsed.storeName === "string" &&
+          parsed.storeName.trim() &&
+          !isLegacyStoreName(parsed.storeName)
+        ) {
+          return parsed.storeName.trim();
+        }
+      }
+      const rawReceipt = localStorage.getItem("minimark_receipt_config_v1");
+      if (rawReceipt) {
+        const parsed = JSON.parse(rawReceipt);
+        if (
+          parsed?.storeName &&
+          typeof parsed.storeName === "string" &&
+          parsed.storeName.trim() &&
+          !isLegacyStoreName(parsed.storeName)
+        ) {
+          return parsed.storeName.trim();
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_STORE_NAME;
+  },
+
+  /**
+   * Set and save store name across the app
+   */
+  setStoreName(name: string): void {
+    const trimmed = name.trim() || DEFAULT_STORE_NAME;
+    safeSet(STORAGE_KEYS.STORE_NAME, trimmed);
+    const profile = this.getStoreProfile();
+    this.setStoreProfile({ ...profile, storeName: trimmed });
+  },
+
+  /**
+   * Get full store profile config
+   */
+  getStoreProfile(): StoreProfileConfig {
+    const saved = safeGet<StoreProfileConfig>(STORAGE_KEYS.STORE_CONFIG, DEFAULT_STORE_PROFILE);
+    const storeName = this.getStoreName();
+    return {
+      ...DEFAULT_STORE_PROFILE,
+      ...saved,
+      storeName,
+    };
+  },
+
+  /**
+   * Set full store profile config and sync with receipt & templates
+   */
+  setStoreProfile(profile: Partial<StoreProfileConfig>): StoreProfileConfig {
+    const current = this.getStoreProfile();
+    const storeName = profile.storeName?.trim() || current.storeName || DEFAULT_STORE_NAME;
+    const updated: StoreProfileConfig = {
+      ...current,
+      ...profile,
+      storeName,
+    };
+    safeSet(STORAGE_KEYS.STORE_CONFIG, updated);
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(STORAGE_KEYS.STORE_NAME, storeName);
+        const rawReceipt = localStorage.getItem("minimark_receipt_config_v1");
+        if (rawReceipt) {
+          const parsed = JSON.parse(rawReceipt);
+          parsed.storeName = storeName;
+          if (profile.branchName) parsed.branchName = profile.branchName;
+          if (profile.taxId) parsed.taxId = profile.taxId;
+          if (profile.address) parsed.address = profile.address;
+          if (profile.phone) parsed.phone = profile.phone;
+          if (profile.headerMessage) parsed.headerMessage = profile.headerMessage;
+          if (profile.footerMessage) parsed.footerMessage = profile.footerMessage;
+          localStorage.setItem("minimark_receipt_config_v1", JSON.stringify(parsed));
+        }
+      } catch {
+        // ignore
+      }
+    }
+    window.dispatchEvent(new Event("minimark_store_change"));
+    return updated;
+  },
 };
+
+function isLegacyStoreName(name: string): boolean {
+  const trimmed = name.trim();
+  return (
+    trimmed === "MiniMark" ||
+    trimmed === "ร้าน MiniMark" ||
+    trimmed === "ร้าน MiniMark (มินิมาร์ท โชว์ห่วย)" ||
+    trimmed === "ร้าน โชห่วยยุค 90s"
+  );
+}
+
+/**
+ * Reactive React hook that returns the current store name and re-renders
+ * whenever the store name is updated in Settings.
+ */
+export function useStoreName(): string {
+  const [storeName, setStoreNameState] = useState<string>(() => MasterStore.getStoreName());
+
+  useEffect(() => {
+    const update = () => {
+      setStoreNameState(MasterStore.getStoreName());
+    };
+    update();
+    window.addEventListener("minimark_store_change", update);
+    window.addEventListener("storage", update);
+    return () => {
+      window.removeEventListener("minimark_store_change", update);
+      window.removeEventListener("storage", update);
+    };
+  }, []);
+
+  return storeName;
+}

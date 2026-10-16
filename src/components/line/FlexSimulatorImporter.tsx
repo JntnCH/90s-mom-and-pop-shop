@@ -27,6 +27,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea";
 import {
   createDailySummaryFlexBubble,
+  createFullBleedPurchaseOrderFlexBubble,
   createMiniAppPortalFlexBubble,
   createPurchaseOrderFlexBubble,
   createStockAlertFlexBubble,
@@ -38,6 +39,7 @@ import {
   parseFlexSimulatorJson,
 } from "@/lib/flex-templates/flex-simulator-json";
 import { shareFlexViaLiffPicker } from "@/lib/line-service";
+import { generateFullBleedRichCardSlipImage } from "@/lib/slip-image-generator";
 
 interface FlexSimulatorImporterProps {
   onSaved?: () => void;
@@ -89,6 +91,43 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
   const [isCustomSaved, setIsCustomSaved] = useState<boolean>(false);
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [copied, setCopied] = useState<boolean>(false);
+  const [fullBleedPng, setFullBleedPng] = useState<{ dataUrl: string; blob: Blob } | null>(null);
+
+  useEffect(() => {
+    generateFullBleedRichCardSlipImage({
+      orderNumber: "PO-2026-001",
+      createdAt: "15 ต.ค. 2569 13:45 น.",
+      storeName: currentStoreName,
+      supplierName: "บริษัท สหพัฒนพิบูล จำกัด (มหาชน)",
+      items: [
+        {
+          name: "ปลาร้า แม่เหรียญ ฝาขาว 380 มล.",
+          quantity: 1,
+          unitName: "แพ็ค",
+          costPrice: 180,
+          total: 180,
+        },
+        {
+          name: "ครีมเภสัช 45 ก.",
+          quantity: 15,
+          unitName: "ขวด",
+          costPrice: 25,
+          total: 375,
+        },
+        {
+          name: "น้ำปลาทิพรส 700 มล.",
+          quantity: 6,
+          unitName: "ขวด",
+          costPrice: 32,
+          total: 192,
+        },
+      ],
+      totalQuantity: 22,
+      totalCost: 747,
+    })
+      .then((res) => setFullBleedPng({ dataUrl: res.dataUrl, blob: res.blob }))
+      .catch((err) => console.warn("Failed generating simulator preview PNG:", err));
+  }, [currentStoreName]);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -218,6 +257,36 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
   const handleLoadPreset = (presetName: string) => {
     let presetObj: unknown;
     switch (presetName) {
+      case "FULL_BLEED_TTB":
+        presetObj = createFullBleedPurchaseOrderFlexBubble(
+          [
+            {
+              name: "ปลาร้า แม่เหรียญ ฝาขาว 380 มล.",
+              quantity: 1,
+              unitName: "แพ็ค",
+              categoryName: "เครื่องปรุงรส",
+              costPrice: 180,
+            },
+            {
+              name: "ครีมเภสัช 45 ก.",
+              quantity: 15,
+              unitName: "ขวด",
+              categoryName: "ของใช้ส่วนตัว",
+              costPrice: 25,
+            },
+            {
+              name: "น้ำปลาทิพรส 700 มล.",
+              quantity: 6,
+              unitName: "ขวด",
+              categoryName: "เครื่องปรุงรส",
+              costPrice: 32,
+            },
+          ],
+          {
+            storeName: currentStoreName,
+          },
+        );
+        break;
       case "PO":
         presetObj = getCustomPOFlex(isLargeFont);
         break;
@@ -416,6 +485,14 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
           <Button
             size="sm"
             variant="outline"
+            className="h-7 text-xs rounded-lg px-2.5 font-bold border-orange-500/50 text-orange-600 dark:text-orange-400 bg-orange-50/60 dark:bg-orange-950/20 shadow-xs gap-1"
+            onClick={() => handleLoadPreset("FULL_BLEED_TTB")}
+          >
+            🌟 เต็มจอ (แบบตัวอย่าง ttb)
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
             className="h-7 text-xs rounded-lg px-2.5 font-medium"
             onClick={() => handleLoadPreset("PO")}
           >
@@ -600,8 +677,11 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
 
           <FlexMessageVisualizer
             flexData={parsedFlex}
-            title="ตัวอย่างการแสดงผล Flex Message"
+            title="ตัวอย่างการแสดงผล Flex Message & ภาพเต็มจอ"
             className="min-w-0 w-full rounded-2xl"
+            imageUrl={fullBleedPng?.dataUrl}
+            imageBlob={fullBleedPng?.blob}
+            storeName={currentStoreName}
           />
         </div>
       </div>

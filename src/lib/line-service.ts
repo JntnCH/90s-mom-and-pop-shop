@@ -9,8 +9,13 @@ import { MasterStore, type ProductItem } from "./store";
 import {
   createDailySummaryFlexBubble,
   createPurchaseOrderFlexBubble,
+  createPurchaseOrderFlexCarousel,
+  createPurchaseOrderFlex,
   createStockAlertFlexBubble,
+  createStockAlertFlexCarousel,
+  createStockAlertFlex,
   DEFAULT_STORE_NAME,
+  type FlexContainerType,
   type FlexItemGroupBy,
   type FlexOrderItem,
   type FlexStockAlertItem,
@@ -303,7 +308,7 @@ export function buildOrderFlexMessage(
     options?.includeZone ??
     (groupBy === "zone" || groupBy === "zone_then_category" || groupBy === "category_then_zone");
 
-  return createPurchaseOrderFlexBubble(items, {
+  return createPurchaseOrderFlex(items, {
     storeName: resolvedStoreName,
     note,
     liffId,
@@ -854,6 +859,10 @@ export function formatDailyOrderFlexMessage(
 
   try {
     const customTemplate = getLatestPurchaseOrderFlexMessage();
+    const customType = (customTemplate.contents as { type?: string })?.type;
+    if (options?.containerType && customType && customType !== options.containerType) {
+      throw new Error("Custom template type does not match requested containerType");
+    }
     return populatePurchaseOrderFlexTemplate(customTemplate, {
       orderNumber: options?.orderNumber ?? "DRAFT",
       orderDate: resolvedDate,
@@ -955,7 +964,7 @@ export async function sendStockAlertToLine(
   },
 ): Promise<{ success: boolean; method?: string; error?: string; tier?: number }> {
   const resolvedStoreName = getSystemStoreName(storeName);
-  const flexMsg = createStockAlertFlexBubble(alertItems, {
+  const flexMsg = createStockAlertFlex(alertItems, {
     storeName: resolvedStoreName,
     ...options,
   });

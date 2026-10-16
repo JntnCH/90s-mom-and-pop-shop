@@ -23,14 +23,18 @@ import {
   signInWithGoogle,
 } from "@/lib/google-sheets-service";
 import { FlexMessageVisualizer } from "@/components/line/FlexMessageVisualizer";
-import type { FlexItemGroupBy } from "@/lib/flex-templates";
+import type { FlexContainerType, FlexItemGroupBy } from "@/lib/flex-templates";
 import {
   buildOrderFlexMessageFromPayload,
   copyTextToClipboard,
   downloadJsonFile,
 } from "@/lib/order-export";
 import { shareFlexViaLiffPicker } from "@/lib/line-service";
-import { shareImageFileViaNavigator } from "@/lib/slip-image-generator";
+import {
+  generatePurchaseOrderSlipImage,
+  shareImageFileViaNavigator,
+  type SlipDesignStyle,
+} from "@/lib/slip-image-generator";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -80,11 +84,15 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   const [copiedText, setCopiedText] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageBlobUrl, setImageBlobUrl] = useState<string | null>(null);
+  const [imagePreviewMode, setImagePreviewMode] = useState<"full" | "mockup">("full");
+  const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const printDocRef = useRef<HTMLDivElement>(null);
   const [isExportingGoogleSheets, setIsExportingGoogleSheets] = useState(false);
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState<string | null>(null);
   const [isSendingLineImage, setIsSendingLineImage] = useState(false);
+  const [exportSlipStyle, setExportSlipStyle] = useState<SlipDesignStyle>("full_bleed_rich");
 
+  const [flexContainerType, setFlexContainerType] = useState<FlexContainerType>("carousel");
   const [flexGroupBy, setFlexGroupBy] = useState<FlexItemGroupBy>("category_no_header");
   const [copiedFlexJson, setCopiedFlexJson] = useState(false);
 
@@ -96,13 +104,21 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         flexGroupBy !== "none" &&
         flexGroupBy !== "category_no_header" &&
         flexGroupBy !== "zone_no_header",
+      containerType: flexContainerType,
     });
-  }, [payload, flexGroupBy]);
+  }, [payload, flexGroupBy, flexContainerType]);
 
   const handleDownloadFlexJSON = () => {
     if (!payload || !currentFlexMessage) return;
-    downloadJsonFile(currentFlexMessage, `PO_${payload.orderNumber}_flex.json`);
-    toast.success("ดาวน์โหลดไฟล์ LINE Flex Message (.json) สำเร็จ");
+    downloadJsonFile(
+      currentFlexMessage,
+      `PO_${payload.orderNumber}_flex_${flexContainerType}.json`,
+    );
+    toast.success(
+      `ดาวน์โหลดไฟล์ LINE Flex Message (${
+        flexContainerType === "carousel" ? "1. Carousel" : "2. Bubble"
+      }) สำเร็จ`,
+    );
   };
 
   const handleCopyFlexJSON = async () => {
@@ -111,7 +127,11 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
     const success = await copyTextToClipboard(jsonStr);
     if (success) {
       setCopiedFlexJson(true);
-      toast.success("คัดลอก Flex Message JSON สำเร็จ นำไปวางใน LINE Simulator ได้ทันที");
+      toast.success(
+        `คัดลอก Flex JSON (${
+          flexContainerType === "carousel" ? "Carousel" : "Bubble"
+        }) สำเร็จ นำไปวางใน LINE Simulator ได้ทันที`,
+      );
       setTimeout(() => setCopiedFlexJson(false), 2000);
     } else {
       toast.error("ไม่สามารถคัดลอกได้ กรุณาใช้ปุ่มดาวน์โหลด .json");
@@ -288,144 +308,42 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
     }
   };
 
-  // 3. Generate Slip Image via Canvas
-  const handleGenerateImage = () => {
+  // 3. Generate Slip Image via High-DPI Generator
+  const handleGenerateImage = async (styleOverride?: SlipDesignStyle) => {
     setIsGeneratingImage(true);
+    const chosenStyle = styleOverride || exportSlipStyle;
     try {
-      const canvas = document.createElement("canvas");
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        setIsGeneratingImage(false);
-        return;
-      }
-
-      // High DPI settings
-      const scale = 2;
-      const width = 640;
-      const padding = 32;
-      const headerHeight = 160;
-      const rowHeight = 36;
-      const footerHeight = 180;
-      const totalHeight = headerHeight + payload.items.length * rowHeight + footerHeight;
-
-      canvas.width = width * scale;
-      canvas.height = totalHeight * scale;
-      ctx.scale(scale, scale);
-
-      // Background
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, width, totalHeight);
-
-      // Top green brand bar
-      ctx.fillStyle = "#059669";
-      ctx.fillRect(0, 0, width, 8);
-
-      // Store Title
-      ctx.fillStyle = "#111827";
-      ctx.font = "bold 20px Prompt, sans-serif";
-      ctx.fillText(payload.storeName, padding, 40);
-
-      // PO Subtitle & info
-      ctx.fillStyle = "#6b7280";
-      ctx.font = "13px Prompt, sans-serif";
-      ctx.fillText(`ใบสั่งซื้อสินค้า • ${payload.orderNumber}`, padding, 64);
-      ctx.fillText(`วันที่: ${payload.createdAt}`, padding, 84);
-      ctx.fillText(`ซัพพลายเออร์: ${payload.supplierName}`, padding, 104);
-
-      // Divider
-      ctx.strokeStyle = "#e5e7eb";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(padding, 120);
-      ctx.lineTo(width - padding, 120);
-      ctx.stroke();
-
-      // Table Header
-      ctx.fillStyle = "#f3f4f6";
-      ctx.fillRect(padding, 130, width - padding * 2, 28);
-      ctx.fillStyle = "#374151";
-      ctx.font = "bold 12px Prompt, sans-serif";
-      ctx.fillText("รายการสินค้า", padding + 8, 148);
-      ctx.fillText("จำนวน", width - padding - 180, 148);
-      ctx.fillText("ราคา/หน่วย", width - padding - 110, 148);
-      ctx.fillText("ยอดรวม (฿)", width - padding - 40, 148);
-
-      // Table Rows
-      let currentY = 180;
-      ctx.font = "12px Prompt, sans-serif";
-      payload.items.forEach((item, idx) => {
-        // Alternating background
-        if (idx % 2 === 1) {
-          ctx.fillStyle = "#f9fafb";
-          ctx.fillRect(padding, currentY - 16, width - padding * 2, rowHeight);
-        }
-
-        ctx.fillStyle = "#111827";
-        const truncatedName =
-          item.productName.length > 28
-            ? item.productName.substring(0, 26) + "..."
-            : item.productName;
-        ctx.fillText(`${idx + 1}. ${truncatedName}`, padding + 8, currentY);
-
-        ctx.fillStyle = "#059669";
-        ctx.font = "bold 12px Prompt, sans-serif";
-        ctx.fillText(`${item.quantity} ${item.unitName}`, width - padding - 180, currentY);
-
-        ctx.fillStyle = "#6b7280";
-        ctx.font = "12px Prompt, sans-serif";
-        ctx.fillText(`฿${item.costPrice.toFixed(0)}`, width - padding - 105, currentY);
-
-        ctx.fillStyle = "#111827";
-        ctx.font = "bold 12px Prompt, sans-serif";
-        ctx.fillText(`฿${item.total.toFixed(0)}`, width - padding - 40, currentY);
-
-        currentY += rowHeight;
+      const res = await generatePurchaseOrderSlipImage({
+        orderNumber: payload.orderNumber,
+        createdAt: payload.createdAt,
+        storeName: payload.storeName,
+        supplierName: payload.supplierName,
+        style: chosenStyle,
+        items: payload.items.map((i) => ({
+          name: i.productName,
+          quantity: i.quantity,
+          unitName: i.unitName,
+          costPrice: i.costPrice,
+          total: i.total,
+          barcode: i.barcode,
+          zoneName: i.zoneName,
+          categoryName: i.categoryName,
+          note: i.note,
+        })),
+        totalQuantity: payload.totalQuantity,
+        totalCost: payload.totalCost,
       });
 
-      // Bottom Divider
-      ctx.beginPath();
-      ctx.moveTo(padding, currentY + 8);
-      ctx.lineTo(width - padding, currentY + 8);
-      ctx.stroke();
-
-      // Totals Box
-      currentY += 28;
-      ctx.fillStyle = "#ecfdf5";
-      ctx.fillRect(padding, currentY, width - padding * 2, 48);
-      ctx.strokeStyle = "#a7f3d0";
-      ctx.strokeRect(padding, currentY, width - padding * 2, 48);
-
-      ctx.fillStyle = "#065f46";
-      ctx.font = "bold 14px Prompt, sans-serif";
-      ctx.fillText(`รวมทั้งหมด: ${payload.totalQuantity} ชิ้น`, padding + 16, currentY + 30);
-
-      ctx.fillStyle = "#047857";
-      ctx.font = "bold 16px Prompt, sans-serif";
-      ctx.fillText(
-        `฿${payload.totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}`,
-        width - padding - 130,
-        currentY + 30,
+      const url = URL.createObjectURL(res.blob);
+      setImageBlobUrl(url);
+      setIsGeneratingImage(false);
+      toast.success(
+        chosenStyle === "full_bleed_rich"
+          ? "สร้างภาพแบนเนอร์เต็มจอ 1040px สำเร็จ (สไตล์ตัวอย่างรูปภาพ ttb)"
+          : "สร้างภาพสลิปใบเสร็จสำเร็จ",
       );
-
-      // Footer note
-      currentY += 70;
-      ctx.fillStyle = "#9ca3af";
-      ctx.font = "11px Prompt, sans-serif";
-      ctx.fillText(
-        `เอกสารสร้างอัตโนมัติจากระบบ โชห่วยยุค90s • สแกนและตรวจรับเข้าสต็อกได้ทันที`,
-        padding,
-        currentY,
-      );
-
-      canvas.toBlob((blob) => {
-        if (blob) {
-          const url = URL.createObjectURL(blob);
-          setImageBlobUrl(url);
-          setIsGeneratingImage(false);
-          toast.success("สร้างภาพสลิปสำเร็จ");
-        }
-      }, "image/png");
-    } catch {
+    } catch (err) {
+      console.error("Failed generating export slip:", err);
       setIsGeneratingImage(false);
       toast.error("สร้างภาพสลิปไม่สำเร็จ");
     }
@@ -533,7 +451,7 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
 ────────────────────
 รวมสินค้า: ${payload.totalQuantity} ชิ้น
 ยอดเงินรวมทั้งสิ้น: ฿${payload.totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-สร้างจากระบบ โชห่วยยุค90s POS & Stock Manager`;
+สร้างจากระบบ MiniMark POS & Stock Manager`;
 
   const handleCopyText = () => {
     try {
@@ -821,14 +739,54 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
 
           {/* TAB 3: IMAGE / PNG SLIP */}
           <TabsContent value="image" className="space-y-3">
-            <div className="bg-blue-500/10 border border-blue-500/20 p-4 rounded-xl space-y-2">
-              <h3 className="font-semibold text-sm text-blue-800 dark:text-blue-300 flex items-center gap-2">
-                <ImageIcon className="size-4" /> สลิปภาพใบสั่งซื้อ (PNG Slip Image)
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                สร้างภาพใบสั่งซื้ออัตโนมัติ สำหรับส่งเป็นรูปภาพเข้าแชท LINE, WhatsApp หรือ Messenger
-                ได้ทันที
-              </p>
+            <div className="bg-orange-500/10 border border-orange-500/20 p-4 rounded-xl space-y-2">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                <div>
+                  <h3 className="font-semibold text-sm text-orange-800 dark:text-orange-300 flex items-center gap-2">
+                    <ImageIcon className="size-4" /> ภาพสลิปใบสั่งซื้อ PNG เต็มจอ (1040px)
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    สร้างภาพใบสั่งซื้ออัตโนมัติ สำหรับส่งเป็นรูปภาพเข้าแชท LINE เต็มจอ ไร้ขอบขาว
+                    (Rich Message)
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={exportSlipStyle === "full_bleed_rich" ? "default" : "outline"}
+                    className={`h-7 px-2.5 text-xs rounded-lg font-bold gap-1 ${
+                      exportSlipStyle === "full_bleed_rich"
+                        ? "bg-gradient-to-r from-orange-500 to-amber-600 hover:from-orange-600 hover:to-amber-700 text-white shadow-xs"
+                        : "text-muted-foreground"
+                    }`}
+                    onClick={() => {
+                      setExportSlipStyle("full_bleed_rich");
+                      handleGenerateImage("full_bleed_rich");
+                    }}
+                  >
+                    🌟 เต็มจอแบบตัวอย่าง (ttb Style)
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={exportSlipStyle === "receipt" ? "default" : "outline"}
+                    className={`h-7 px-2.5 text-xs rounded-lg ${
+                      exportSlipStyle === "receipt"
+                        ? "bg-emerald-600 text-white font-bold"
+                        : "text-muted-foreground"
+                    }`}
+                    onClick={() => {
+                      setExportSlipStyle("receipt");
+                      handleGenerateImage("receipt");
+                    }}
+                  >
+                    📄 สลิปใบเสร็จมาตรฐาน
+                  </Button>
+                </div>
+              </div>
+
               <div className="flex flex-wrap gap-2 pt-2">
                 <Button
                   className="gap-2 rounded-xl font-bold bg-[#06C755] hover:bg-[#05b34c] text-white shadow-2xs"
@@ -843,15 +801,15 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                   {isSendingLineImage ? "กำลังส่ง..." : "ส่งรูปภาพสลิปเข้า LINE (Share Picker)"}
                 </Button>
                 <Button
-                  className="gap-2 rounded-xl font-semibold bg-blue-600 hover:bg-blue-700 text-white"
+                  className="gap-2 rounded-xl font-semibold bg-orange-600 hover:bg-orange-700 text-white"
                   onClick={handleDownloadImage}
                   disabled={isGeneratingImage}
                 >
-                  <Download className="size-4" /> ดาวน์โหลดรูปภาพ PNG
+                  <Download className="size-4" /> ดาวน์โหลด PNG (1040px)
                 </Button>
                 <Button
                   variant="outline"
-                  className="gap-2 rounded-xl font-semibold border-blue-500/30 text-blue-700 dark:text-blue-300"
+                  className="gap-2 rounded-xl font-semibold border-orange-500/30 text-orange-700 dark:text-orange-300"
                   onClick={handleCopyImageToClipboard}
                   disabled={!imageBlobUrl || isGeneratingImage}
                 >
@@ -870,24 +828,159 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
               </div>
             </div>
 
+            {/* Image Display Mode Toolbar */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2.5 rounded-xl bg-muted/40 border text-xs">
+              <div className="flex items-center gap-1.5 font-bold text-foreground">
+                <span>โหมดการแสดงภาพ:</span>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={imagePreviewMode === "full" ? "default" : "outline"}
+                  className="h-7.5 px-3 text-xs rounded-lg font-semibold gap-1.5"
+                  onClick={() => setImagePreviewMode("full")}
+                >
+                  🖼️ ภาพเต็มความกว้าง (ชัดเจน ตัวอักษรใหญ่)
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={imagePreviewMode === "mockup" ? "default" : "outline"}
+                  className="h-7.5 px-3 text-xs rounded-lg font-semibold gap-1.5"
+                  onClick={() => setImagePreviewMode("mockup")}
+                >
+                  📱 จำลองแชท LINE
+                </Button>
+                {imageBlobUrl && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    className="h-7.5 px-2.5 text-xs rounded-lg font-semibold gap-1 text-primary hover:bg-primary/10"
+                    onClick={() => setIsLightboxOpen(true)}
+                  >
+                    🔍 ขยายเต็มจอ
+                  </Button>
+                )}
+              </div>
+            </div>
+
             {/* Image Preview Container */}
-            <div className="flex justify-center p-4 bg-muted/30 rounded-xl border min-h-[250px] items-center">
+            <div className="flex justify-center p-3 sm:p-5 bg-muted/30 rounded-2xl border min-h-[300px] items-center overflow-x-auto">
               {isGeneratingImage ? (
-                <div className="text-center text-xs text-muted-foreground animate-pulse">
-                  กำลังสร้างรูปภาพความละเอียดสูง...
+                <div className="text-center text-xs text-muted-foreground animate-pulse p-8">
+                  กำลังสร้างรูปภาพความละเอียดสูง 1040px คมชัด ไร้รอยแตก...
                 </div>
               ) : imageBlobUrl ? (
-                <img
-                  src={imageBlobUrl}
-                  alt="PO Slip Preview"
-                  className="max-w-full sm:max-w-md rounded-xl shadow-md border"
-                />
+                imagePreviewMode === "full" ? (
+                  /* Full-width responsive container (big text, full screen presence) */
+                  <div className="w-full max-w-[850px] mx-auto rounded-2xl overflow-hidden shadow-xl border border-black/10 bg-white">
+                    <img
+                      src={imageBlobUrl}
+                      alt="PO Slip Full Preview"
+                      className="w-full h-auto object-contain block cursor-pointer transition-opacity hover:opacity-95"
+                      onClick={() => setIsLightboxOpen(true)}
+                      title="กดเพื่อขยายเต็มจอ"
+                    />
+                  </div>
+                ) : (
+                  /* Mobile Device Mockup */
+                  <div className="w-full max-w-[420px] rounded-3xl overflow-hidden shadow-xl border border-black/15 bg-[#f7f5f2] dark:bg-[#1f2937] flex flex-col">
+                    {/* LINE Chat Header */}
+                    <div className="bg-[#f0ebe3] dark:bg-[#1a232d] px-3.5 py-2 border-b border-black/10 flex items-center justify-between text-zinc-900 dark:text-zinc-100">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300">
+                          ‹ 99+
+                        </span>
+                        <div className="ml-1 min-w-0">
+                          <div className="flex items-center gap-1">
+                            <span className="size-3 rounded-full bg-[#06C755] text-white flex items-center justify-center text-[8px] font-bold">
+                              ✓
+                            </span>
+                            <span className="text-xs font-bold truncate">{payload.storeName}</span>
+                          </div>
+                          <p className="text-[9px] text-zinc-500 dark:text-zinc-400 leading-none">
+                            ตอบกลับอัตโนมัติ
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2.5 text-zinc-600 dark:text-zinc-400 text-xs">
+                        <span>🔍</span>
+                        <span>☰</span>
+                      </div>
+                    </div>
+
+                    {/* Date Divider */}
+                    <div className="py-2 flex justify-center">
+                      <span className="text-[10px] font-medium text-zinc-700 dark:text-zinc-300 bg-black/10 dark:bg-white/10 px-2.5 py-0.5 rounded-full select-none">
+                        อ. 29/9
+                      </span>
+                    </div>
+
+                    {/* Edge-to-Edge Image Container */}
+                    <div className="px-2 py-1 flex flex-col items-center">
+                      <div className="w-full rounded-2xl overflow-hidden shadow-md border border-black/10 bg-white">
+                        <img
+                          src={imageBlobUrl}
+                          alt="PO Slip Preview"
+                          className="w-full h-auto object-cover block cursor-pointer"
+                          onClick={() => setIsLightboxOpen(true)}
+                        />
+                      </div>
+                      <div className="w-full text-right pr-2 pt-1">
+                        <span className="text-[9px] text-zinc-500 font-medium">19:00</span>
+                      </div>
+                    </div>
+
+                    {/* Simulated Bottom Menu */}
+                    <div className="mt-1 bg-[#f0ebe3] dark:bg-[#1a232d] px-3 py-1.5 border-t border-black/10 flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                      <div className="flex items-center gap-2">
+                        <span className="size-6 rounded-md bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-[10px]">
+                          ⌨️
+                        </span>
+                        <span className="text-[11px] text-zinc-400">พิมพ์ข้อความ...</span>
+                      </div>
+                      <span className="text-[11px] font-bold px-2 py-0.5 bg-zinc-200/60 dark:bg-zinc-700/60 rounded">
+                        เมนู ▲
+                      </span>
+                    </div>
+                  </div>
+                )
               ) : (
-                <Button variant="secondary" onClick={handleGenerateImage}>
-                  กดเพื่อสร้างตัวอย่างภาพสลิป
+                <Button variant="secondary" onClick={() => handleGenerateImage(exportSlipStyle)}>
+                  กดเพื่อสร้างตัวอย่างภาพสลิปเต็มจอ (1040px)
                 </Button>
               )}
             </div>
+
+            {/* Lightbox Dialog for Full-screen Image Viewing */}
+            <Dialog open={isLightboxOpen} onOpenChange={setIsLightboxOpen}>
+              <DialogContent className="w-[98vw] max-w-6xl max-h-[96vh] p-2 bg-black/90 border-zinc-800 text-white overflow-y-auto">
+                <div className="flex justify-between items-center p-2 border-b border-zinc-800">
+                  <span className="text-xs font-semibold text-zinc-300">
+                    ภาพใบสั่งซื้อความละเอียดสูง (1040px)
+                  </span>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs text-zinc-300 hover:text-white"
+                    onClick={() => setIsLightboxOpen(false)}
+                  >
+                    ปิด
+                  </Button>
+                </div>
+                {imageBlobUrl && (
+                  <div className="flex justify-center p-2">
+                    <img
+                      src={imageBlobUrl}
+                      alt="Full Screen High-Res PO Slip"
+                      className="max-h-[85vh] w-auto object-contain rounded-lg shadow-2xl"
+                    />
+                  </div>
+                )}
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           {/* TAB: LINE FLEX MESSAGE */}
@@ -899,8 +992,8 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                   LINE Flex Message (สำหรับแอป LINE & LINE Simulator)
                 </h3>
                 <p className="text-[11px] text-muted-foreground mt-0.5">
-                  โครงสร้าง Flex Message พร้อมรายการสินค้าจริง สำหรับดาวน์โหลดไปวางใน LINE Simulator
-                  หรือส่งผ่าน LINE Bot API
+                  รองรับทั้ง <strong>1. Carousel (สไลด์หลายการ์ด)</strong> และ{" "}
+                  <strong>2. Bubble (การ์ดเดี่ยวยาว)</strong> พร้อมดาวน์โหลดไปใช้งานได้ทันที
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -942,15 +1035,59 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
               </div>
             </div>
 
-            {/* Flex Options / Grouping Customizer */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 rounded-xl bg-muted/30 border text-xs">
-              <div className="flex items-center gap-1.5 font-bold text-foreground">
-                <SlidersHorizontal className="size-3.5 text-emerald-600" />
-                <span>การจัดกลุ่มสินค้าใน Flex Message:</span>
+            {/* Flex Options & Format Selector (Carousel vs Bubble) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 p-3 rounded-xl bg-muted/30 border text-xs">
+              {/* 1. Format Choice: Carousel vs Bubble */}
+              <div className="space-y-1.5">
+                <span className="font-bold text-foreground flex items-center gap-1.5">
+                  <span>รูปแบบ Flex Message:</span>
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
+                  >
+                    เลือกส่งออกได้ 2 แบบ
+                  </Badge>
+                </span>
+                <div className="grid grid-cols-2 gap-1.5">
+                  <button
+                    type="button"
+                    className={`p-2 rounded-lg border text-left font-semibold transition-all ${
+                      flexContainerType === "carousel"
+                        ? "bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-xs"
+                        : "bg-background border-border text-muted-foreground hover:bg-muted"
+                    }`}
+                    onClick={() => setFlexContainerType("carousel")}
+                  >
+                    <div className="text-xs font-bold">1. 🎠 Carousel</div>
+                    <div className="text-[10px] font-normal text-muted-foreground">
+                      การ์ดสไลด์หลายหน้า / แยกหมวดหมู่
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    className={`p-2 rounded-lg border text-left font-semibold transition-all ${
+                      flexContainerType === "bubble"
+                        ? "bg-emerald-500/15 border-emerald-500 text-emerald-900 dark:text-emerald-100 shadow-xs"
+                        : "bg-background border-border text-muted-foreground hover:bg-muted"
+                    }`}
+                    onClick={() => setFlexContainerType("bubble")}
+                  >
+                    <div className="text-xs font-bold">2. 💬 Bubble</div>
+                    <div className="text-[10px] font-normal text-muted-foreground">
+                      การ์ดยาวแผ่นเดียว รวมทุกรายการ
+                    </div>
+                  </button>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+
+              {/* 2. Grouping Choice */}
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5 font-bold text-foreground">
+                  <SlidersHorizontal className="size-3.5 text-emerald-600" />
+                  <span>การจัดกลุ่มสินค้า:</span>
+                </div>
                 <select
-                  className="h-8 rounded-lg border border-input bg-background px-2.5 text-xs font-semibold shadow-xs"
+                  className="w-full h-9 rounded-lg border border-input bg-background px-2.5 text-xs font-semibold shadow-xs"
                   value={flexGroupBy}
                   onChange={(e) => setFlexGroupBy(e.target.value as FlexItemGroupBy)}
                 >
@@ -965,12 +1102,6 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                     📍 โซน ➔ 🏷️ หมวดหมู่สินค้า (แสดงแถบหัวข้อ)
                   </option>
                 </select>
-                <Badge
-                  variant="outline"
-                  className="text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300 shrink-0"
-                >
-                  อัปเดตทันที
-                </Badge>
               </div>
             </div>
 
@@ -978,7 +1109,7 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
             <div className="rounded-xl border overflow-hidden">
               <FlexMessageVisualizer
                 flexData={currentFlexMessage}
-                title={`LINE Flex — ใบสั่งซื้อ ${payload.orderNumber}`}
+                title={`LINE Flex (${flexContainerType === "carousel" ? "1. Carousel" : "2. Bubble"}) — ใบสั่งซื้อ ${payload.orderNumber}`}
               />
             </div>
           </TabsContent>

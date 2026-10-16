@@ -282,7 +282,21 @@ export const PrinterService = {
     if (typeof window === "undefined") return DEFAULT_RECEIPT_CONFIG;
     try {
       const data = localStorage.getItem(STORAGE_KEY_RECEIPT_CONFIG);
-      return data ? { ...DEFAULT_RECEIPT_CONFIG, ...JSON.parse(data) } : DEFAULT_RECEIPT_CONFIG;
+      const explicitName = localStorage.getItem("minimark_store_name");
+      const cfg = data
+        ? { ...DEFAULT_RECEIPT_CONFIG, ...JSON.parse(data) }
+        : DEFAULT_RECEIPT_CONFIG;
+      if (explicitName && explicitName.trim()) {
+        cfg.storeName = explicitName.trim();
+      } else if (
+        cfg.storeName === "ร้าน โชห่วยยุค 90s" ||
+        cfg.storeName === "MiniMark" ||
+        cfg.storeName === "ร้าน MiniMark" ||
+        cfg.storeName === "ร้าน MiniMark (มินิมาร์ท โชว์ห่วย)"
+      ) {
+        cfg.storeName = DEFAULT_RECEIPT_CONFIG.storeName;
+      }
+      return cfg;
     } catch {
       return DEFAULT_RECEIPT_CONFIG;
     }

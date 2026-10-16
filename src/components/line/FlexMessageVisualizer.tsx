@@ -1,7 +1,22 @@
-import { Check, Code2, Copy, Download, MessageCircle, Send, Smartphone } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Code2,
+  Copy,
+  Download,
+  Image as ImageIcon,
+  Menu,
+  MessageCircle,
+  Search,
+  Send,
+  Share2,
+  Smartphone,
+} from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { copyTextToClipboard, downloadJsonFile } from "@/lib/order-export";
+import { copyImageBlobToClipboard, downloadImageBlob } from "@/lib/slip-image-generator";
 
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -46,12 +61,14 @@ export interface FlexBubbleSpec {
     type: "box";
     layout: string;
     backgroundColor?: string;
+    paddingAll?: string;
     contents?: FlexComponentSpec[];
   };
   footer?: {
     type: "box";
     layout: string;
     backgroundColor?: string;
+    paddingAll?: string;
     contents?: FlexComponentSpec[];
   };
 }
@@ -67,29 +84,58 @@ interface FlexMessageVisualizerProps {
   title?: string;
   className?: string;
   onSendTest?: () => void;
+  imageUrl?: string;
+  imageBlob?: Blob;
+  storeName?: string;
 }
 
 /**
- * Universal Visual Renderer for LINE Flex Message (Bubble & Carousel)
- * Accurately replicates the LINE Messaging App UI styling.
+ * Universal Visual Renderer for LINE Flex Message & Full-Bleed Rich Image
+ * Replicates the authentic LINE Official Account mobile chat UI (Matching sample screenshot).
  */
 export function FlexMessageVisualizer({
   flexData,
-  title = "ตัวอย่าง LINE Flex Message",
+  title = "ตัวอย่าง LINE Flex & ภาพเต็มจอ",
   className = "",
   onSendTest,
+  imageUrl,
+  imageBlob,
+  storeName = "โชห่วยยุค90s",
 }: FlexMessageVisualizerProps) {
   const [copied, setCopied] = useState(false);
-  const [viewMode, setViewMode] = useState<"visual" | "json">("visual");
+  const [copiedImg, setCopiedImg] = useState(false);
+  const [viewMode, setViewMode] = useState<"visual" | "fullbleed" | "json">(
+    imageUrl ? "fullbleed" : "visual",
+  );
+  const [imageDisplayMode, setImageDisplayMode] = useState<"full" | "mockup">("full");
 
   const payload = flexData as FlexMessagePayload | null;
-  const bubble =
-    (payload?.contents as FlexBubbleSpec)?.type === "bubble"
-      ? (payload?.contents as FlexBubbleSpec)
-      : ((payload?.contents as { contents?: FlexBubbleSpec })?.contents as FlexBubbleSpec) ||
-        (payload as unknown as FlexBubbleSpec);
+  const isCarousel =
+    (payload?.contents as { type?: string })?.type === "carousel" ||
+    (payload as { type?: string })?.type === "carousel";
 
-  const altText = payload?.altText || "LINE Flex Message";
+  const rawContents = (payload?.contents as { contents?: unknown })?.contents ?? payload?.contents;
+  const rawList = Array.isArray(rawContents)
+    ? (rawContents as FlexBubbleSpec[])
+    : Array.isArray((payload as { contents?: unknown })?.contents)
+      ? (payload as { contents: FlexBubbleSpec[] }).contents
+      : null;
+
+  const bubbles: FlexBubbleSpec[] =
+    rawList && rawList.length > 0
+      ? rawList
+      : [
+          (payload?.contents as FlexBubbleSpec)?.type === "bubble"
+            ? (payload?.contents as FlexBubbleSpec)
+            : ((payload?.contents as { contents?: FlexBubbleSpec })?.contents as FlexBubbleSpec) ||
+              (payload as unknown as FlexBubbleSpec),
+        ].filter(Boolean);
+
+  const [activeBubbleIndex, setActiveBubbleIndex] = useState(0);
+
+  const altText =
+    payload?.altText ||
+    (isCarousel ? "LINE Flex Carousel (หลายการ์ด)" : "LINE Flex Message / Rich Banner");
 
   const handleCopyJson = async () => {
     try {
@@ -118,6 +164,28 @@ export function FlexMessageVisualizer({
     toast.success("ดาวน์โหลดไฟล์ LINE Flex Message (.json) สำเร็จ");
   };
 
+  const handleCopyImage = async () => {
+    if (!imageBlob) {
+      toast.info("ยังไม่มีข้อมูลรูปภาพพร้อมคัดลอก");
+      return;
+    }
+    const ok = await copyImageBlobToClipboard(imageBlob);
+    if (ok) {
+      setCopiedImg(true);
+      toast.success("คัดลอกภาพ PNG เต็มจอลงคลิปบอร์ดแล้ว วางในแชท LINE ได้ทันที");
+      setTimeout(() => setCopiedImg(false), 2000);
+    } else {
+      toast.error("เบราว์เซอร์ไม่รองรับการคัดลอกรูปภาพอัตโนมัติ");
+    }
+  };
+
+  const handleDownloadImage = () => {
+    if (!imageBlob) return;
+    const fname = `LINE_FullBleed_${new Date().toISOString().slice(0, 10)}.png`;
+    downloadImageBlob(imageBlob, fname);
+    toast.success("ดาวน์โหลดรูปภาพ PNG เต็มจอ (1040px) เรียบร้อย");
+  };
+
   return (
     <div
       className={`flex min-w-0 w-full flex-col rounded-2xl border border-border/80 bg-card overflow-hidden shadow-sm ${className}`}
@@ -137,8 +205,13 @@ export function FlexMessageVisualizer({
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-1.5 sm:justify-end">
           <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as typeof viewMode)}>
             <TabsList className="h-8 p-0.5 rounded-lg bg-muted">
+              {imageUrl && (
+                <TabsTrigger value="fullbleed" className="h-7 text-xs px-2.5 rounded-md gap-1">
+                  <ImageIcon className="size-3 text-orange-500" /> เต็มจอแบบตัวอย่าง
+                </TabsTrigger>
+              )}
               <TabsTrigger value="visual" className="h-7 text-xs px-2.5 rounded-md gap-1">
-                <Smartphone className="size-3" /> แสดงผล LINE
+                <Smartphone className="size-3" /> บับเบิ้ล Flex
               </TabsTrigger>
               <TabsTrigger value="json" className="h-7 text-xs px-2.5 rounded-md gap-1">
                 <Code2 className="size-3" /> JSON
@@ -146,30 +219,41 @@ export function FlexMessageVisualizer({
             </TabsList>
           </Tabs>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 px-2 text-xs rounded-lg gap-1 font-semibold text-emerald-700 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
-            onClick={handleDownloadJson}
-            title="ดาวน์โหลดไฟล์ .json สำหรับ LINE Simulator"
-          >
-            <Download className="size-3.5" />
-            <span className="hidden sm:inline">ส่งออก .json</span>
-          </Button>
+          {imageUrl && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs rounded-lg gap-1 font-semibold text-orange-600 dark:text-orange-400 border-orange-500/40 hover:bg-orange-50 dark:hover:bg-orange-950/20"
+                onClick={handleCopyImage}
+                title="คัดลอกภาพ PNG เต็มจอ"
+              >
+                {copiedImg ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                <span className="hidden sm:inline">คัดลอกภาพ</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 px-2 text-xs rounded-lg gap-1 font-semibold text-emerald-700 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
+                onClick={handleDownloadImage}
+                title="ดาวน์โหลดภาพ PNG (1040px)"
+              >
+                <Download className="size-3.5" />
+                <span className="hidden sm:inline">PNG 1040px</span>
+              </Button>
+            </>
+          )}
 
           <Button
             variant="outline"
             size="sm"
-            className="h-8 px-2 text-xs rounded-lg gap-1"
-            onClick={handleCopyJson}
-            title="คัดลอก JSON"
+            className="h-8 px-2 text-xs rounded-lg gap-1 font-semibold text-zinc-700 dark:text-zinc-300"
+            onClick={handleDownloadJson}
+            title="ดาวน์โหลดไฟล์ .json"
           >
-            {copied ? (
-              <Check className="size-3.5 text-emerald-600" />
-            ) : (
-              <Copy className="size-3.5" />
-            )}
-            <span className="hidden sm:inline">คัดลอก</span>
+            <Download className="size-3.5" />
+            <span className="hidden sm:inline">JSON</span>
           </Button>
 
           {onSendTest && (
@@ -186,14 +270,166 @@ export function FlexMessageVisualizer({
       </div>
 
       {/* Content Area */}
-      {viewMode === "visual" ? (
-        /* LINE App Chat Simulation Background */
-        <div className="p-3 sm:p-5 bg-[#7b93a8] dark:bg-[#1a232c] flex flex-col items-center justify-center min-h-[360px] overflow-x-auto">
-          {/* LINE Chat Timeline Stamp */}
-          <div className="text-[10px] text-white/80 bg-black/20 px-2.5 py-0.5 rounded-full mb-3 select-none">
-            วันนี้ {new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })}{" "}
-            น.
+      {viewMode === "fullbleed" && imageUrl ? (
+        <div className="p-3 sm:p-5 bg-gradient-to-b from-[#e5ddd5] to-[#d6c7b2] dark:from-[#1b242e] dark:to-[#111822] flex flex-col items-center justify-center min-h-[460px] overflow-x-auto">
+          {/* Display Mode Toggle */}
+          <div className="flex items-center gap-1.5 mb-3.5 bg-black/30 backdrop-blur-xs p-1 rounded-xl text-white">
+            <button
+              type="button"
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                imageDisplayMode === "full"
+                  ? "bg-white text-zinc-900 shadow-sm"
+                  : "text-white/80 hover:text-white"
+              }`}
+              onClick={() => setImageDisplayMode("full")}
+            >
+              🖼️ ภาพเต็มจอ (Full Size 1040px)
+            </button>
+            <button
+              type="button"
+              className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                imageDisplayMode === "mockup"
+                  ? "bg-white text-zinc-900 shadow-sm"
+                  : "text-white/80 hover:text-white"
+              }`}
+              onClick={() => setImageDisplayMode("mockup")}
+            >
+              📱 จำลองจอแชท LINE
+            </button>
           </div>
+
+          {imageDisplayMode === "full" ? (
+            /* True Edge-to-Edge Full Screen Poster View (Razor sharp, large fonts) */
+            <div className="w-full max-w-4xl mx-auto rounded-2xl overflow-hidden shadow-2xl border border-black/15 bg-white group relative">
+              <img
+                src={imageUrl}
+                alt="Full-Bleed 1040px Poster"
+                className="w-full h-auto object-contain block"
+              />
+            </div>
+          ) : (
+            /* Simulated Mobile Device Window Frame */
+            <div className="w-full max-w-[480px] rounded-3xl overflow-hidden shadow-2xl border border-black/20 bg-[#f7f5f2] dark:bg-[#1f2937] flex flex-col">
+              {/* 1. Mobile Status Bar & LINE OA Header */}
+              <div className="bg-[#f0ebe3] dark:bg-[#1a232d] px-3.5 py-2.5 border-b border-black/10 flex items-center justify-between text-zinc-900 dark:text-zinc-100">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <ChevronLeft className="size-5 shrink-0 text-zinc-700 dark:text-zinc-300" />
+                  <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">99+</span>
+                  <div className="ml-1 min-w-0">
+                    <div className="flex items-center gap-1">
+                      <div className="size-3.5 rounded-full bg-[#06C755] flex items-center justify-center text-white text-[9px] font-bold">
+                        ✓
+                      </div>
+                      <span className="text-xs font-bold truncate">{storeName}</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-500 dark:text-zinc-400 leading-none">
+                      ตอบกลับอัตโนมัติ
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 text-zinc-600 dark:text-zinc-400">
+                  <Search className="size-4 cursor-pointer" />
+                  <Menu className="size-4 cursor-pointer" />
+                </div>
+              </div>
+
+              {/* 2. Chat Timeline Stamp */}
+              <div className="py-2.5 flex justify-center">
+                <div className="text-[11px] font-medium text-zinc-700 dark:text-zinc-300 bg-black/10 dark:bg-white/10 px-3 py-0.5 rounded-full select-none">
+                  อ. 29/9
+                </div>
+              </div>
+
+              {/* 3. Full-Bleed Edge-to-Edge Image Message Container */}
+              <div className="px-2 py-1 flex flex-col items-center">
+                <div className="w-full rounded-2xl overflow-hidden shadow-md border border-black/10 bg-white">
+                  <img
+                    src={imageUrl}
+                    alt="Full-Bleed LINE Rich Banner"
+                    className="w-full h-auto object-cover block"
+                  />
+                </div>
+
+                {/* Timestamp on right */}
+                <div className="w-full text-right pr-2 pt-1">
+                  <span className="text-[10px] text-zinc-500 font-medium">19:00</span>
+                </div>
+              </div>
+
+              {/* 4. Bottom Simulated LINE Chat Bar */}
+              <div className="mt-2 bg-[#f0ebe3] dark:bg-[#1a232d] px-3 py-2 border-t border-black/10 flex items-center justify-between text-zinc-600 dark:text-zinc-300">
+                <div className="flex items-center gap-2">
+                  <div className="size-7 rounded-lg bg-zinc-200 dark:bg-zinc-700 flex items-center justify-center text-xs">
+                    ⌨️
+                  </div>
+                  <div className="text-xs text-zinc-400">พิมพ์ข้อความ...</div>
+                </div>
+                <div className="flex items-center gap-1 text-xs font-bold text-zinc-700 dark:text-zinc-300 px-2 py-1 bg-zinc-200/60 dark:bg-zinc-700/60 rounded-md">
+                  <span>เมนู</span>
+                  <span className="text-[9px]">▲</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : viewMode === "visual" ? (
+        /* LINE App Chat Simulation Background (Flex Bubble & Carousel) */
+        <div className="p-3 sm:p-5 bg-[#7b93a8] dark:bg-[#1a232c] flex flex-col items-center justify-center min-h-[360px] overflow-x-auto">
+          {/* LINE Chat Timeline Stamp & Carousel Tag */}
+          <div className="flex items-center gap-2 mb-3 select-none flex-wrap justify-center">
+            <span className="text-[10px] text-white/80 bg-black/20 px-2.5 py-0.5 rounded-full">
+              วันนี้{" "}
+              {new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} น.
+            </span>
+            {isCarousel && bubbles.length > 1 && (
+              <span className="text-[10px] text-white font-semibold bg-emerald-600/90 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
+                🎠 Carousel {bubbles.length} การ์ด
+              </span>
+            )}
+          </div>
+
+          {/* Carousel Step Controls if multiple bubbles */}
+          {isCarousel && bubbles.length > 1 && (
+            <div className="flex items-center gap-2 mb-3 bg-black/25 backdrop-blur-xs px-3 py-1.5 rounded-xl text-white">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-white hover:bg-white/20 rounded-lg"
+                disabled={activeBubbleIndex <= 0}
+                onClick={() => setActiveBubbleIndex((prev) => Math.max(0, prev - 1))}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <span className="text-xs font-semibold">
+                การ์ด {activeBubbleIndex + 1} / {bubbles.length}
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 w-7 p-0 text-white hover:bg-white/20 rounded-lg"
+                disabled={activeBubbleIndex >= bubbles.length - 1}
+                onClick={() =>
+                  setActiveBubbleIndex((prev) => Math.min(bubbles.length - 1, prev + 1))
+                }
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+              <div className="flex items-center gap-1 ml-1.5">
+                {bubbles.map((_, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    className={`size-2 rounded-full transition-all ${
+                      idx === activeBubbleIndex ? "bg-white w-4" : "bg-white/40 hover:bg-white/70"
+                    }`}
+                    onClick={() => setActiveBubbleIndex(idx)}
+                    title={`การ์ดที่ ${idx + 1}`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* LINE Message Container with Avatar */}
           <div className="flex min-w-0 items-start gap-2 max-w-full w-full justify-center">
@@ -202,39 +438,9 @@ export function FlexMessageVisualizer({
               MM
             </div>
 
-            {/* Bubble Card */}
-            <div className="min-w-0 w-full max-w-[390px] flex-1 sm:max-w-[450px] rounded-2xl overflow-hidden shadow-lg bg-white text-zinc-900 border border-black/10">
-              {/* Header Box */}
-              {bubble?.header && (
-                <div
-                  className="p-4 text-white"
-                  style={{
-                    backgroundColor: bubble.header.backgroundColor || "#06c755",
-                  }}
-                >
-                  {bubble.header.contents?.map((c, i) => (
-                    <RenderFlexComponent key={i} component={c} defaultColor="#ffffff" />
-                  ))}
-                </div>
-              )}
-
-              {/* Body Box */}
-              {bubble?.body && (
-                <div className="p-4 space-y-2.5 bg-white text-zinc-900">
-                  {bubble.body.contents?.map((c, i) => (
-                    <RenderFlexComponent key={i} component={c} defaultColor="#1f2937" />
-                  ))}
-                </div>
-              )}
-
-              {/* Footer Box */}
-              {bubble?.footer && (
-                <div className="p-3.5 bg-zinc-50 border-t border-zinc-100 space-y-2">
-                  {bubble.footer.contents?.map((c, i) => (
-                    <RenderFlexComponent key={i} component={c} defaultColor="#374151" />
-                  ))}
-                </div>
-              )}
+            {/* Bubble Card Rendering */}
+            <div className="min-w-0 w-full max-w-[390px] flex-1 sm:max-w-[450px]">
+              <RenderSingleBubble bubble={bubbles[activeBubbleIndex] || bubbles[0]} />
             </div>
           </div>
         </div>
@@ -242,6 +448,53 @@ export function FlexMessageVisualizer({
         /* Raw JSON Code View */
         <div className="p-4 bg-zinc-950 text-zinc-100 font-mono text-xs overflow-x-auto max-h-[480px]">
           <pre>{JSON.stringify(flexData, null, 2)}</pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Bubble Card Renderer for Single Bubble or Carousel Card
+ */
+function RenderSingleBubble({ bubble }: { bubble: FlexBubbleSpec | undefined }) {
+  if (!bubble) return null;
+  return (
+    <div className="min-w-0 w-full max-w-[440px] flex-1 sm:max-w-[500px] rounded-2xl overflow-hidden shadow-lg bg-white text-zinc-900 border border-black/10 flex flex-col">
+      {/* Header Box */}
+      {bubble.header && (
+        <div
+          className="p-4 text-white"
+          style={{
+            backgroundColor: bubble.header.backgroundColor || "#06c755",
+          }}
+        >
+          {bubble.header.contents?.map((c, i) => (
+            <RenderFlexComponent key={i} component={c} defaultColor="#ffffff" />
+          ))}
+        </div>
+      )}
+
+      {/* Body Box */}
+      {bubble.body && (
+        <div className="p-4 space-y-2.5 bg-white text-zinc-900 flex-1">
+          {bubble.body.contents?.map((c, i) => (
+            <RenderFlexComponent key={i} component={c} defaultColor="#1f2937" />
+          ))}
+        </div>
+      )}
+
+      {/* Footer Box */}
+      {bubble.footer && (
+        <div
+          className="p-3.5 space-y-2 border-t mt-auto"
+          style={{
+            backgroundColor: bubble.footer.backgroundColor || "#fafafa",
+          }}
+        >
+          {bubble.footer.contents?.map((c, i) => (
+            <RenderFlexComponent key={i} component={c} defaultColor="#ffffff" />
+          ))}
         </div>
       )}
     </div>
@@ -264,16 +517,16 @@ function RenderFlexComponent({
     case "text": {
       const isBold = component.weight === "bold";
       const sizeClasses: Record<string, string> = {
-        xxs: "text-[11px]",
-        xs: "text-xs",
-        sm: "text-sm",
-        md: "text-base",
-        lg: "text-lg",
-        xl: "text-xl font-bold",
-        xxl: "text-2xl font-bold",
-        "3xl": "text-3xl font-bold",
-        "4xl": "text-4xl font-bold",
-        "5xl": "text-5xl font-bold",
+        xxs: "text-xs font-medium",
+        xs: "text-xs sm:text-sm font-medium",
+        sm: "text-sm sm:text-base",
+        md: "text-base sm:text-lg font-medium",
+        lg: "text-lg sm:text-xl font-bold",
+        xl: "text-xl sm:text-2xl font-bold",
+        xxl: "text-2xl sm:text-3xl font-extrabold",
+        "3xl": "text-3xl sm:text-4xl font-extrabold",
+        "4xl": "text-4xl sm:text-5xl font-extrabold",
+        "5xl": "text-5xl sm:text-6xl font-extrabold",
       };
       const alignClasses: Record<string, string> = {
         start: "text-left",
