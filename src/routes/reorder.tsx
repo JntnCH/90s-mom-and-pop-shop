@@ -2658,13 +2658,6 @@ function ReorderPage() {
         </span>
       )}
     </div>
-
-    <div className="flex flex-wrap items-center gap-1.5">
-      {/* ปุ่ม ยืนยันสั่งซื้อ / ฉบับร่าง / ล้าง เหมือนเดิม */}
-      ...
-    </div>
-  </div>
-)}
                 <div className="flex flex-wrap items-center gap-1.5">
                   {editingPOId ? (
                     <>
@@ -2731,6 +2724,7 @@ function ReorderPage() {
                   )}
                 </div>
               </div>
+)}
 
               {/* MOBILE LIST ITEMS */}
               <div className="block md:hidden space-y-2.5">
