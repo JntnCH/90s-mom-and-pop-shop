@@ -48,7 +48,8 @@ import {
   X,
   XCircle,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";import { toast } from "sonner";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 
 import { PageHeader } from "@/components/layout/PageHeader";
 import { cn } from "@/lib/utils";
@@ -2645,86 +2646,86 @@ function ReorderPage() {
               </Card>
 
               {/* TOP ACTION TOOLBAR FOR PO ITEMS — ซ่อนตอนแก้ไข เพราะปุ่มอยู่แบนเนอร์ฟ้าแล้ว */}
-{!editingPOId && (
-  <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-card border border-border/80 shadow-xs">
-    <div className="flex items-center gap-2">
-      <span className="text-xs font-bold text-foreground">
-        การดำเนินการใบสั่งซื้อ:
-      </span>
-      {lastAutoSavedAt && (
-        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium hidden sm:inline-flex items-center gap-1">
-          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          บันทึกอัตโนมัติแล้ว
-        </span>
-      )}
-    </div>
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {editingPOId ? (
-                    <>
-                      <Button
-                        size="sm"
-                        disabled={fullItems.length === 0}
-                        className="h-8.5 px-3 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
-                        onClick={() =>
-                          handleSavePO(
-                            editingPOStatus === "RECEIVED" ? "RECEIVED" : editingPOStatus,
-                          )
-                        }
-                      >
-                        <Save className="size-3.5" /> บันทึกการแก้ไข
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={fullItems.length === 0}
-                        className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1.5"
-                        onClick={() => handleSavePO("DRAFT")}
-                      >
-                        <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1 text-destructive hover:bg-destructive/10 border-destructive/30"
-                        onClick={handleCancelEditPO}
-                      >
-                        <X className="size-3.5" /> ยกเลิกการแก้ไข
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        size="sm"
-                        disabled={fullItems.length === 0}
-                        className="h-8.5 px-3.5 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
-                        onClick={() => handleSavePO("ORDERED")}
-                      >
-                        <Save className="size-3.5" /> ยืนยันสั่งซื้อ
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={fullItems.length === 0}
-                        className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1.5"
-                        onClick={() => handleSavePO("DRAFT")}
-                      >
-                        <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
-                      </Button>
-                      {orderList.length > 0 && (
+              {!editingPOId && (
+                <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-card border border-border/80 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-foreground">
+                      การดำเนินการใบสั่งซื้อ:
+                    </span>
+                    {lastAutoSavedAt && (
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium hidden sm:inline-flex items-center gap-1">
+                        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        บันทึกอัตโนมัติแล้ว
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {editingPOId ? (
+                      <>
                         <Button
-                          variant="ghost"
                           size="sm"
-                          className="h-8.5 px-2 text-xs text-muted-foreground hover:text-destructive rounded-xl gap-1"
-                          onClick={handleClearDraft}
+                          disabled={fullItems.length === 0}
+                          className="h-8.5 px-3 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
+                          onClick={() =>
+                            handleSavePO(
+                              editingPOStatus === "RECEIVED" ? "RECEIVED" : editingPOStatus,
+                            )
+                          }
                         >
-                          <Trash2 className="size-3.5" /> ล้าง
+                          <Save className="size-3.5" /> บันทึกการแก้ไข
                         </Button>
-                      )}
-                    </>
-                  )}
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={fullItems.length === 0}
+                          className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1.5"
+                          onClick={() => handleSavePO("DRAFT")}
+                        >
+                          <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1 text-destructive hover:bg-destructive/10 border-destructive/30"
+                          onClick={handleCancelEditPO}
+                        >
+                          <X className="size-3.5" /> ยกเลิกการแก้ไข
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={fullItems.length === 0}
+                          className="h-8.5 px-3.5 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
+                          onClick={() => handleSavePO("ORDERED")}
+                        >
+                          <Save className="size-3.5" /> ยืนยันสั่งซื้อ
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={fullItems.length === 0}
+                          className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1.5"
+                          onClick={() => handleSavePO("DRAFT")}
+                        >
+                          <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
+                        </Button>
+                        {orderList.length > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8.5 px-2 text-xs text-muted-foreground hover:text-destructive rounded-xl gap-1"
+                            onClick={handleClearDraft}
+                          >
+                            <Trash2 className="size-3.5" /> ล้าง
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-)}
+              )}
 
               {/* MOBILE LIST ITEMS */}
               <div className="block md:hidden space-y-2.5">

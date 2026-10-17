@@ -24,7 +24,10 @@ describe("Flex Message Template Customization (Separated Qty/Unit & Large Font)"
     ]);
 
     expect(flex.type).toBe("flex");
-    const contents = flex.contents as Record<string, any>;
+    const contents = flex.contents as {
+      type: string;
+      body: { contents: Array<{ contents: Array<{ text: string }> }> };
+    };
     expect(contents.type).toBe("bubble");
 
     const body = contents.body;

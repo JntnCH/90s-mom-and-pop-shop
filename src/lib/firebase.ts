@@ -1,22 +1,35 @@
 import { initializeApp, getApps, getApp, type FirebaseApp } from "firebase/app";
 import { getAuth, GoogleAuthProvider, type Auth } from "firebase/auth";
 
-const configFiles = import.meta.glob<Record<string, string>>("../../firebase-applet-config.json", {
+const configFiles = import.meta.glob<Record<string, string>>("/firebase-applet-config.json", {
   eager: true,
   import: "default",
 });
-
-const fileConfig = configFiles["../../firebase-applet-config.json"];
+const fileConfig = (configFiles["/firebase-applet-config.json"] || {}) as Record<string, string>;
 
 export const firebaseConfig = {
-  apiKey: fileConfig?.apiKey || import.meta.env.VITE_FIREBASE_API_KEY || "",
-  authDomain: fileConfig?.authDomain || import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "",
+  apiKey:
+    fileConfig?.apiKey ||
+    import.meta.env.VITE_FIREBASE_API_KEY ||
+    "AIzaSyBM_8NnGiyEFiZz3PE4GE0E-FOGQ99IMFs",
+  authDomain:
+    fileConfig?.authDomain ||
+    import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ||
+    "openclaw-gcp-272026.firebaseapp.com",
   projectId:
     fileConfig?.projectId || import.meta.env.VITE_FIREBASE_PROJECT_ID || "openclaw-gcp-272026",
-  storageBucket: fileConfig?.storageBucket || import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "",
+  storageBucket:
+    fileConfig?.storageBucket ||
+    import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ||
+    "openclaw-gcp-272026.firebasestorage.app",
   messagingSenderId:
-    fileConfig?.messagingSenderId || import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "",
-  appId: fileConfig?.appId || import.meta.env.VITE_FIREBASE_APP_ID || "",
+    fileConfig?.messagingSenderId ||
+    import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ||
+    "1078213755629",
+  appId:
+    fileConfig?.appId ||
+    import.meta.env.VITE_FIREBASE_APP_ID ||
+    "1:1078213755629:web:ee15d35f941472c6c302e4",
 };
 
 export const isFirebaseConfigured = Boolean(

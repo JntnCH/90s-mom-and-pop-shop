@@ -117,7 +117,10 @@ function flattenSortedItems(
   items: FlexOrderItem[],
   meta: Meta,
 ): { item: FlexOrderItem; headerTitle: string }[] {
-  const grouped = groupAndSortFlexItems(items, { groupBy: meta.groupBy, includeZone: meta.includeZone });
+  const grouped = groupAndSortFlexItems(items, {
+    groupBy: meta.groupBy,
+    includeZone: meta.includeZone,
+  });
   const flat: { item: FlexOrderItem; headerTitle: string }[] = [];
   for (const grp of grouped) {
     for (const { item } of grp.items) {
@@ -133,9 +136,35 @@ function colHeader(large: boolean): FlexBox {
     type: "box",
     layout: "horizontal",
     contents: [
-      { type: "text", text: "รายการสินค้า", size: s, color: "#4b5563", weight: "bold", flex: 5, wrap: true },
-      { type: "text", text: "จำนวน", size: s, color: "#4b5563", weight: "bold", align: "end", flex: 2, wrap: true },
-      { type: "text", text: "หน่วยนับ", size: s, color: "#4b5563", weight: "bold", align: "end", flex: 2, wrap: true },
+      {
+        type: "text",
+        text: "รายการสินค้า",
+        size: s,
+        color: "#4b5563",
+        weight: "bold",
+        flex: 5,
+        wrap: true,
+      },
+      {
+        type: "text",
+        text: "จำนวน",
+        size: s,
+        color: "#4b5563",
+        weight: "bold",
+        align: "end",
+        flex: 2,
+        wrap: true,
+      },
+      {
+        type: "text",
+        text: "หน่วยนับ",
+        size: s,
+        color: "#4b5563",
+        weight: "bold",
+        align: "end",
+        flex: 2,
+        wrap: true,
+      },
     ],
   };
 }
@@ -189,7 +218,15 @@ function groupHeader(title: string, large: boolean, first: boolean): FlexBox {
     cornerRadius: "md",
     margin: first ? "xs" : "md",
     contents: [
-      { type: "text", text: title, size: large ? "sm" : "xs", color: "#1e293b", weight: "bold", wrap: true, flex: 12 },
+      {
+        type: "text",
+        text: title,
+        size: large ? "sm" : "xs",
+        color: "#1e293b",
+        weight: "bold",
+        wrap: true,
+        flex: 12,
+      },
     ],
   };
 }
@@ -413,7 +450,15 @@ function bubbleContents(
           contents:
             itemRows.length > 0
               ? itemRows
-              : [{ type: "text", text: "ไม่มีรายการสินค้า", size: meta.isLargeFont ? "md" : "sm", color: "#9ca3af", wrap: true }],
+              : [
+                  {
+                    type: "text",
+                    text: "ไม่มีรายการสินค้า",
+                    size: meta.isLargeFont ? "md" : "sm",
+                    color: "#9ca3af",
+                    wrap: true,
+                  },
+                ],
         },
         ...totals,
       ],
@@ -513,7 +558,12 @@ export function createPurchaseOrderFlexCarousel(
         ? `หน้า ${page + 1}/${pages} • รายการ ${startNum}–${endNum} จาก ${flat.length}`
         : `รายการ ${startNum}–${endNum} จาก ${flat.length}`;
     bubbles.push(
-      bubbleContents(meta, rows, totalsBox(meta, slice.length, pageQty, pageCost, "รวมหน้านี้"), subtitle),
+      bubbleContents(
+        meta,
+        rows,
+        totalsBox(meta, slice.length, pageQty, pageCost, "รวมหน้านี้"),
+        subtitle,
+      ),
     );
   }
 

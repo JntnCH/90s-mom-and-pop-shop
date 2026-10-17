@@ -324,6 +324,27 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
   });
 
 /**
+ * Fetch complete database snapshot directly from Cloud SQL (with memory fallback)
+ */
+export const fetchCloudSqlSnapshotFn = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    const snapshot = await getDatabaseSnapshot();
+    return {
+      success: true,
+      data: snapshot,
+      source: "cloudsql" as const,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      data: globalServerDatabase,
+      source: "memory" as const,
+    };
+  }
+});
+
+/**
  * Get Server Follower History & User IDs
  */
 export const getLineFollowersHistoryFn = createServerFn({ method: "GET" }).handler(async () => {
