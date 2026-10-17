@@ -2644,20 +2644,27 @@ function ReorderPage() {
                 </div>
               </Card>
 
-              {/* TOP ACTION TOOLBAR FOR PO ITEMS */}
-              <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-card border border-border/80 shadow-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-foreground">
-                    {editingPOId ? `การดำเนินการ (${editingPONumber}):` : "การดำเนินการใบสั่งซื้อ:"}
-                  </span>
-                  {lastAutoSavedAt && (
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium hidden sm:inline-flex items-center gap-1">
-                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      บันทึกอัตโนมัติแล้ว
-                    </span>
-                  )}
-                </div>
+              {/* TOP ACTION TOOLBAR FOR PO ITEMS — ซ่อนตอนแก้ไข เพราะปุ่มอยู่แบนเนอร์ฟ้าแล้ว */}
+{!editingPOId && (
+  <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-card border border-border/80 shadow-xs">
+    <div className="flex items-center gap-2">
+      <span className="text-xs font-bold text-foreground">
+        การดำเนินการใบสั่งซื้อ:
+      </span>
+      {lastAutoSavedAt && (
+        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium hidden sm:inline-flex items-center gap-1">
+          <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          บันทึกอัตโนมัติแล้ว
+        </span>
+      )}
+    </div>
 
+    <div className="flex flex-wrap items-center gap-1.5">
+      {/* ปุ่ม ยืนยันสั่งซื้อ / ฉบับร่าง / ล้าง เหมือนเดิม */}
+      ...
+    </div>
+  </div>
+)}
                 <div className="flex flex-wrap items-center gap-1.5">
                   {editingPOId ? (
                     <>
