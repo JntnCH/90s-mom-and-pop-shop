@@ -40,6 +40,26 @@ jobs:
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
         run: npm run build
 
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudflare-build
+          path: |
+            .output/
+            .wrangler/
+            wrangler.jsonc
+          retention-days: 3
+
+      - name: Check Cloudflare credentials
+        run: |
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN secret is not set. Add it at Repo Settings → Secrets and variables → Actions."
+            echo "Create token at: https://developers.cloudflare.com/fundamentals/api/get-started/create-token/"
+            echo "Recommended template: Edit Cloudflare Workers"
+            echo "Account ID: a6d009b2d02da90d095336d68e378377"
+            exit 1
+          fi
+
       - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
