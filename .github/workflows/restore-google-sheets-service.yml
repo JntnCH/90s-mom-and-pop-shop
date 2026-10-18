@@ -1,0 +1,36 @@
+name: restore-google-sheets-service
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout good commit (file only)
+        uses: actions/checkout@v4
+        with:
+          ref: 83b6e281adf04053e345201594a50b146ba5725c
+          sparse-checkout: |
+            src/lib/google-sheets-service.ts
+          sparse-checkout-cone-mode: false
+          path: good
+
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          path: main-repo
+
+      - name: Restore file from good commit and push to main
+        working-directory: main-repo
+        run: |
+          set -euo pipefail
+          cp ../good/src/lib/google-sheets-service.ts src/lib/google-sheets-service.ts
+          wc -c src/lib/google-sheets-service.ts
+          head -8 src/lib/google-sheets-service.ts
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/google-sheets-service.ts
+          git status
+          git commit -m "fix(google-sheets): restore file from good commit 83b6e281 (unbreak main)"
+          git push origin HEAD:main
