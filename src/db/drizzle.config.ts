@@ -1,38 +1,19 @@
 import { defineConfig } from "drizzle-kit";
-import * as dotenv from "dotenv";
 
-// Load environment variables
-dotenv.config();
-
-const sqlHost = process.env["SQL_HOST"];
-const sqlDbName = process.env["SQL_DB_NAME"];
-const user = process.env["SQL_ADMIN_USER"];
-const password = process.env["SQL_ADMIN_PASSWORD"];
-
-if (!sqlHost) {
-  throw new Error("SQL_HOST must be set in environment variables.");
-}
-if (!sqlDbName) {
-  throw new Error("SQL_DB_NAME must be set in environment variables.");
-}
-if (!user) {
-  throw new Error("SQL_ADMIN_USER must be set in environment variables.");
-}
-if (!password) {
-  throw new Error("SQL_ADMIN_PASSWORD must be set in environment variables.");
-}
-
+/**
+ * Drizzle config for Cloudflare D1 (SQLite).
+ * Local migrations: `npx wrangler d1 migrations apply mom-and-pop-shop-db --local`
+ * Remote:          `npx wrangler d1 migrations apply mom-and-pop-shop-db --remote`
+ */
 export default defineConfig({
   schema: "./src/db/schema.ts",
   out: "./drizzle",
-  dialect: "postgresql",
-  schemaFilter: ["public"],
+  dialect: "sqlite",
+  driver: "d1-http",
   dbCredentials: {
-    host: sqlHost,
-    user: user,
-    password: password,
-    database: sqlDbName,
-    ssl: false,
+    accountId: process.env["CLOUDFLARE_ACCOUNT_ID"] ?? "",
+    databaseId: process.env["CLOUDFLARE_D1_DATABASE_ID"] ?? "18b3a79c-40d8-4008-8aae-79e56ab61330",
+    token: process.env["CLOUDFLARE_API_TOKEN"] ?? "",
   },
   verbose: true,
 });
