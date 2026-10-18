@@ -1,1 +1,1 @@
-RESTORING_FROM_FIXED_FILE
+@/tmp/final_to_push.ts
