@@ -1,0 +1,47 @@
+--- a/src/lib/line-server-fn.ts
++++ b/src/lib/line-server-fn.ts
+@@ -143,9 +143,8 @@
+ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
+   .validator((payload: ServerSyncPayload) => payload)
+   .handler(async ({ data }) => {
+-    // 1. If Cloud SQL credentials are set, sync with PostgreSQL
+-    if (process.env["SQL_HOST"] && process.env["SQL_USER"] && process.env["SQL_PASSWORD"]) {
+-      try {
++    // 1. Sync with Cloudflare D1 (primary store)
++    try {
+         const sqlSnapshot = await syncDatabasePayload({
+           ...(data.units === undefined
+             ? {}
+@@ -254,11 +253,10 @@
+           success: true,
+           data: sanitizedSnapshot,
+           lastUpdated: globalServerDatabase.lastUpdated,
+-          source: "cloudsql",
++          source: "d1",
+         };
+-      } catch (sqlErr) {
+-        console.warn("Could not sync directly to Cloud SQL, falling back to memory store:", sqlErr);
+-      }
++    } catch (sqlErr) {
++      console.warn("Could not sync to Cloudflare D1, falling back to memory store:", sqlErr);
+     }
+ 
+     // 2. In-memory fallback
+@@ -324,7 +322,7 @@
+   });
+ 
+ /**
+- * Fetch complete database snapshot directly from Cloud SQL (with memory fallback)
++ * Fetch complete database snapshot from Cloudflare D1 (with memory fallback)
+  */
+ export const fetchCloudSqlSnapshotFn = createServerFn({ method: "GET" }).handler(async () => {
+   try {
+@@ -332,7 +330,7 @@
+     return {
+       success: true,
+       data: snapshot,
+-      source: "cloudsql" as const,
++      source: "d1" as const,
+     };
+   } catch (error) {
+     return {
