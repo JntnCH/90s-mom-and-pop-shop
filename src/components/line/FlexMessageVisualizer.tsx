@@ -130,6 +130,7 @@ export function FlexMessageVisualizer({
         ].filter(Boolean);
 
   const [activeBubbleIndex, setActiveBubbleIndex] = useState(0);
+  const [carouselViewStyle, setCarouselViewStyle] = useState<"strip" | "single">("strip");
 
   const altText =
     payload?.altText ||
@@ -374,73 +375,134 @@ export function FlexMessageVisualizer({
       ) : viewMode === "visual" ? (
         /* LINE App Chat Simulation Background (Flex Bubble & Carousel) */
         <div className="p-3 sm:p-5 bg-[#7b93a8] dark:bg-[#1a232c] flex flex-col items-center justify-center min-h-[360px] overflow-x-auto">
-          {/* LINE Chat Timeline Stamp & Carousel Tag */}
+          {/* LINE Chat Timeline Stamp & Format Tag */}
           <div className="flex items-center gap-2 mb-3 select-none flex-wrap justify-center">
             <span className="text-[10px] text-white/80 bg-black/20 px-2.5 py-0.5 rounded-full">
               วันนี้{" "}
               {new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} น.
             </span>
-            {isCarousel && bubbles.length > 1 && (
-              <span className="text-[10px] text-white font-semibold bg-emerald-600/90 px-2.5 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
-                🎠 Carousel {bubbles.length} การ์ด
+            {isCarousel ? (
+              <span className="text-[11px] text-white font-bold bg-emerald-600/95 px-3 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
+                🎠 รูปแบบที่ 1: Carousel ({bubbles.length} การ์ด • 20 รายการ/การ์ด
+                เรียงเลขต่อเนื่อง)
+              </span>
+            ) : (
+              <span className="text-[11px] text-white font-bold bg-blue-600/95 px-3 py-0.5 rounded-full flex items-center gap-1 shadow-xs">
+                💬 รูปแบบที่ 2: Bubble (การ์ดเดี่ยวยาว รวมทุกรายการ)
               </span>
             )}
           </div>
 
           {/* Carousel Step Controls if multiple bubbles */}
           {isCarousel && bubbles.length > 1 && (
-            <div className="flex items-center gap-2 mb-3 bg-black/25 backdrop-blur-xs px-3 py-1.5 rounded-xl text-white">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 text-white hover:bg-white/20 rounded-lg"
-                disabled={activeBubbleIndex <= 0}
-                onClick={() => setActiveBubbleIndex((prev) => Math.max(0, prev - 1))}
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              <span className="text-xs font-semibold">
-                การ์ด {activeBubbleIndex + 1} / {bubbles.length}
-              </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 text-white hover:bg-white/20 rounded-lg"
-                disabled={activeBubbleIndex >= bubbles.length - 1}
-                onClick={() =>
-                  setActiveBubbleIndex((prev) => Math.min(bubbles.length - 1, prev + 1))
-                }
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-              <div className="flex items-center gap-1 ml-1.5">
+            <div className="flex flex-wrap items-center justify-center gap-2 mb-3 bg-black/30 backdrop-blur-xs px-3 py-1.5 rounded-xl text-white">
+              <div className="flex items-center gap-1 bg-black/25 p-0.5 rounded-lg">
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                    carouselViewStyle === "strip"
+                      ? "bg-emerald-500 text-white shadow-xs"
+                      : "text-white/75 hover:text-white"
+                  }`}
+                  onClick={() => setCarouselViewStyle("strip")}
+                >
+                  🎠 เรียงหลายการ์ด ({bubbles.length} ใบ)
+                </button>
+                <button
+                  type="button"
+                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all ${
+                    carouselViewStyle === "single"
+                      ? "bg-emerald-500 text-white shadow-xs"
+                      : "text-white/75 hover:text-white"
+                  }`}
+                  onClick={() => setCarouselViewStyle("single")}
+                >
+                  📱 ดูทีละการ์ด
+                </button>
+              </div>
+
+              {carouselViewStyle === "single" && (
+                <div className="flex items-center gap-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-white hover:bg-white/20 rounded-lg"
+                    disabled={activeBubbleIndex <= 0}
+                    onClick={() => setActiveBubbleIndex((prev) => Math.max(0, prev - 1))}
+                  >
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                  <span className="text-xs font-semibold">
+                    การ์ด {activeBubbleIndex + 1} / {bubbles.length}
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0 text-white hover:bg-white/20 rounded-lg"
+                    disabled={activeBubbleIndex >= bubbles.length - 1}
+                    onClick={() =>
+                      setActiveBubbleIndex((prev) => Math.min(bubbles.length - 1, prev + 1))
+                    }
+                  >
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </div>
+              )}
+
+              <div className="flex items-center gap-1">
                 {bubbles.map((_, idx) => (
                   <button
                     key={idx}
                     type="button"
-                    className={`size-2 rounded-full transition-all ${
-                      idx === activeBubbleIndex ? "bg-white w-4" : "bg-white/40 hover:bg-white/70"
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all ${
+                      idx === activeBubbleIndex && carouselViewStyle === "single"
+                        ? "bg-white text-zinc-900"
+                        : "bg-white/20 text-white hover:bg-white/35"
                     }`}
-                    onClick={() => setActiveBubbleIndex(idx)}
-                    title={`การ์ดที่ ${idx + 1}`}
-                  />
+                    onClick={() => {
+                      setActiveBubbleIndex(idx);
+                      setCarouselViewStyle("single");
+                    }}
+                    title={`เปิดดูการ์ดที่ ${idx + 1}`}
+                  >
+                    ใบที่ {idx + 1}
+                  </button>
                 ))}
               </div>
             </div>
           )}
 
           {/* LINE Message Container with Avatar */}
-          <div className="flex min-w-0 items-start gap-2 max-w-full w-full justify-center">
-            {/* Bot Avatar */}
-            <div className="size-8 rounded-full bg-[#06C755] text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-sm mt-0.5">
-              MM
+          {isCarousel && bubbles.length > 1 && carouselViewStyle === "strip" ? (
+            <div className="w-full max-w-full overflow-x-auto pb-2 pt-1 px-1">
+              <div className="flex items-start gap-3 min-w-max mx-auto">
+                {/* Bot Avatar */}
+                <div className="size-8 rounded-full bg-[#06C755] text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-sm mt-0.5">
+                  MM
+                </div>
+                {bubbles.map((b, idx) => (
+                  <div key={idx} className="w-[340px] sm:w-[370px] shrink-0 flex flex-col gap-1.5">
+                    <div className="text-[11px] font-bold text-white bg-black/30 px-2.5 py-1 rounded-lg text-center">
+                      🎠 การ์ดใบที่ {idx + 1} / {bubbles.length}
+                    </div>
+                    <RenderSingleBubble bubble={b} />
+                  </div>
+                ))}
+              </div>
             </div>
+          ) : (
+            <div className="flex min-w-0 items-start gap-2 max-w-full w-full justify-center">
+              {/* Bot Avatar */}
+              <div className="size-8 rounded-full bg-[#06C755] text-white flex items-center justify-center text-xs font-bold shrink-0 shadow-sm mt-0.5">
+                MM
+              </div>
 
-            {/* Bubble Card Rendering */}
-            <div className="min-w-0 w-full max-w-[390px] flex-1 sm:max-w-[450px]">
-              <RenderSingleBubble bubble={bubbles[activeBubbleIndex] || bubbles[0]} />
+              {/* Bubble Card Rendering */}
+              <div className="min-w-0 w-full max-w-[390px] flex-1 sm:max-w-[450px]">
+                <RenderSingleBubble bubble={bubbles[activeBubbleIndex] || bubbles[0]} />
+              </div>
             </div>
-          </div>
+          )}
         </div>
       ) : (
         /* Raw JSON Code View */

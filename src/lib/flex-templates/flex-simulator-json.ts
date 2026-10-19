@@ -1,6 +1,6 @@
 import type { FlexItemGroupBy } from "./flex-grouper";
 
-export const FLEX_SIMULATOR_JSON_STORAGE_KEY = "minimark_custom_po_flex_json";
+export const FLEX_SIMULATOR_JSON_STORAGE_KEY = "minimark_custom_po_flex_json_v3";
 
 const DEFAULT_FLEX_ALT_TEXT = "📦 ใบสั่งซื้อสินค้าจากร้าน";
 
@@ -516,12 +516,16 @@ function renderArray(
   item?: PurchaseOrderFlexTemplateItem,
   itemIndex?: number,
   group?: GroupContext,
+  startOffset = 0,
+  grandTotals?: { totalQuantity: number; totalCost: number; subtitle?: string },
 ): unknown[] {
   const rowIndices = values
     .map((value, index) => (isExplicitItemRow(value) || isSampleItemRow(value) ? index : -1))
     .filter((index) => index >= 0);
   if (rowIndices.length === 0) {
-    return values.map((value) => renderNode(value, data, item, itemIndex, group));
+    return values.map((value) =>
+      renderNode(value, data, item, itemIndex, group, startOffset, grandTotals),
+    );
   }
 
   const headerIndices = values
@@ -545,7 +549,7 @@ function renderArray(
       ? groupOrderItems(data.items, groupBy)
       : [{ headerTitle: "", categoryName: "", itemCount: data.items.length, items: data.items }];
 
-  let globalItemIndex = 0;
+  let globalItemIndex = startOffset;
   groups.forEach((currentGroup) => {
     if (shouldRenderHeader && headerTemplate && currentGroup.headerTitle) {
       generatedRows.push(renderGroupHeader(headerTemplate, data, currentGroup));
@@ -565,7 +569,8 @@ function renderArray(
   const output: unknown[] = [];
   values.forEach((value, index) => {
     if (index === firstDynamicIndex) output.push(...generatedRows);
-    if (!dynamicIndices.has(index)) output.push(renderNode(value, data, item, itemIndex, group));
+    if (!dynamicIndices.has(index))
+      output.push(renderNode(value, data, item, itemIndex, group, startOffset, grandTotals));
   });
   return output;
 }
@@ -576,10 +581,23 @@ function renderNode(
   item?: PurchaseOrderFlexTemplateItem,
   index?: number,
   group?: GroupContext,
+  startOffset = 0,
+  grandTotals?: { totalQuantity: number; totalCost: number; subtitle?: string },
 ): unknown {
-  if (Array.isArray(value)) return renderArray(value, data, item, index, group);
+  if (Array.isArray(value))
+    return renderArray(value, data, item, index, group, startOffset, grandTotals);
   if (!isRecord(value)) return value;
-  if (value["type"] === "text") return renderTextComponent(value, data, item, index, group);
+  if (value["type"] === "text") {
+    const rawText = value["text"];
+    if (
+      typeof rawText === "string" &&
+      grandTotals?.subtitle &&
+      /^(?:หน้า\s*\d+\/\d+\s*•\s*)?รายการ\s*\d+[–-]\d+\s*จาก\s*\d+/.test(rawText.trim())
+    ) {
+      return { ...value, text: grandTotals.subtitle };
+    }
+    return renderTextComponent(value, data, item, index, group);
+  }
 
   const contents = value["contents"];
   if (value["type"] === "box" && value["layout"] === "horizontal" && Array.isArray(contents)) {
@@ -590,16 +608,20 @@ function renderNode(
       const labelText = label.toLowerCase();
       const valueText = valueNode["text"];
       let replacement: string | undefined;
-      if (/รวมจำนวนสินค้า|จำนวนสินค้าทั้งหมด|total quantity/i.test(labelText)) {
+      if (/รวมหน้านี้|รวมจำนวนสินค้า|จำนวนสินค้าทั้งหมด|total quantity/i.test(labelText)) {
         replacement = `${data.items.length} รายการ (${data.totalQuantity} หน่วย)`;
-      } else if (/ยอดเงิน|ยอดรวม|ประมาณ.*ยอด|grand total|total amount/i.test(labelText)) {
+      } else if (/ยอดรวมทั้งใบ/i.test(labelText) && grandTotals) {
+        replacement = `${formatMoney(grandTotals.totalCost)} (${grandTotals.totalQuantity} หน่วย)`;
+      } else if (
+        /มูลค่าหน้านี้|ยอดเงิน|ยอดรวม|ประมาณ.*ยอด|grand total|total amount/i.test(labelText)
+      ) {
         replacement = formatMoney(data.totalCost);
       }
       if (replacement !== undefined && !valueText.includes("{{")) {
         let textIndex = 0;
         const nextContents = contents.map((child) => {
           if (!isRecord(child) || child["type"] !== "text")
-            return renderNode(child, data, item, index, group);
+            return renderNode(child, data, item, index, group, startOffset, grandTotals);
           const currentIndex = textIndex;
           textIndex += 1;
           return currentIndex === 1
@@ -616,8 +638,8 @@ function renderNode(
   for (const [key, child] of Object.entries(value)) {
     rendered[key] =
       key === "contents" && Array.isArray(child)
-        ? renderArray(child, data, item, index, group)
-        : renderNode(child, data, item, index, group);
+        ? renderArray(child, data, item, index, group, startOffset, grandTotals)
+        : renderNode(child, data, item, index, group, startOffset, grandTotals);
   }
   return rendered;
 }
@@ -627,7 +649,61 @@ export function populatePurchaseOrderFlexTemplate(
   template: FlexSimulatorMessage,
   data: PurchaseOrderFlexTemplateData,
 ): FlexSimulatorMessage {
-  const contents = renderNode(template.contents, data);
+  let contents: unknown;
+
+  if (
+    isRecord(template.contents) &&
+    template.contents["type"] === "carousel" &&
+    Array.isArray(template.contents["contents"]) &&
+    template.contents["contents"].length > 0
+  ) {
+    const baseBubble = template.contents["contents"][0];
+    const groupBy = data.groupBy || "category";
+    const sortedGroups =
+      groupBy !== "none"
+        ? groupOrderItems(data.items, groupBy)
+        : [{ headerTitle: "", categoryName: "", itemCount: data.items.length, items: data.items }];
+    const flatItems = sortedGroups.flatMap((g) => g.items);
+    const perCard = 20;
+    const maxBubbles = 12;
+    const shownItems = flatItems.slice(0, perCard * maxBubbles);
+    const pages = Math.max(1, Math.ceil(shownItems.length / perCard));
+    const bubbles: unknown[] = [];
+
+    for (let page = 0; page < pages; page++) {
+      const start = page * perCard;
+      const end = Math.min(start + perCard, shownItems.length);
+      const slice = shownItems.slice(start, end);
+      const pageQty = slice.reduce((s, it) => s + (Number(it.quantity) || 0), 0);
+      const pageCost = slice.reduce(
+        (s, it) => s + (it.total ?? (Number(it.quantity) || 0) * (Number(it.costPrice) || 0)),
+        0,
+      );
+      const startNum = shownItems.length > 0 ? start + 1 : 0;
+      const endNum = end;
+      const subtitle =
+        pages > 1
+          ? `หน้า ${page + 1}/${pages} • รายการ ${startNum}–${endNum} จาก ${flatItems.length}`
+          : `รายการ ${startNum}–${endNum} จาก ${flatItems.length}`;
+      const pageData: PurchaseOrderFlexTemplateData = {
+        ...data,
+        items: slice,
+        totalQuantity: pageQty,
+        totalCost: pageCost,
+      };
+      bubbles.push(
+        renderNode(baseBubble, pageData, undefined, undefined, undefined, start, {
+          totalQuantity: data.totalQuantity,
+          totalCost: data.totalCost,
+          subtitle,
+        }),
+      );
+    }
+    contents = { ...template.contents, type: "carousel", contents: bubbles };
+  } else {
+    contents = renderNode(template.contents, data);
+  }
+
   const altText = interpolateText(template.altText, data);
   const updatedAltText = altText
     .replace(/\d+\s*รายการ/g, `${data.items.length} รายการ`)

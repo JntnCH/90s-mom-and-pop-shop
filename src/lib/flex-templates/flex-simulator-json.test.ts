@@ -420,4 +420,85 @@ describe("LINE Flex Simulator JSON source", () => {
     const renderedNames = itemRows.map((r) => (r["contents"] as { text: string }[])[0]?.text);
     expect(renderedNames).toEqual(["1. สบู่", "2. แชมพู", "3. น้ำปลา"]);
   });
+
+  it("paginates carousel templates into 20 items per card with continuous numbering across cards", () => {
+    const template = parseFlexSimulatorJson(
+      JSON.stringify({
+        type: "flex",
+        altText: "📦 ใบสั่งซื้อสินค้า (3 รายการ, รวม 22 หน่วย)",
+        contents: {
+          type: "carousel",
+          contents: [
+            {
+              type: "bubble",
+              header: {
+                type: "box",
+                layout: "vertical",
+                contents: [
+                  { type: "text", text: "🏪 โชห่วยยุค90s" },
+                  { type: "text", text: "รายการ 1–3 จาก 3" },
+                ],
+              },
+              body: {
+                type: "box",
+                layout: "vertical",
+                contents: [
+                  {
+                    type: "box",
+                    layout: "horizontal",
+                    spacing: "sm",
+                    contents: [
+                      { type: "text", text: "1. สินค้าตัวอย่าง" },
+                      { type: "text", text: "2" },
+                      { type: "text", text: "ชิ้น" },
+                    ],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      }),
+    );
+
+    const items = Array.from({ length: 25 }, (_, i) => ({
+      productName: `สินค้า ${i + 1}`,
+      quantity: 2,
+      unitName: "ชิ้น",
+      categoryName: i < 10 ? "หมวด ก" : "หมวด ข",
+      costPrice: 10,
+      total: 20,
+    }));
+
+    const message = populatePurchaseOrderFlexTemplate(template, {
+      orderNumber: "PO-CAROUSEL-25",
+      orderDate: "19 ต.ค. 2569",
+      storeName: "โชห่วยยุค90s",
+      supplierName: "ซัพพลายเออร์ทั่วไป",
+      groupBy: "category_no_header",
+      items,
+      totalQuantity: 50,
+      totalCost: 500,
+    });
+
+    const carousel = message.contents as { type: string; contents: Record<string, unknown>[] };
+    expect(carousel.type).toBe("carousel");
+    expect(carousel.contents).toHaveLength(2);
+
+    const bubble1 = carousel.contents[0]!;
+    const bubble2 = carousel.contents[1]!;
+    const header1 = bubble1["header"] as { contents: { text: string }[] };
+    const header2 = bubble2["header"] as { contents: { text: string }[] };
+    expect(header1.contents[1]?.text).toBe("หน้า 1/2 • รายการ 1–20 จาก 25");
+    expect(header2.contents[1]?.text).toBe("หน้า 2/2 • รายการ 21–25 จาก 25");
+
+    const rows1 = (bubble1["body"] as { contents: Record<string, unknown>[] }).contents;
+    const rows2 = (bubble2["body"] as { contents: Record<string, unknown>[] }).contents;
+    expect(rows1).toHaveLength(20);
+    expect(rows2).toHaveLength(5);
+    expect((rows1[0]?.["contents"] as { text: string }[])[0]?.text).toBe("1. สินค้า 1");
+    expect((rows1[19]?.["contents"] as { text: string }[])[0]?.text).toBe("20. สินค้า 20");
+    expect((rows2[0]?.["contents"] as { text: string }[])[0]?.text).toBe("21. สินค้า 21");
+    expect((rows2[4]?.["contents"] as { text: string }[])[0]?.text).toBe("25. สินค้า 25");
+  });
 });

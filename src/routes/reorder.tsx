@@ -397,12 +397,13 @@ function ReorderPage() {
   const [flexContainerType, setFlexContainerType] = useState<FlexContainerType>(() => {
     try {
       return (
-        (localStorage.getItem("minimark_flex_container_type") as FlexContainerType) || "carousel"
+        (localStorage.getItem("minimark_flex_container_type_v2") as FlexContainerType) || "carousel"
       );
     } catch {
       return "carousel";
     }
   });
+  const [inlineCarouselPage, setInlineCarouselPage] = useState(0);
   const [modalImageDisplayMode, setModalImageDisplayMode] = useState<"full" | "mockup">("full");
 
   // Delete Item Confirmation Dialog State
@@ -1689,8 +1690,9 @@ function ReorderPage() {
 
   const handleUpdateContainerType = (newContainerType: FlexContainerType) => {
     setFlexContainerType(newContainerType);
+    setInlineCarouselPage(0);
     try {
-      localStorage.setItem("minimark_flex_container_type", newContainerType);
+      localStorage.setItem("minimark_flex_container_type_v2", newContainerType);
     } catch {
       /* ignore */
     }
@@ -3281,134 +3283,323 @@ function ReorderPage() {
             <div className="lg:col-span-5 space-y-4">
               <Card className="rounded-2xl border-emerald-500/30 overflow-hidden shadow-sm">
                 <CardHeader className="bg-emerald-600 text-white p-4">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between gap-2">
                     <CardTitle className="text-base flex items-center gap-2 text-white">
                       <MessageCircle className="size-5" /> ตัวอย่าง Flex Message
                     </CardTitle>
                     <Badge className="bg-emerald-700 text-white text-xs border-0">
-                      LINE Preview
+                      {flexContainerType === "carousel"
+                        ? `1. Carousel (${Math.max(1, Math.ceil(fullItems.length / 20))} การ์ด)`
+                        : "2. Bubble (การ์ดเดี่ยว)"}
                     </Badge>
                   </div>
                 </CardHeader>
 
                 <CardContent className="p-4 space-y-4">
-                  {/* Mock LINE Chat Bubble */}
-                  <div className="rounded-2xl border bg-card p-4 space-y-3 shadow-inner">
-                    <div className="flex items-center justify-between border-b pb-2">
-                      <div className="font-bold text-sm text-foreground">
-                        📦 ใบสั่งซื้อสินค้าประจำวัน
-                      </div>
-                      <span className="text-[11px] text-muted-foreground">{currentStoreName}</span>
-                    </div>
-
-                    {/* Flex Message Grouping Mode Selector */}
-                    <div className="p-2.5 rounded-xl bg-muted/40 border space-y-1.5">
+                  {/* Mock LINE Chat Bubble / Carousel Preview */}
+                  <div className="rounded-2xl border bg-card p-3.5 space-y-3 shadow-inner">
+                    {/* 1. Format Selector: Carousel (20 items/card) vs Bubble (Single card) */}
+                    <div className="p-2.5 rounded-xl bg-muted/40 border space-y-2">
                       <div className="flex items-center justify-between">
                         <Label className="text-[11px] font-bold text-foreground flex items-center gap-1.5">
-                          <SlidersHorizontal className="size-3.5 text-emerald-600" />
-                          การจัดเรียงใน Flex Message:
+                          <MessageCircle className="size-3.5 text-emerald-600" />
+                          รูปแบบ Flex Message:
                         </Label>
                         <Badge
                           variant="outline"
                           className="text-[10px] border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
                         >
-                          {flexGroupBy === "none"
-                            ? "ตามลำดับเดิม"
-                            : flexGroupBy === "category_no_header"
-                              ? "ตามหมวด (ไม่แสดงใน Flex)"
-                              : flexGroupBy === "zone_no_header"
-                                ? "ตามโซน (ไม่แสดงใน Flex)"
-                                : flexGroupBy === "zone"
-                                  ? "ตามโซน (มีแถบหัวข้อ)"
-                                  : flexGroupBy === "zone_then_category"
-                                    ? "โซน ➔ หมวดหมู่"
-                                    : "ตามหมวด (มีแถบหัวข้อ)"}
+                          {flexContainerType === "carousel"
+                            ? "การ์ดละไม่เกิน 20 รายการ"
+                            : "การ์ดเดี่ยวรวมทุกรายการ"}
                         </Badge>
                       </div>
-                      <select
-                        className="w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs font-medium shadow-xs"
-                        value={flexGroupBy}
-                        onChange={(e) => {
-                          const next = e.target.value as FlexItemGroupBy;
-                          handleUpdateFlexGrouping(next);
-                          toast.success(
-                            next === "category_no_header"
-                              ? "จัดกลุ่มตามหมวดหมู่ (ไม่แสดงหมวดหมู่ใน Flex Message)"
-                              : next === "category"
-                                ? "จัดกลุ่มตามหมวดหมู่สินค้า (แสดงแถบหัวข้อ)"
-                                : next === "none"
-                                  ? "เรียงตามลำดับเดิม (ไม่มีแถบหัวข้อ)"
-                                  : next === "zone_then_category"
-                                    ? "จัดกลุ่มตามโซน ➔ หมวดหมู่"
-                                    : next === "zone_no_header"
-                                      ? "จัดกลุ่มตามโซน (ไม่แสดงแถบหัวข้อ)"
-                                      : "จัดกลุ่มตามโซนจัดวางสินค้า",
-                          );
-                        }}
-                      >
-                        <option value="category_no_header">
-                          🏷️ ตามหมวดหมู่ (ไม่แสดงหมวดหมู่ใน Flex - แนะนำ)
-                        </option>
-                        <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
-                        <option value="zone_no_header">📍 ตามโซน (ไม่แสดงแถบหัวข้อใน Flex)</option>
-                        <option value="category">🏷️ ตามหมวดหมู่สินค้า (แสดงแถบหัวข้อหมวด)</option>
-                        <option value="zone">📍 ตามโซนจัดวางสินค้า (แสดงแถบหัวข้อโซน)</option>
-                        <option value="zone_then_category">
-                          📍 โซน ➔ 🏷️ หมวดหมู่สินค้า (แสดงแถบหัวข้อ)
-                        </option>
-                      </select>
-                      <p className="text-[10px] text-muted-foreground leading-relaxed">
-                        จัดลำดับสินค้าในหมวดหมู่หรือโซนเดียวกันให้อยู่ติดกันใน LINE Flex
-                      </p>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <button
+                          type="button"
+                          className={`p-2 rounded-lg border text-left transition-all ${
+                            flexContainerType === "carousel"
+                              ? "bg-emerald-500/15 border-emerald-500 text-emerald-950 dark:text-emerald-100 shadow-2xs"
+                              : "bg-background border-border text-muted-foreground hover:bg-muted"
+                          }`}
+                          onClick={() => handleUpdateContainerType("carousel")}
+                        >
+                          <div className="text-xs font-bold">1. 🎠 Carousel</div>
+                          <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                            20 รายการ/การ์ด เรียงเลขต่อเนื่องตามหมวด
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          className={`p-2 rounded-lg border text-left transition-all ${
+                            flexContainerType === "bubble"
+                              ? "bg-emerald-500/15 border-emerald-500 text-emerald-950 dark:text-emerald-100 shadow-2xs"
+                              : "bg-background border-border text-muted-foreground hover:bg-muted"
+                          }`}
+                          onClick={() => handleUpdateContainerType("bubble")}
+                        >
+                          <div className="text-xs font-bold">2. 💬 Bubble</div>
+                          <div className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                            การ์ดยาวใบเดียว รวมทุกรายการ
+                          </div>
+                        </button>
+                      </div>
+
+                      {/* 2. Grouping Mode Selector */}
+                      <div className="pt-1.5 border-t border-border/60 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <Label className="text-[11px] font-bold text-foreground flex items-center gap-1.5">
+                            <SlidersHorizontal className="size-3.5 text-emerald-600" />
+                            การจัดเรียงหมวดหมู่:
+                          </Label>
+                          <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-semibold">
+                            {flexGroupBy === "none"
+                              ? "ตามลำดับเดิม"
+                              : flexGroupBy === "category_no_header"
+                                ? "ตามหมวด (ไม่แสดงแถบหมวด)"
+                                : flexGroupBy === "zone_no_header"
+                                  ? "ตามโซน (ไม่แสดงแถบโซน)"
+                                  : flexGroupBy === "zone"
+                                    ? "ตามโซน (มีแถบหัวข้อ)"
+                                    : flexGroupBy === "zone_then_category"
+                                      ? "โซน ➔ หมวดหมู่"
+                                      : "ตามหมวด (มีแถบหัวข้อ)"}
+                          </span>
+                        </div>
+                        <select
+                          className="w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs font-medium shadow-xs"
+                          value={flexGroupBy}
+                          onChange={(e) => {
+                            const next = e.target.value as FlexItemGroupBy;
+                            setInlineCarouselPage(0);
+                            handleUpdateFlexGrouping(next);
+                            toast.success(
+                              next === "category_no_header"
+                                ? "จัดกลุ่มตามหมวดหมู่ (ไม่แสดงหมวดหมู่ใน Flex Message)"
+                                : next === "category"
+                                  ? "จัดกลุ่มตามหมวดหมู่สินค้า (แสดงแถบหัวข้อ)"
+                                  : next === "none"
+                                    ? "เรียงตามลำดับเดิม (ไม่มีแถบหัวข้อ)"
+                                    : next === "zone_then_category"
+                                      ? "จัดกลุ่มตามโซน ➔ หมวดหมู่"
+                                      : next === "zone_no_header"
+                                        ? "จัดกลุ่มตามโซน (ไม่แสดงแถบหัวข้อ)"
+                                        : "จัดกลุ่มตามโซนจัดวางสินค้า",
+                            );
+                          }}
+                        >
+                          <option value="category_no_header">
+                            🏷️ ตามหมวดหมู่ (ไม่แสดงหมวดหมู่ใน Flex - แนะนำ)
+                          </option>
+                          <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
+                          <option value="zone_no_header">
+                            📍 ตามโซน (ไม่แสดงแถบหัวข้อใน Flex)
+                          </option>
+                          <option value="category">🏷️ ตามหมวดหมู่สินค้า (แสดงแถบหัวข้อหมวด)</option>
+                          <option value="zone">📍 ตามโซนจัดวางสินค้า (แสดงแถบหัวข้อโซน)</option>
+                          <option value="zone_then_category">
+                            📍 โซน ➔ 🏷️ หมวดหมู่สินค้า (แสดงแถบหัวข้อ)
+                          </option>
+                        </select>
+                      </div>
                     </div>
 
-                    <div className="space-y-2 text-xs">
-                      {fullItems.length === 0 ? (
-                        <p className="text-muted-foreground italic py-3 text-center">
-                          (ยังไม่มีรายการสินค้าในใบสั่ง)
-                        </p>
-                      ) : (
-                        groupAndSortFlexItems(fullItems, {
-                          groupBy: flexGroupBy,
-                          includeZone:
-                            flexGroupBy === "zone" ||
-                            flexGroupBy === "zone_no_header" ||
-                            flexGroupBy === "zone_then_category" ||
-                            flexGroupBy === "category_then_zone",
-                        }).map((grp) => (
-                          <div key={grp.groupKey} className="space-y-1">
-                            {flexShowHeader && grp.headerTitle && (
-                              <div className="text-[10px] font-bold text-foreground/85 bg-muted/70 px-2 py-0.5 rounded-md flex items-center justify-between">
-                                <span className="truncate">{grp.headerTitle}</span>
-                                <span className="text-[9px] text-muted-foreground shrink-0">
-                                  {grp.items.length} รายการ
-                                </span>
+                    {/* Simulated LINE Flex Card Header & 3-Column Body */}
+                    {(() => {
+                      const grouped = groupAndSortFlexItems(fullItems, {
+                        groupBy: flexGroupBy,
+                        includeZone:
+                          flexGroupBy === "zone" ||
+                          flexGroupBy === "zone_no_header" ||
+                          flexGroupBy === "zone_then_category" ||
+                          flexGroupBy === "category_then_zone",
+                      });
+                      const flatEntries: {
+                        item: (typeof fullItems)[number];
+                        headerTitle: string;
+                      }[] = [];
+                      grouped.forEach((grp) => {
+                        grp.items.forEach(({ item }) => {
+                          flatEntries.push({
+                            item,
+                            headerTitle: flexShowHeader ? grp.headerTitle || "" : "",
+                          });
+                        });
+                      });
+
+                      const perCard = 20;
+                      const totalPages =
+                        flexContainerType === "carousel"
+                          ? Math.max(1, Math.ceil(flatEntries.length / perCard))
+                          : 1;
+                      const safePage = Math.min(inlineCarouselPage, totalPages - 1);
+                      const startIdx = flexContainerType === "carousel" ? safePage * perCard : 0;
+                      const endIdx =
+                        flexContainerType === "carousel"
+                          ? Math.min(startIdx + perCard, flatEntries.length)
+                          : flatEntries.length;
+                      const visibleSlice = flatEntries.slice(startIdx, endIdx);
+                      const pageQty = visibleSlice.reduce(
+                        (s, e) => s + (Number(e.item.quantity) || 0),
+                        0,
+                      );
+                      const pageCost = visibleSlice.reduce(
+                        (s, e) =>
+                          s + (Number(e.item.quantity) || 0) * (Number(e.item.costPrice) || 0),
+                        0,
+                      );
+                      let lastHeader = "";
+
+                      return (
+                        <div className="rounded-xl border border-emerald-500/30 overflow-hidden bg-white dark:bg-zinc-950 shadow-xs">
+                          {/* Carousel Page Switcher if Carousel mode */}
+                          {flexContainerType === "carousel" && totalPages > 1 && (
+                            <div className="bg-emerald-950 text-white px-2.5 py-1.5 flex items-center justify-between gap-1 text-[11px]">
+                              <span className="font-bold">
+                                🎠 Carousel {totalPages} การ์ด (20 รายการ/ใบ)
+                              </span>
+                              <div className="flex items-center gap-1 flex-wrap">
+                                {Array.from({ length: totalPages }).map((_, pIdx) => (
+                                  <button
+                                    key={pIdx}
+                                    type="button"
+                                    onClick={() => setInlineCarouselPage(pIdx)}
+                                    className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all ${
+                                      pIdx === safePage
+                                        ? "bg-[#06C755] text-white shadow-2xs"
+                                        : "bg-white/15 text-white/80 hover:bg-white/25"
+                                    }`}
+                                  >
+                                    ใบที่ {pIdx + 1}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Green Flex Card Header */}
+                          <div className="bg-[#06C755] text-white p-3 text-center space-y-0.5">
+                            <div className="font-bold text-sm">🏪 {currentStoreName}</div>
+                            <div className="font-bold text-xs text-emerald-50">
+                              📦 ใบสั่งซื้อสินค้าประจำวัน
+                            </div>
+                            <div className="text-[10px] text-emerald-100">
+                              เลขที่: {editingPOId ? editingPONumber : "PO-DRAFT"} •{" "}
+                              {supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป"}
+                            </div>
+                            {flexContainerType === "carousel" && flatEntries.length > 0 && (
+                              <div className="text-[11px] font-bold text-white pt-0.5">
+                                {totalPages > 1
+                                  ? `หน้า ${safePage + 1}/${totalPages} • รายการ ${startIdx + 1}–${endIdx} จาก ${flatEntries.length}`
+                                  : `รายการ 1–${flatEntries.length} จาก ${flatEntries.length}`}
                               </div>
                             )}
-                            {grp.items.map(({ item }, itemIdx) => (
-                              <div
-                                key={`${grp.groupKey}-${item.product.id}-${itemIdx}`}
-                                className="flex justify-between py-1 border-b border-border/40 pl-1"
-                              >
-                                <span className="text-foreground truncate max-w-[180px]">
-                                  {item.name}
-                                </span>
-                                <span className="font-bold font-mono text-emerald-700 dark:text-emerald-300 shrink-0">
-                                  {item.quantity} {item.unitName}
-                                </span>
-                              </div>
-                            ))}
                           </div>
-                        ))
-                      )}
-                    </div>
 
-                    <div className="flex justify-between items-center pt-2 border-t font-semibold text-xs text-foreground">
-                      <span>รวมทั้งสิ้น:</span>
-                      <span className="font-bold text-sm text-emerald-700 dark:text-emerald-300">
-                        {fullItems.length} รายการ (฿{totalCost.toLocaleString("th-TH")})
-                      </span>
-                    </div>
+                          {/* 3-Column Header & Rows */}
+                          <div className="p-3 space-y-2 text-xs">
+                            <div className="grid grid-cols-9 gap-1 pb-1.5 border-b border-border font-bold text-[11px] text-muted-foreground">
+                              <div className="col-span-5">รายการสินค้า</div>
+                              <div className="col-span-2 text-right">จำนวน</div>
+                              <div className="col-span-2 text-right">หน่วยนับ</div>
+                            </div>
+
+                            {visibleSlice.length === 0 ? (
+                              <p className="text-muted-foreground italic py-3 text-center">
+                                (ยังไม่มีรายการสินค้าในใบสั่ง)
+                              </p>
+                            ) : (
+                              <div className="space-y-1 max-h-[320px] overflow-y-auto pr-0.5">
+                                {visibleSlice.map((entry, idx) => {
+                                  const itemNumber = startIdx + idx + 1;
+                                  const showHeader =
+                                    flexShowHeader &&
+                                    entry.headerTitle &&
+                                    entry.headerTitle !== lastHeader;
+                                  if (showHeader) {
+                                    lastHeader = entry.headerTitle;
+                                  }
+                                  return (
+                                    <div
+                                      key={`${entry.item.product.id}-${itemNumber}`}
+                                      className="space-y-1"
+                                    >
+                                      {showHeader && (
+                                        <div className="text-[10px] font-bold text-foreground bg-muted px-2 py-1 rounded-md mt-1">
+                                          {entry.headerTitle}
+                                        </div>
+                                      )}
+                                      <div className="grid grid-cols-9 gap-1 items-center py-1 border-b border-border/40 text-xs">
+                                        <div className="col-span-5 font-semibold text-foreground break-words">
+                                          {itemNumber}. {entry.item.name}
+                                        </div>
+                                        <div className="col-span-2 text-right font-bold font-mono text-sm text-emerald-600 dark:text-emerald-400">
+                                          {entry.item.quantity}
+                                        </div>
+                                        <div className="col-span-2 text-right font-semibold text-foreground/90">
+                                          {entry.item.unitName || "-"}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Totals Box */}
+                            <div className="pt-2 border-t space-y-1 text-xs">
+                              {flexContainerType === "carousel" ? (
+                                <>
+                                  <div className="flex justify-between items-center text-foreground/90">
+                                    <span>รวมหน้านี้:</span>
+                                    <span className="font-bold">
+                                      {visibleSlice.length} รายการ ({pageQty} หน่วย)
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center text-foreground">
+                                    <span>มูลค่าหน้านี้:</span>
+                                    <span className="font-bold text-sm text-emerald-600 dark:text-emerald-400">
+                                      ฿
+                                      {pageCost.toLocaleString("th-TH", {
+                                        minimumFractionDigits: 2,
+                                      })}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center text-[11px] text-muted-foreground">
+                                    <span>ยอดรวมทั้งใบ:</span>
+                                    <span>
+                                      ฿
+                                      {totalCost.toLocaleString("th-TH", {
+                                        minimumFractionDigits: 2,
+                                      })}{" "}
+                                      ({totalQuantity} หน่วย)
+                                    </span>
+                                  </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="flex justify-between items-center text-foreground/90">
+                                    <span>จำนวนสินค้าทั้งหมด:</span>
+                                    <span className="font-bold">
+                                      {fullItems.length} รายการ ({totalQuantity} หน่วย)
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center text-foreground">
+                                    <span>ประมาณการยอดสั่งซื้อ:</span>
+                                    <span className="font-bold text-sm text-emerald-600 dark:text-emerald-400">
+                                      ฿
+                                      {totalCost.toLocaleString("th-TH", {
+                                        minimumFractionDigits: 2,
+                                      })}
+                                    </span>
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   {/* PO Save & Send Action Buttons */}
@@ -5545,28 +5736,62 @@ function ReorderPage() {
 
               {/* TAB CONTENT: FLEX PREVIEW */}
               {modalPreviewTab === "flex" ? (
-                <div className="p-3.5 space-y-2 text-xs bg-muted/10">
-                  <div className="flex items-center justify-between border-b pb-1.5">
+                <div className="p-3.5 space-y-2.5 text-xs bg-muted/10">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
                     <span className="font-bold text-foreground">
                       {pushMessageType === "STOCK_ALERT"
                         ? "⚠️ แจ้งเตือนสินค้าต้องสั่งซื้อ"
                         : "📦 ใบสั่งซื้อสินค้าประจำวัน"}
                     </span>
-                    <span className="text-[11px] text-muted-foreground">{currentStoreName}</span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateContainerType("carousel")}
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all ${
+                          flexContainerType === "carousel"
+                            ? "bg-emerald-600 text-white border-emerald-600"
+                            : "bg-background text-muted-foreground border-border"
+                        }`}
+                      >
+                        1. 🎠 Carousel (20 รายการ/การ์ด)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateContainerType("bubble")}
+                        className={`px-2 py-0.5 rounded-md text-[10px] font-bold border transition-all ${
+                          flexContainerType === "bubble"
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-background text-muted-foreground border-border"
+                        }`}
+                      >
+                        2. 💬 Bubble (การ์ดเดี่ยว)
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-9 gap-1 pb-1 border-b border-border font-bold text-[10px] text-muted-foreground">
+                    <div className="col-span-5">รายการสินค้า</div>
+                    <div className="col-span-2 text-right">
+                      {pushMessageType === "STOCK_ALERT" ? "คงเหลือ" : "จำนวน"}
+                    </div>
+                    <div className="col-span-2 text-right">หน่วยนับ</div>
                   </div>
 
                   <div className="space-y-1">
                     {pushMessageType === "STOCK_ALERT" ? (
-                      allReorderNeeded.slice(0, 5).map((p, idx) => (
+                      allReorderNeeded.slice(0, 6).map((p, idx) => (
                         <div
                           key={p.id}
-                          className="flex items-center justify-between py-0.5 border-b border-border/40 text-[11px]"
+                          className="grid grid-cols-9 gap-1 items-center py-0.5 border-b border-border/40 text-[11px]"
                         >
-                          <span className="truncate max-w-[200px] text-foreground">
+                          <span className="col-span-5 truncate text-foreground font-medium">
                             {idx + 1}. {p.name}
                           </span>
-                          <span className="font-mono font-bold text-destructive">
-                            คงเหลือ {p.stock} {getUnitName(p.unitId)}
+                          <span className="col-span-2 text-right font-mono font-bold text-destructive">
+                            {p.stock}
+                          </span>
+                          <span className="col-span-2 text-right text-foreground/85">
+                            {getUnitName(p.unitId)}
                           </span>
                         </div>
                       ))
@@ -5575,23 +5800,38 @@ function ReorderPage() {
                         (ไม่มีรายการสินค้าในใบสั่งซื้อ)
                       </div>
                     ) : (
-                      fullItems.slice(0, 5).map((item, idx) => (
-                        <div
-                          key={item.product.id}
-                          className="flex items-center justify-between py-0.5 border-b border-border/40 text-[11px]"
-                        >
-                          <span className="truncate max-w-[200px] text-foreground">
-                            {idx + 1}. {item.product.name}
-                          </span>
-                          <span className="font-mono font-bold text-emerald-700 dark:text-emerald-300">
-                            {item.quantity} {item.unitName}
-                          </span>
-                        </div>
-                      ))
+                      groupAndSortFlexItems(fullItems, {
+                        groupBy: flexGroupBy,
+                        includeZone:
+                          flexGroupBy === "zone" ||
+                          flexGroupBy === "zone_no_header" ||
+                          flexGroupBy === "zone_then_category" ||
+                          flexGroupBy === "category_then_zone",
+                      })
+                        .flatMap((g) => g.items.map((x) => x.item))
+                        .slice(0, 6)
+                        .map((item, idx) => (
+                          <div
+                            key={item.product.id}
+                            className="grid grid-cols-9 gap-1 items-center py-0.5 border-b border-border/40 text-[11px]"
+                          >
+                            <span className="col-span-5 truncate text-foreground font-medium">
+                              {idx + 1}. {item.product.name}
+                            </span>
+                            <span className="col-span-2 text-right font-mono font-bold text-emerald-700 dark:text-emerald-300">
+                              {item.quantity}
+                            </span>
+                            <span className="col-span-2 text-right text-foreground/85">
+                              {item.unitName}
+                            </span>
+                          </div>
+                        ))
                     )}
-                    {pushMessageType !== "STOCK_ALERT" && fullItems.length > 5 && (
-                      <div className="text-[10px] text-muted-foreground text-center pt-0.5">
-                        ...และอีก {fullItems.length - 5} รายการ
+                    {pushMessageType !== "STOCK_ALERT" && fullItems.length > 6 && (
+                      <div className="text-[10px] text-emerald-700 dark:text-emerald-300 font-semibold text-center pt-0.5">
+                        {flexContainerType === "carousel"
+                          ? `...และอีก ${fullItems.length - 6} รายการ (แบ่งเป็น ${Math.ceil(fullItems.length / 20)} การ์ด • การ์ดละไม่เกิน 20 รายการ)`
+                          : `...และอีก ${fullItems.length - 6} รายการ (รวมในการ์ด Bubble ใบเดียว)`}
                       </div>
                     )}
                   </div>
@@ -5601,7 +5841,7 @@ function ReorderPage() {
                     <span className="font-bold text-emerald-700 dark:text-emerald-300 font-mono">
                       {pushMessageType === "STOCK_ALERT"
                         ? `${allReorderNeeded.length} รายการที่ต้องสั่ง`
-                        : `${fullItems.length} รายการ (฿${totalCost.toLocaleString()})`}
+                        : `${fullItems.length} รายการ (${totalQuantity} หน่วย • ฿${totalCost.toLocaleString()})`}
                     </span>
                   </div>
                 </div>
@@ -5855,7 +6095,9 @@ function ReorderPage() {
                   ? "🖼️ สลิปรูปภาพ PNG"
                   : pushMessageFormat === "BOTH"
                     ? "📦 Flex + รูปภาพ PNG"
-                    : "⚡ Flex Bubble Format"}
+                    : flexContainerType === "carousel"
+                      ? "🎠 Flex Carousel (20 รายการ/การ์ด)"
+                      : "💬 Flex Bubble (การ์ดเดี่ยว)"}
               </Badge>
             </div>
 

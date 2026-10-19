@@ -967,7 +967,7 @@ export function formatDailyOrderFlexMessage(
   try {
     const customTemplate = getLatestPurchaseOrderFlexMessage();
     const customType = (customTemplate.contents as { type?: string })?.type;
-    if (customType && customType !== targetContainerType) {
+    if (options?.containerType && customType && customType !== options.containerType) {
       throw new Error("Custom template type does not match requested containerType");
     }
     return populatePurchaseOrderFlexTemplate(customTemplate, {

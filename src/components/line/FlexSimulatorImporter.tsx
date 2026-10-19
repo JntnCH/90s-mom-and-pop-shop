@@ -50,43 +50,185 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
   const currentStoreName = getSystemStoreName();
 
   const [isLargeFont, setIsLargeFont] = useState<boolean>(true);
+  const [containerType, setContainerType] = useState<"carousel" | "bubble">("carousel");
 
-  const getCustomPOFlex = (large = isLargeFont) =>
-    createPurchaseOrderFlexCarousel(
-      [
-        {
-          name: "ปลาร้า แม่เหรียญ ฝาขาว 380 มล.",
-          quantity: 1,
-          unitName: "แพ็ค",
-          categoryName: "เครื่องปรุงรส",
-          costPrice: 180,
-        },
-        {
-          name: "ครีมเภสัช 45 ก.",
-          quantity: 15,
-          unitName: "ขวด",
-          categoryName: "ของใช้ส่วนตัว",
-          costPrice: 25,
-        },
-        {
-          name: "น้ำปลาทิพรส 700 มล.",
-          quantity: 6,
-          unitName: "ขวด",
-          categoryName: "เครื่องปรุงรส",
-          costPrice: 32,
-        },
-      ],
-      {
-        storeName: currentStoreName,
-        fontSize: large ? "large" : "medium",
-        separateQuantityUnit: true,
-        includeZone: false,
-        groupBy: "category_no_header",
-        showGroupHeaders: false,
-      },
-    );
+  const samplePOItems = [
+    {
+      name: "ปลาร้า แม่เหรียญ ฝาขาว 380 มล.",
+      quantity: 2,
+      unitName: "แพ็ค",
+      categoryName: "เครื่องปรุงรส",
+      costPrice: 180,
+    },
+    {
+      name: "น้ำปลาทิพรส 700 มล.",
+      quantity: 6,
+      unitName: "ขวด",
+      categoryName: "เครื่องปรุงรส",
+      costPrice: 32,
+    },
+    {
+      name: "ซีอิ๊วขาว ตราเด็กสมบูรณ์ สูตร 1",
+      quantity: 12,
+      unitName: "ขวด",
+      categoryName: "เครื่องปรุงรส",
+      costPrice: 35,
+    },
+    {
+      name: "ซอสหอยนางรม ตราแม่ครัว 600 มล.",
+      quantity: 6,
+      unitName: "ขวด",
+      categoryName: "เครื่องปรุงรส",
+      costPrice: 48,
+    },
+    {
+      name: "น้ำตาลทรายขาว มิตรผล 1 กก.",
+      quantity: 20,
+      unitName: "ถุง",
+      categoryName: "เครื่องปรุงรส",
+      costPrice: 24,
+    },
+    {
+      name: "ผงชูรส อายิโนะโมะโต๊ะ 250 ก.",
+      quantity: 10,
+      unitName: "ซอง",
+      categoryName: "เครื่องปรุงรส",
+      costPrice: 30,
+    },
+    {
+      name: "น้ำมันพืช มรกต 1 ลิตร",
+      quantity: 12,
+      unitName: "ขวด",
+      categoryName: "เครื่องปรุงรส",
+      costPrice: 45,
+    },
+    {
+      name: "ซอสมะเขือเทศ โรซ่า 300 ก.",
+      quantity: 6,
+      unitName: "ขวด",
+      categoryName: "เครื่องปรุงรส",
+      costPrice: 28,
+    },
+    {
+      name: "ครีมเภสัช 45 ก.",
+      quantity: 15,
+      unitName: "ขวด",
+      categoryName: "ของใช้ส่วนตัว",
+      costPrice: 25,
+    },
+    {
+      name: "สบู่ลักส์ ก้อนชมพู 70 ก.",
+      quantity: 4,
+      unitName: "แพ็ค",
+      categoryName: "ของใช้ส่วนตัว",
+      costPrice: 52,
+    },
+    {
+      name: "ยาสีฟัน คอลเกต เกลือสมุนไพร 150 ก.",
+      quantity: 6,
+      unitName: "หลอด",
+      categoryName: "ของใช้ส่วนตัว",
+      costPrice: 49,
+    },
+    {
+      name: "แชมพู ซันซิล สีชมพู 320 มล.",
+      quantity: 6,
+      unitName: "ขวด",
+      categoryName: "ของใช้ส่วนตัว",
+      costPrice: 79,
+    },
+    {
+      name: "แป้งเภสัช ป๋องชมพู 50 ก.",
+      quantity: 12,
+      unitName: "กระป๋อง",
+      categoryName: "ของใช้ส่วนตัว",
+      costPrice: 15,
+    },
+    {
+      name: "ผงซักฟอก บรีส เอกเซล 800 ก.",
+      quantity: 6,
+      unitName: "ถุง",
+      categoryName: "ของใช้ในบ้าน",
+      costPrice: 69,
+    },
+    {
+      name: "น้ำยาล้างจาน ซันไลต์ 500 มล.",
+      quantity: 12,
+      unitName: "ถุง",
+      categoryName: "ของใช้ในบ้าน",
+      costPrice: 25,
+    },
+    {
+      name: "น้ำยาปรับผ้านุ่ม ดาวน์นี่ 500 มล.",
+      quantity: 6,
+      unitName: "ถุง",
+      categoryName: "ของใช้ในบ้าน",
+      costPrice: 55,
+    },
+    {
+      name: "มาม่าต้มยำกุ้ง 55 ก.",
+      quantity: 3,
+      unitName: "กล่อง",
+      categoryName: "อาหารแห้ง",
+      costPrice: 185,
+    },
+    {
+      name: "ปลากระป๋อง สามแม่ครัว",
+      quantity: 10,
+      unitName: "กระป๋อง",
+      categoryName: "อาหารแห้ง",
+      costPrice: 20,
+    },
+    {
+      name: "วุ้นเส้นต้นสน 80 ก.",
+      quantity: 10,
+      unitName: "ห่อ",
+      categoryName: "อาหารแห้ง",
+      costPrice: 16,
+    },
+    {
+      name: "กาแฟเบอร์ดี้ โรบัสต้า 180 มล.",
+      quantity: 2,
+      unitName: "ถาด",
+      categoryName: "เครื่องดื่ม",
+      costPrice: 310,
+    },
+    {
+      name: "เอ็ม-150 เครื่องดื่มชูกำลัง",
+      quantity: 2,
+      unitName: "ลัง",
+      categoryName: "เครื่องดื่ม",
+      costPrice: 480,
+    },
+    {
+      name: "น้ำดื่มสิงห์ 600 มล.",
+      quantity: 10,
+      unitName: "แพ็ค",
+      categoryName: "เครื่องดื่ม",
+      costPrice: 45,
+    },
+  ];
 
-  const defaultPOFlex = getCustomPOFlex(true);
+  const getCustomPOFlex = (large = isLargeFont, type: "carousel" | "bubble" = containerType) =>
+    type === "bubble"
+      ? createPurchaseOrderFlexBubble(samplePOItems, {
+          storeName: currentStoreName,
+          fontSize: large ? "large" : "medium",
+          separateQuantityUnit: true,
+          includeZone: false,
+          groupBy: "category_no_header",
+          showGroupHeaders: false,
+        })
+      : createPurchaseOrderFlexCarousel(samplePOItems, {
+          storeName: currentStoreName,
+          fontSize: large ? "large" : "medium",
+          separateQuantityUnit: true,
+          includeZone: false,
+          groupBy: "category_no_header",
+          showGroupHeaders: false,
+        });
+
+  const defaultPOFlex = getCustomPOFlex(true, "carousel");
 
   const [rawJson, setRawJson] = useState<string>(() => JSON.stringify(defaultPOFlex, null, 2));
   const [parsedFlex, setParsedFlex] = useState<unknown>(defaultPOFlex);
@@ -229,7 +371,9 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
       setParseError(null);
       setIsCustomSaved(false);
       setIsLargeFont(true);
-      toast.success("คืนค่าแม่แบบมาตรฐาน Carousel 3 คอลัมน์ (รายการสินค้า, จำนวน, หน่วยนับ) เรียบร้อยแล้ว");
+      toast.success(
+        "คืนค่าแม่แบบมาตรฐาน Carousel 3 คอลัมน์ (รายการสินค้า, จำนวน, หน่วยนับ) เรียบร้อยแล้ว",
+      );
       window.dispatchEvent(new CustomEvent("minimark_store_change"));
       if (onSaved) onSaved();
     }
@@ -258,10 +402,21 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
 
   const handleApplyFontConfig = (newLarge: boolean) => {
     setIsLargeFont(newLarge);
-    const newPO = getCustomPOFlex(newLarge);
+    const newPO = getCustomPOFlex(newLarge, containerType);
     handleJsonChange(JSON.stringify(newPO, null, 2));
     toast.success(
       `ปรับขนาดตัวอักษรเป็น: ${newLarge ? "ตัวอักษรขนาดใหญ่" : "ตัวอักษรขนาดปกติ"} (3 คอลัมน์: รายการสินค้า, จำนวน, หน่วยนับ) เรียบร้อย`,
+    );
+  };
+
+  const handleApplyContainerType = (newType: "carousel" | "bubble") => {
+    setContainerType(newType);
+    const newPO = getCustomPOFlex(isLargeFont, newType);
+    handleJsonChange(JSON.stringify(newPO, null, 2));
+    toast.success(
+      newType === "carousel"
+        ? "เปลี่ยนเป็นรูปแบบที่ 1: Carousel (การ์ดละไม่เกิน 20 รายการ เรียงเลขต่อเนื่องตามหมวดหมู่)"
+        : "เปลี่ยนเป็นรูปแบบที่ 2: Bubble (การ์ดเดี่ยวรวมทุกรายการ)",
     );
   };
 
@@ -299,7 +454,7 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
         );
         break;
       case "PO":
-        presetObj = getCustomPOFlex(isLargeFont);
+        presetObj = getCustomPOFlex(isLargeFont, containerType);
         break;
       case "ALERT":
         presetObj = createStockAlertFlexBubble(
@@ -399,9 +554,10 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
               </h3>
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              แม่แบบใหม่: แยกคอลัมน์ <strong>[รายการสินค้า] [จำนวน] [หน่วยนับ]</strong>{" "}
-              ออกจากกันอย่างชัดเจน พร้อมปรับตัวหนังสือขนาดใหญ่พิเศษ (Size: md, lg, xl)
-              อ่านง่ายสบายตาบนมือถือ
+              รองรับ 2 รูปแบบมาตรฐาน:{" "}
+              <strong>1. Carousel (สูงสุด 20 รายการ/การ์ด เรียงเลขต่อเนื่องตามหมวดหมู่)</strong> และ{" "}
+              <strong>2. Bubble (การ์ดเดี่ยวรวมทุกรายการ)</strong> แยก 3 คอลัมน์{" "}
+              <strong>[รายการสินค้า] [จำนวน] [หน่วยนับ]</strong>
             </p>
           </div>
 
@@ -472,12 +628,30 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
       <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-muted/50 p-3 rounded-2xl border border-border/70">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-            <Sparkles className="size-3.5 text-primary" /> ปรับแต่งเลย์เอาต์ด่วน:
+            <Sparkles className="size-3.5 text-primary" /> รูปแบบใบสั่งซื้อ:
           </span>
 
-          <span className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-emerald-600/10 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-            ✓ 3 คอลัมน์ (รายการสินค้า, จำนวน, หน่วยนับ)
-          </span>
+          <Button
+            size="sm"
+            variant={containerType === "carousel" ? "default" : "outline"}
+            className={`h-7 text-xs rounded-lg px-2.5 gap-1 font-bold ${
+              containerType === "carousel" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""
+            }`}
+            onClick={() => handleApplyContainerType("carousel")}
+          >
+            1. 🎠 Carousel (20 รายการ/การ์ด)
+          </Button>
+
+          <Button
+            size="sm"
+            variant={containerType === "bubble" ? "default" : "outline"}
+            className={`h-7 text-xs rounded-lg px-2.5 gap-1 font-bold ${
+              containerType === "bubble" ? "bg-blue-600 hover:bg-blue-700 text-white" : ""
+            }`}
+            onClick={() => handleApplyContainerType("bubble")}
+          >
+            2. 💬 Bubble (การ์ดเดี่ยว)
+          </Button>
 
           <Button
             size="sm"
