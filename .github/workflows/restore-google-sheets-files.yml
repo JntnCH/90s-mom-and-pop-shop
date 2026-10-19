@@ -1,0 +1,34 @@
+name: restore-google-sheets-files
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Restore google-sheets-service.ts from good commit
+        run: |
+          git show 22e34205da3e2b7c3699edcac4ca925ac8ef507f:src/lib/google-sheets-service.ts > src/lib/google-sheets-service.ts
+          # open-ended range for restore
+          sed -i "s/!A1:Q500/!A1:Q/g" src/lib/google-sheets-service.ts
+      - name: Fix import range limit in GoogleSheetsSyncTab
+        run: |
+          sed -i "s/!A1:O50/!A1:O/g" src/components/sheets/GoogleSheetsSyncTab.tsx
+      - name: Verify
+        run: |
+          wc -l src/lib/google-sheets-service.ts src/components/sheets/GoogleSheetsSyncTab.tsx
+          grep -n "A1:O\|A1:Q" src/components/sheets/GoogleSheetsSyncTab.tsx src/lib/google-sheets-service.ts || true
+          test $(wc -c < src/lib/google-sheets-service.ts) -gt 10000
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/google-sheets-service.ts src/components/sheets/GoogleSheetsSyncTab.tsx
+          git diff --cached --stat
+          git commit -m "fix: restore google-sheets-service.ts + import all rows (A1:O not A1:O50)" || echo "No changes"
+          git push origin main
