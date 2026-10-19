@@ -20,19 +20,9 @@ import {
   ShieldCheck,
   Trash2,
   Upload,
-  FileSpreadsheet,
-  CloudUpload,
-  ExternalLink,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import {
-  backupFullDatabaseToGoogleSheets,
-  getActiveBackupSheetMeta,
-  getGoogleAccessToken,
-  migrateAllSourcesToGoogleSheets,
-  type GoogleSheetBackupMeta,
-} from "@/lib/google-sheets-service";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -72,11 +62,6 @@ export function BackupRestoreTab() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [sheetBackupMeta, setSheetBackupMeta] = useState<GoogleSheetBackupMeta | null>(() =>
-    getActiveBackupSheetMeta(),
-  );
-  const [isSyncingSheets, setIsSyncingSheets] = useState(false);
-
   const loadStats = () => {
     setStats(BackupService.getDatabaseStats());
   };
@@ -84,56 +69,15 @@ export function BackupRestoreTab() {
   useEffect(() => {
     loadStats();
     const handleStoreChange = () => loadStats();
-    const handleSheetSync = () => setSheetBackupMeta(getActiveBackupSheetMeta());
-
     window.addEventListener("minimark_store_change", handleStoreChange);
     window.addEventListener("minimark_print_jobs_change", handleStoreChange);
     window.addEventListener("minimark_auth_change", handleStoreChange);
-    window.addEventListener("minimark_google_sheet_synced", handleSheetSync);
-
     return () => {
       window.removeEventListener("minimark_store_change", handleStoreChange);
       window.removeEventListener("minimark_print_jobs_change", handleStoreChange);
       window.removeEventListener("minimark_auth_change", handleStoreChange);
-      window.removeEventListener("minimark_google_sheet_synced", handleSheetSync);
     };
   }, []);
-
-  const handleSyncGoogleSheetsNow = async () => {
-    if (!getGoogleAccessToken()) {
-      toast.info("กรุณาเชื่อมต่อบัญชี Google ที่แท็บ 'Google Sheets' ก่อนเริ่มซิงค์");
-      return;
-    }
-    setIsSyncingSheets(true);
-    try {
-      const res = await backupFullDatabaseToGoogleSheets();
-      setSheetBackupMeta(res);
-      toast.success("สำรองข้อมูลทุกอย่างลง Google Sheets สำเร็จเรียบร้อย!");
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("ซิงค์ข้อมูลลง Google Sheets ไม่สำเร็จ: " + msg);
-    } finally {
-      setIsSyncingSheets(false);
-    }
-  };
-
-  const handleMigrateAllSources = async () => {
-    if (!getGoogleAccessToken()) {
-      toast.info("กรุณาเชื่อมต่อบัญชี Google ที่แท็บ 'Google Sheets' ก่อนเริ่มย้ายข้อมูล");
-      return;
-    }
-    setIsSyncingSheets(true);
-    try {
-      const res = await migrateAllSourcesToGoogleSheets();
-      setSheetBackupMeta(getActiveBackupSheetMeta());
-      toast.success(res.message);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error("ย้ายข้อมูลไม่สำเร็จ: " + msg);
-    } finally {
-      setIsSyncingSheets(false);
-    }
-  };
 
   const handleExportBackup = () => {
     try {
@@ -272,86 +216,6 @@ export function BackupRestoreTab() {
           </div>
         </div>
       </div>
-
-      {/* GOOGLE SHEETS CLOUD BACKUP CARD */}
-      <Card className="rounded-2xl border-emerald-500/20 bg-linear-to-r from-emerald-500/5 via-card to-card shadow-xs">
-        <CardHeader className="p-4 pb-2">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <div className="size-10 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0">
-                <FileSpreadsheet className="size-5" />
-              </div>
-              <div>
-                <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
-                  <span>ฐานข้อมูลสำรองบน Google Sheets (Cloud Backup)</span>
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] bg-background text-emerald-700 dark:text-emerald-300"
-                  >
-                    {sheetBackupMeta ? "มีไฟล์สำรองแล้ว" : "พร้อมเชื่อมต่อ"}
-                  </Badge>
-                </CardTitle>
-                <CardDescription className="text-xs">
-                  บันทึกสินค้า สต็อก ใบสั่งซื้อ และหมวดหมู่ลง Google Sheets
-                  เป็นฐานข้อมูลสำรองอัตโนมัติ
-                </CardDescription>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              {sheetBackupMeta && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  asChild
-                  className="h-8 px-2.5 rounded-xl text-xs gap-1 text-emerald-700 dark:text-emerald-300 border-emerald-500/30"
-                >
-                  <a
-                    href={sheetBackupMeta.spreadsheetUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <ExternalLink className="size-3.5" /> เปิดดูใน Sheets
-                  </a>
-                </Button>
-              )}
-              <Button
-                size="sm"
-                onClick={handleMigrateAllSources}
-                disabled={isSyncingSheets}
-                className="h-8 px-3 rounded-xl text-xs gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-medium"
-                title="ดึงข้อมูลจาก Cloud SQL และระบบในเครื่อง มารวมและบันทึกลง Google Sheets ทันที"
-              >
-                <Database className="size-3.5" />
-                {isSyncingSheets ? "กำลังย้ายข้อมูล..." : "ย้ายข้อมูลทุกที่สู่ Sheets"}
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleSyncGoogleSheetsNow}
-                disabled={isSyncingSheets}
-                variant="outline"
-                className="h-8 px-3 rounded-xl text-xs gap-1.5 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 font-medium"
-              >
-                <CloudUpload className="size-3.5" />
-                สำรองลง Sheets
-              </Button>
-            </div>
-          </div>
-        </CardHeader>
-
-        {sheetBackupMeta && (
-          <CardContent className="p-4 pt-1">
-            <div className="text-[11px] text-muted-foreground flex items-center gap-2">
-              <span className="font-semibold text-foreground truncate max-w-xs">
-                {sheetBackupMeta.spreadsheetTitle}
-              </span>
-              <span>
-                • สำรองล่าสุด: {new Date(sheetBackupMeta.lastBackupAt).toLocaleString("th-TH")}
-              </span>
-            </div>
-          </CardContent>
-        )}
-      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* EXPORT BACKUP CARD */}

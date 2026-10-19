@@ -11,13 +11,3 @@ interface ImportMetaEnv {
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
-
-/** Cloudflare Workers bindings (D1) */
-interface CloudflareEnv {
-  DB: D1Database;
-}
-
-declare module "cloudflare:workers" {
-  const env: CloudflareEnv;
-  export { env };
-}
