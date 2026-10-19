@@ -1,0 +1,51 @@
+name: import-products-to-d1
+on:
+  workflow_dispatch:
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Import products to D1
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          node << 'NODE'
+          const fs = require('fs');
+          const products = JSON.parse(fs.readFileSync('scripts/products-d1-import.json', 'utf8'));
+          const accountId = process.env.CF_ACCOUNT || 'a6d009b2d02da90d095336d68e378377';
+          const dbId = '18b3a79c-40d8-4008-8aae-79e56ab61330';
+          const token = process.env.CF_TOKEN;
+          if (!token) { console.error('No CLOUDFLARE_API_TOKEN'); process.exit(1); }
+          const esc = (s) => String(s).replace(/'/g, "''");
+          async function run(sql) {
+            const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${accountId}/d1/database/${dbId}/query`, {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ sql })
+            });
+            return res.json();
+          }
+          (async () => {
+            let total = 0;
+            for (let i = 0; i < products.length; i += 15) {
+              const chunk = products.slice(i, i + 15);
+              const values = chunk.map(r => {
+                const [barcode, sku, name, cat, unit, cost, price, stock, min, target, reorder] = r;
+                const id = 'prod-' + barcode;
+                return `('${esc(id)}','${esc(sku)}','${esc(barcode)}','Barcode','EAN_13','${esc(name)}',NULL,'${esc(cat)}',NULL,NULL,'${esc(unit)}',${cost},${price},${stock},${min},${target},${reorder},1,datetime('now'),datetime('now'))`;
+              }).join(',');
+              const sql = `INSERT OR REPLACE INTO products (id,sku,barcode,code_type,format,name,image_url,category_id,sub_category_id,zone_id,unit_id,cost_price,sell_price,stock,min_stock,target_stock,reorder_quantity,is_active,created_at,updated_at) VALUES ${values}`;
+              const res = await run(sql);
+              if (!res.success) { console.error(JSON.stringify(res.errors)); process.exit(1); }
+              total += res.result?.[0]?.meta?.changes || 0;
+              console.log(`batch ${i}: +${res.result?.[0]?.meta?.changes}`);
+            }
+            const count = await run('SELECT COUNT(*) as c FROM products');
+            console.log('done', total, 'count', JSON.stringify(count.result?.[0]?.results));
+          })();
+          NODE
