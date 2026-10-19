@@ -1,0 +1,53 @@
+name: apply-liff-oauth-fix
+on:
+  workflow_dispatch:
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/google-sheets-liff-redirect
+
+      - name: Apply LIFF OAuth patch
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('src/lib/google-sheets-service.ts').read_text()
+          assert 'signInWithPopup' in text
+          old_import = '''import {\n  GoogleAuthProvider,\n  onAuthStateChanged,\n  signInWithPopup,\n  signOut,\n  type User,\n} from "firebase/auth";\n'''
+          new_import = '''import {\n  GoogleAuthProvider,\n  getRedirectResult,\n  onAuthStateChanged,\n  signInWithPopup,\n  signInWithRedirect,\n  signOut,\n  type User,\n} from "firebase/auth";\n'''
+          assert old_import in text
+          text = text.replace(old_import, new_import, 1)
+          old_flag = '''// In-memory access token cache (NEVER persisted to localStorage/sessionStorage)\nlet cachedAccessToken: string | null = null;\nlet isSigningIn = false;\n'''
+          new_flag = '''// In-memory access token cache (NEVER persisted to localStorage/sessionStorage)\nlet cachedAccessToken: string | null = null;\nlet isSigningIn = false;\n\n/**\n * Detect LINE Mini App / LIFF WebView or other restricted in-app browsers\n * where signInWithPopup often fails (blank page after account selection).\n */\nfunction isLikelyInLineWebView(): boolean {\n  if (typeof window === "undefined") return false;\n  try {\n    const liff = (window as unknown as { liff?: { isInClient?: () => boolean } }).liff;\n    if (liff && typeof liff.isInClient === "function") {\n      return liff.isInClient();\n    }\n  } catch {\n    // ignore\n  }\n  const ua = navigator.userAgent || "";\n  if (/Line\\//i.test(ua) || /LIFF/i.test(ua)) return true;\n  if (/; wv\\)/i.test(ua)) return true;\n  if (/iPhone|iPad|iPod/i.test(ua) && !/Safari/i.test(ua)) return true;\n  return false;\n}\n'''
+          assert old_flag in text
+          text = text.replace(old_flag, new_flag, 1)
+          old_init = '''/**\n * Initialize auth state listener.\n * Memory token is cleared immediately on sign out.\n */\nexport function initGoogleAuth(\n  onSuccess?: (user: User, token: string) => void,\n  onFailure?: () => void,\n): () => void {\n  if (!auth) {\n    if (onFailure) onFailure();\n    return () => {};\n  }\n  return onAuthStateChanged(auth, async (user) => {\n    if (user) {\n      if (cachedAccessToken) {\n        if (onSuccess) onSuccess(user, cachedAccessToken);\n      } else if (!isSigningIn) {\n        if (onFailure) onFailure();\n      }\n    } else {\n      cachedAccessToken = null;\n      if (onFailure) onFailure();\n    }\n  });\n}\n'''
+          new_init = '''/**\n * Initialize auth state listener.\n * Also processes pending redirect result (required for LINE Mini App / WebView).\n * Memory token is cleared immediately on sign out.\n */\nexport function initGoogleAuth(\n  onSuccess?: (user: User, token: string) => void,\n  onFailure?: () => void,\n): () => void {\n  if (!auth) {\n    if (onFailure) onFailure();\n    return () => {};\n  }\n\n  // Complete redirect-based sign-in if we just returned from Google OAuth\n  void (async () => {\n    try {\n      isSigningIn = true;\n      const redirectResult = await getRedirectResult(auth);\n      if (redirectResult) {\n        const credential = GoogleAuthProvider.credentialFromResult(redirectResult);\n        if (credential?.accessToken) {\n          cachedAccessToken = credential.accessToken;\n          if (onSuccess) onSuccess(redirectResult.user, cachedAccessToken);\n        }\n      }\n    } catch (err) {\n      console.warn("[GoogleSheets] getRedirectResult failed:", err);\n    } finally {\n      isSigningIn = false;\n    }\n  })();\n\n  return onAuthStateChanged(auth, async (user) => {\n    if (user) {\n      if (cachedAccessToken) {\n        if (onSuccess) onSuccess(user, cachedAccessToken);\n      } else if (!isSigningIn) {\n        if (onFailure) onFailure();\n      }\n    } else {\n      cachedAccessToken = null;\n      if (onFailure) onFailure();\n    }\n  });\n}\n'''
+          assert old_init in text
+          text = text.replace(old_init, new_init, 1)
+          old_signin = '''/**\n * Trigger Google Sign In with popup and request required Workspace scopes\n */\nexport async function signInWithGoogle(): Promise<{ user: User; accessToken: string }> {\n  if (!auth) {\n    throw new Error(\n      "ระบบ Google Sheets Sync ยังไม่ได้กำหนดค่า Firebase Auth หรือ API Key ในสภาพแวดล้อมนี้",\n    );\n  }\n  try {\n    isSigningIn = true;\n    const result = await signInWithPopup(auth, provider);\n    const credential = GoogleAuthProvider.credentialFromResult(result);\n    if (!credential?.accessToken) {\n      throw new Error("ไม่สามารถรับ OAuth Access Token จาก Google ได้");\n    }\n    cachedAccessToken = credential.accessToken;\n    return { user: result.user, accessToken: cachedAccessToken };\n  } catch (error: unknown) {\n    const err = error as { code?: string; message?: string };\n    if (err?.code === "auth/popup-closed-by-user") {\n      throw new Error("หน้าต่างเข้าสู่ระบบ Google ถูกปิดก่อนทำรายการเสร็จสิ้น");\n    }\n    if (err?.code === "auth/popup-blocked") {\n      throw new Error("เบราว์เซอร์บล็อกหน้าต่างป็อปอัป กรุณาอนุญาตป็อปอัปสำหรับเว็บไซต์นี้");\n    }\n    throw error;\n  } finally {\n    isSigningIn = false;\n  }\n}\n'''
+          new_signin = '''/**\n * Trigger Google Sign In and request required Workspace scopes.\n * - Normal browser: signInWithPopup\n * - LINE Mini App / restricted WebView: signInWithRedirect (popup fails with blank page)\n */\nexport async function signInWithGoogle(): Promise<{ user: User; accessToken: string }> {\n  if (!auth) {\n    throw new Error(\n      "ระบบ Google Sheets Sync ยังไม่ได้กำหนดค่า Firebase Auth หรือ API Key ในสภาพแวดล้อมนี้",\n    );\n  }\n  try {\n    isSigningIn = true;\n\n    if (isLikelyInLineWebView()) {\n      await signInWithRedirect(auth, provider);\n      // Page navigates away; result handled by getRedirectResult in initGoogleAuth\n      return new Promise(() => {});\n    }\n\n    const result = await signInWithPopup(auth, provider);\n    const credential = GoogleAuthProvider.credentialFromResult(result);\n    if (!credential?.accessToken) {\n      throw new Error("ไม่สามารถรับ OAuth Access Token จาก Google ได้");\n    }\n    cachedAccessToken = credential.accessToken;\n    return { user: result.user, accessToken: cachedAccessToken };\n  } catch (error: unknown) {\n    const err = error as { code?: string; message?: string };\n    if (err?.code === "auth/popup-closed-by-user") {\n      throw new Error("หน้าต่างเข้าสู่ระบบ Google ถูกปิดก่อนทำรายการเสร็จสิ้น");\n    }\n    if (err?.code === "auth/popup-blocked") {\n      try {\n        await signInWithRedirect(auth, provider);\n        return new Promise(() => {});\n      } catch {\n        throw new Error("เบราว์เซอร์บล็อกหน้าต่างป็อปอัป กรุณาอนุญาตป็อปอัป หรือเปิดผ่าน LINE Mini App อีกครั้ง");\n      }\n    }\n    if (err?.code === "auth/operation-not-supported-in-this-environment") {\n      await signInWithRedirect(auth, provider);\n      return new Promise(() => {});\n    }\n    throw error;\n  } finally {\n    isSigningIn = false;\n  }\n}\n'''
+          assert old_signin in text
+          text = text.replace(old_signin, new_signin, 1)
+          assert 'getRedirectResult' in text and 'signInWithRedirect' in text
+          Path('src/lib/google-sheets-service.ts').write_text(text)
+          print('patched OK', Path('src/lib/google-sheets-service.ts').stat().st_size)
+          PY
+          head -12 src/lib/google-sheets-service.ts
+          grep -n "signInWithRedirect\|getRedirectResult\|isLikelyInLineWebView" src/lib/google-sheets-service.ts
+
+      - name: Commit and push to fix branch only
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/google-sheets-service.ts
+          git status
+          git commit -m "fix(google-sheets): use signInWithRedirect in LINE Mini App WebView"
+          git push origin HEAD:fix/google-sheets-liff-redirect
