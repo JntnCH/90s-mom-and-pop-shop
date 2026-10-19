@@ -1,0 +1,29 @@
+name: Restore line-server-fn with D1
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore baseline line-server-fn from known good commit
+        run: |
+          git show efc4e9a3dccae330752988309818da07951c7c37:src/lib/line-server-fn.ts > src/lib/line-server-fn.ts
+          wc -l src/lib/line-server-fn.ts
+      - name: Apply D1 patches
+        run: node scripts/apply-d1-line-server-fn.mjs
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/line-server-fn.ts
+          if git diff --staged --quiet; then
+            echo "No changes"
+          else
+            git commit -m "fix: restore line-server-fn.ts and enable D1-first product sync for LINE"
+            git push
+          fi
