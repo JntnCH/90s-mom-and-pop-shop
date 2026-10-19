@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
 import { getDatabaseSnapshot } from "../db/db-service.ts";
 import { getD1Snapshot } from "../db/d1-snapshot.ts";
 
@@ -14,7 +16,7 @@ export interface GoogleSheetsConfigStatus {
   isConfigured: boolean;
   clientEmail: string | null;
   spreadsheetId: string | null;
-  source: "env" | "runtime" | "none";
+  source: "env" | "file" | "runtime" | "none";
   projectId?: string | null;
 }
 
@@ -25,13 +27,49 @@ let cachedServiceAccountToken: {
   expiresAt: number;
 } | null = null;
 
+const PERSISTENT_CONFIG_DIR = path.join(process.cwd(), ".data");
+const PERSISTENT_CONFIG_PATH = path.join(PERSISTENT_CONFIG_DIR, "google-service-account.json");
+
+function readPersistedConfig(): ServiceAccountCredentials | null {
+  try {
+    if (fs.existsSync(PERSISTENT_CONFIG_PATH)) {
+      const raw = fs.readFileSync(PERSISTENT_CONFIG_PATH, "utf8");
+      const parsed = JSON.parse(raw) as Partial<ServiceAccountCredentials>;
+      if (parsed.clientEmail && parsed.privateKey) {
+        return {
+          clientEmail: parsed.clientEmail.trim(),
+          privateKey: parsed.privateKey.trim(),
+          projectId: parsed.projectId?.trim(),
+          spreadsheetId: parsed.spreadsheetId?.trim(),
+        };
+      }
+    }
+  } catch (err) {
+    console.warn("[GoogleSheets] Failed to read persisted credentials:", err);
+  }
+  return null;
+}
+
+function writePersistedConfig(creds: ServiceAccountCredentials | null): void {
+  try {
+    if (!creds) {
+      if (fs.existsSync(PERSISTENT_CONFIG_PATH)) {
+        fs.unlinkSync(PERSISTENT_CONFIG_PATH);
+      }
+      return;
+    }
+    if (!fs.existsSync(PERSISTENT_CONFIG_DIR)) {
+      fs.mkdirSync(PERSISTENT_CONFIG_DIR, { recursive: true });
+    }
+    fs.writeFileSync(PERSISTENT_CONFIG_PATH, JSON.stringify(creds, null, 2), "utf8");
+  } catch (err) {
+    console.warn("[GoogleSheets] Failed to persist credentials to file:", err);
+  }
+}
+
 function base64url(input: string | Buffer): string {
   const buf = typeof input === "string" ? Buffer.from(input, "utf8") : input;
-  return buf
-    .toString("base64")
-    .replace(/=/g, "")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
+  return buf.toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
 /**
@@ -54,7 +92,14 @@ function resolveServiceAccount(): ServiceAccountCredentials | null {
     return runtimeServiceAccount;
   }
 
-  // 1. Check GOOGLE_SERVICE_ACCOUNT_JSON
+  // 1. Check persisted config on disk (.data/google-service-account.json)
+  const persisted = readPersistedConfig();
+  if (persisted?.clientEmail && persisted?.privateKey) {
+    runtimeServiceAccount = persisted;
+    return persisted;
+  }
+
+  // 2. Check GOOGLE_SERVICE_ACCOUNT_JSON
   const rawJson = (
     process.env["GOOGLE_SERVICE_ACCOUNT_JSON"] ||
     process.env["GOOGLE_SERVICE_ACCOUNT"] ||
@@ -81,11 +126,9 @@ function resolveServiceAccount(): ServiceAccountCredentials | null {
           clientEmail: clientEmail.trim(),
           privateKey: privateKey.trim(),
           projectId: projectId?.trim(),
-          spreadsheetId: (
-            process.env["GOOGLE_SPREADSHEET_ID"] ||
-            process.env["SPREADSHEET_ID"] ||
-            ""
-          ).trim() || undefined,
+          spreadsheetId:
+            (process.env["GOOGLE_SPREADSHEET_ID"] || process.env["SPREADSHEET_ID"] || "").trim() ||
+            undefined,
         };
       }
     } catch (err) {
@@ -93,7 +136,7 @@ function resolveServiceAccount(): ServiceAccountCredentials | null {
     }
   }
 
-  // 2. Check discrete env vars
+  // 3. Check discrete env vars
   const email = (
     process.env["GOOGLE_SERVICE_ACCOUNT_EMAIL"] ||
     process.env["SERVICE_ACCOUNT_EMAIL"] ||
@@ -111,11 +154,9 @@ function resolveServiceAccount(): ServiceAccountCredentials | null {
     return {
       clientEmail: email,
       privateKey: key,
-      spreadsheetId: (
-        process.env["GOOGLE_SPREADSHEET_ID"] ||
-        process.env["SPREADSHEET_ID"] ||
-        ""
-      ).trim() || undefined,
+      spreadsheetId:
+        (process.env["GOOGLE_SPREADSHEET_ID"] || process.env["SPREADSHEET_ID"] || "").trim() ||
+        undefined,
     };
   }
 
@@ -199,15 +240,21 @@ export const getGoogleSheetsConfigFn = createServerFn({ method: "GET" }).handler
   ).trim();
 
   const isFromEnv = Boolean(
-    process.env["GOOGLE_SERVICE_ACCOUNT_JSON"] ||
-    process.env["GOOGLE_SERVICE_ACCOUNT_EMAIL"]
+    process.env["GOOGLE_SERVICE_ACCOUNT_JSON"] || process.env["GOOGLE_SERVICE_ACCOUNT_EMAIL"],
   );
+  const isFromFile = Boolean(!isFromEnv && fs.existsSync(PERSISTENT_CONFIG_PATH));
 
   return {
     isConfigured: Boolean(creds?.clientEmail && creds?.privateKey),
     clientEmail: creds?.clientEmail ?? null,
     spreadsheetId: creds?.spreadsheetId || envSpreadsheetId || null,
-    source: creds ? (isFromEnv ? ("env" as const) : ("runtime" as const)) : ("none" as const),
+    source: creds
+      ? isFromEnv
+        ? ("env" as const)
+        : isFromFile
+          ? ("file" as const)
+          : ("runtime" as const)
+      : ("none" as const),
     projectId: creds?.projectId ?? null,
   };
 });
@@ -216,12 +263,14 @@ export const getGoogleSheetsConfigFn = createServerFn({ method: "GET" }).handler
  * Server Function: Save / Update Service Account Configuration at runtime
  */
 export const saveGoogleSheetsConfigFn = createServerFn({ method: "POST" })
-  .validator((data: {
-    jsonKey?: string | undefined;
-    clientEmail?: string | undefined;
-    privateKey?: string | undefined;
-    spreadsheetId?: string | undefined;
-  }) => data)
+  .validator(
+    (data: {
+      jsonKey?: string | undefined;
+      clientEmail?: string | undefined;
+      privateKey?: string | undefined;
+      spreadsheetId?: string | undefined;
+    }) => data,
+  )
   .handler(async ({ data }) => {
     let email = data.clientEmail?.trim() || "";
     let key = data.privateKey?.trim() || "";
@@ -271,14 +320,30 @@ export const saveGoogleSheetsConfigFn = createServerFn({ method: "POST" })
       projectId: projId,
       spreadsheetId: cleanSpreadsheetId,
     };
+    writePersistedConfig(runtimeServiceAccount);
 
     return {
       success: true,
       clientEmail: email,
       spreadsheetId: cleanSpreadsheetId || null,
-      message: "บันทึกและเชื่อมต่อ Google Service Account สำเร็จแล้ว",
+      message: "บันทึกและเชื่อมต่อ Google Service Account สำเร็จแล้ว พร้อมใช้งานตลอดเวลา",
     };
   });
+
+/**
+ * Server Function: Disconnect / Remove Service Account Configuration
+ */
+export const disconnectGoogleSheetsConfigFn = createServerFn({ method: "POST" }).handler(
+  async () => {
+    runtimeServiceAccount = null;
+    cachedServiceAccountToken = null;
+    writePersistedConfig(null);
+    return {
+      success: true,
+      message: "ตัดการเชื่อมต่อ Google Service Account เรียบร้อยแล้ว",
+    };
+  },
+);
 
 /**
  * Server Function: Get Valid Access Token for Google Sheets API
@@ -320,7 +385,8 @@ export const testGoogleSheetsConnectionFn = createServerFn({ method: "POST" })
     if (!creds) {
       return {
         success: false,
-        error: "ยังไม่ได้กำหนดค่า Google Service Account ในระบบ กรุณาใส่ Service Account JSON หรือ Email/Key",
+        error:
+          "ยังไม่ได้กำหนดค่า Google Service Account ในระบบ กรุณาใส่ Service Account JSON หรือ Email/Key",
       };
     }
 
@@ -328,15 +394,36 @@ export const testGoogleSheetsConnectionFn = createServerFn({ method: "POST" })
       ? extractSpreadsheetId(data.spreadsheetId)
       : creds.spreadsheetId;
 
-    if (!targetId) {
-      return {
-        success: false,
-        error: "ยังไม่ได้ระบุ Spreadsheet ID หรือลิงก์ Google Sheet ที่ต้องการทดสอบ",
-      };
-    }
-
     try {
       const token = await mintServiceAccountAccessToken(creds);
+
+      if (!targetId) {
+        // Test token validity against Google Drive API
+        const testRes = await fetch("https://www.googleapis.com/drive/v3/files?pageSize=1", {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            Accept: "application/json",
+          },
+        });
+
+        if (!testRes.ok) {
+          const errText = await testRes.text();
+          return {
+            success: false,
+            error: `Google API Error (${testRes.status}): ${errText}`,
+          };
+        }
+
+        return {
+          success: true,
+          spreadsheetId: null,
+          title: "Google Service Account",
+          tabs: [],
+          clientEmail: creds.clientEmail,
+          message: `Service Account (${creds.clientEmail}) ยืนยันสิทธิ์กับ Google สำเร็จแล้ว พร้อมใช้งาน! สามารถระบุลิงก์ Google Sheet เพื่อทดสอบการเข้าถึงไฟล์เฉพาะ`,
+        };
+      }
+
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(targetId)}?fields=properties.title,spreadsheetUrl,sheets.properties.title,sheets.properties.sheetId`;
       const res = await fetch(url, {
         headers: {
@@ -349,7 +436,7 @@ export const testGoogleSheetsConnectionFn = createServerFn({ method: "POST" })
         if (res.status === 404) {
           return {
             success: false,
-            error: "ไม่พบ Google Sheet นี้ โปรดตรวจสอบ Spreadsheet ID ให้ถูกต้อง",
+            error: "ไม่พบ Google Sheet นี้ โปรดตรวจสอบ Spreadsheet ID หรือลิงก์ให้ถูกต้อง",
           };
         }
         if (res.status === 403) {
@@ -382,7 +469,7 @@ export const testGoogleSheetsConnectionFn = createServerFn({ method: "POST" })
         spreadsheetUrl:
           sheetData.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${targetId}`,
         clientEmail: creds.clientEmail,
-        message: `เชื่อมต่อกับ "${title}" สำเร็จ! พบแผ่นงาน ${tabs.length} แท็บ`,
+        message: `เชื่อมต่อกับ "${title}" สำเร็จ! พบแผ่นงาน ${tabs.length} แท็บ พร้อมอ่าน-บันทึกข้อมูล`,
       };
     } catch (err) {
       return {

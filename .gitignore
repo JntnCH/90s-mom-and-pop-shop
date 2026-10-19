@@ -19,6 +19,7 @@ dist-ssr
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
+.data/
 firebase-applet-config.json
 
 # Editor directories and files

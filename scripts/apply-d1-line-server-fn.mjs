@@ -9,7 +9,8 @@ const path = "src/lib/line-server-fn.ts";
 let src = readFileSync(path, "utf8");
 
 if (!src.includes("getD1Snapshot")) {
-  const oldImport = 'import { getDatabaseSnapshot, syncDatabasePayload } from "../db/db-service.ts";';
+  const oldImport =
+    'import { getDatabaseSnapshot, syncDatabasePayload } from "../db/db-service.ts";';
   const newImport = `import { getDatabaseSnapshot, syncDatabasePayload } from "../db/db-service.ts";
 import { getD1Snapshot } from "../db/d1-snapshot.ts";`;
   if (!src.includes(oldImport)) {

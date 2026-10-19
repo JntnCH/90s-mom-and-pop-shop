@@ -21,6 +21,7 @@ import {
   getGoogleSheetsAccessTokenFn,
   getGoogleSheetsConfigFn,
   saveGoogleSheetsConfigFn,
+  disconnectGoogleSheetsConfigFn,
   testGoogleSheetsConnectionFn,
   extractSpreadsheetId,
   type GoogleSheetsConfigStatus,
@@ -30,6 +31,7 @@ export {
   getGoogleSheetsAccessTokenFn,
   getGoogleSheetsConfigFn,
   saveGoogleSheetsConfigFn,
+  disconnectGoogleSheetsConfigFn,
   testGoogleSheetsConnectionFn,
   extractSpreadsheetId,
   type GoogleSheetsConfigStatus,
@@ -49,8 +51,9 @@ provider.setCustomParameters({
   prompt: "select_account",
 });
 
-// In-memory access token cache (NEVER persisted to localStorage/sessionStorage)
+// In-memory access token cache with expiration (NEVER persisted to localStorage/sessionStorage)
 let cachedAccessToken: string | null = null;
+let cachedAccessTokenExpiresAt = 0;
 let isSigningIn = false;
 
 /**
@@ -231,7 +234,9 @@ export async function signInWithGoogle(): Promise<{ user: User; accessToken: str
         await signInWithRedirect(auth, provider);
         return new Promise(() => {});
       } catch {
-        throw new Error("เบราว์เซอร์บล็อกหน้าต่างป็อปอัป กรุณาอนุญาตป็อปอัป หรือเปิดผ่าน LINE Mini App อีกครั้ง");
+        throw new Error(
+          "เบราว์เซอร์บล็อกหน้าต่างป็อปอัป กรุณาอนุญาตป็อปอัป หรือเปิดผ่าน LINE Mini App อีกครั้ง",
+        );
       }
     }
     if (err?.code === "auth/operation-not-supported-in-this-environment") {
@@ -252,6 +257,24 @@ export async function signOutFromGoogle(): Promise<void> {
     await signOut(auth);
   }
   cachedAccessToken = null;
+  cachedAccessTokenExpiresAt = 0;
+}
+
+/**
+ * Disconnect Service Account and clear cached tokens
+ */
+export async function disconnectServiceAccount(): Promise<{ success: boolean; message: string }> {
+  try {
+    const res = await disconnectGoogleSheetsConfigFn();
+    cachedAccessToken = null;
+    cachedAccessTokenExpiresAt = 0;
+    return res;
+  } catch (err) {
+    return {
+      success: false,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 /**
@@ -262,19 +285,35 @@ export function getGoogleAccessToken(): string | null {
 }
 
 /**
+ * Invalidate cached token immediately
+ */
+export function invalidateGoogleAccessToken(): void {
+  cachedAccessToken = null;
+  cachedAccessTokenExpiresAt = 0;
+}
+
+/**
  * Resolve effective Google access token (checking Service Account first, then OAuth token)
+ * Automatically refreshes token if expired or close to expiry.
  */
 export async function resolveAccessToken(token?: string): Promise<string> {
   if (token && token.trim()) return token.trim();
-  if (cachedAccessToken && cachedAccessToken.trim()) return cachedAccessToken.trim();
+  const now = Date.now();
+  if (cachedAccessToken && cachedAccessToken.trim() && cachedAccessTokenExpiresAt > now + 60_000) {
+    return cachedAccessToken.trim();
+  }
   try {
     const res = await getGoogleSheetsAccessTokenFn();
     if (res.success && res.token) {
       cachedAccessToken = res.token;
+      cachedAccessTokenExpiresAt = now + 3500 * 1000;
       return res.token;
     }
   } catch (err) {
     console.warn("[GoogleSheets] Failed to fetch service account token:", err);
+  }
+  if (cachedAccessToken && cachedAccessToken.trim()) {
+    return cachedAccessToken.trim();
   }
   throw new Error(
     "ต้องเชื่อมต่อ Google Sheets ก่อนดำเนินการ (กรุณากำหนดค่า Service Account หรือเข้าสู่ระบบ Google)",
@@ -472,10 +511,30 @@ export async function createMultiSheetSpreadsheet(
   }
 
   const data = await res.json();
+  const spreadsheetId = data.spreadsheetId as string;
+  const spreadsheetUrl =
+    (data.spreadsheetUrl as string) || `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+
+  // Best effort: allow anyone with the link to view/edit (so clicking the link in personal account doesn't trigger 403)
+  try {
+    await fetch(`https://www.googleapis.com/drive/v3/files/${spreadsheetId}/permissions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${activeToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        role: "writer",
+        type: "anyone",
+      }),
+    });
+  } catch {
+    // ignore
+  }
+
   return {
-    spreadsheetId: data.spreadsheetId,
-    spreadsheetUrl:
-      data.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${data.spreadsheetId}`,
+    spreadsheetId,
+    spreadsheetUrl,
   };
 }
 
