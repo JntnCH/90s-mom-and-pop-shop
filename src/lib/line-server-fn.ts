@@ -326,6 +326,27 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
 /**
  * Get Server Follower History & User IDs
  */
+/**
+ * Fetch complete database snapshot from Cloud SQL / D1 (with memory fallback)
+ */
+export const fetchCloudSqlSnapshotFn = createServerFn({ method: "GET" }).handler(async () => {
+  try {
+    const snapshot = await getDatabaseSnapshot();
+    return {
+      success: true,
+      data: snapshot,
+      source: "d1" as const,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      data: globalServerDatabase,
+      source: "memory" as const,
+    };
+  }
+});
+
 export const getLineFollowersHistoryFn = createServerFn({ method: "GET" }).handler(async () => {
   globalServerDatabase.followers = removeLegacySampleLineFollowers(globalServerDatabase.followers);
   return {
