@@ -442,7 +442,7 @@ export function GoogleSheetsSyncTab() {
     }
     setIsPreviewing(true);
     try {
-      const range = `'${importTabName}'!A1:O50`;
+      const range = `'${importTabName}'!A1:O`;
       const values = await readSpreadsheetValues(importSpreadsheetId, range);
       if (!values || values.length === 0) {
         toast.error("ไม่พบข้อมูลในแท็บที่เลือก");
