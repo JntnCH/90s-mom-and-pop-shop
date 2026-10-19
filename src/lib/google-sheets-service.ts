@@ -1,7 +1,9 @@
 import {
   GoogleAuthProvider,
+  getRedirectResult,
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   type User,
 } from "firebase/auth";
@@ -33,6 +35,27 @@ provider.setCustomParameters({
 // In-memory access token cache (NEVER persisted to localStorage/sessionStorage)
 let cachedAccessToken: string | null = null;
 let isSigningIn = false;
+
+/**
+ * Detect LINE Mini App / LIFF WebView or other restricted in-app browsers
+ * where signInWithPopup often fails (blank page after account selection).
+ */
+function isLikelyInLineWebView(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    const liff = (window as unknown as { liff?: { isInClient?: () => boolean } }).liff;
+    if (liff && typeof liff.isInClient === "function") {
+      return liff.isInClient();
+    }
+  } catch {
+    // ignore
+  }
+  const ua = navigator.userAgent || "";
+  if (/Line\//i.test(ua) || /LIFF/i.test(ua)) return true;
+  if (/; wv\)/i.test(ua)) return true;
+  if (/iPhone|iPad|iPod/i.test(ua) && !/Safari/i.test(ua)) return true;
+  return false;
+}
 
 export interface DriveSpreadsheetFile {
   id: string;
@@ -109,6 +132,7 @@ export function setAutoSyncToSheetsEnabled(enabled: boolean): void {
 
 /**
  * Initialize auth state listener.
+ * Also processes pending redirect result (required for LINE Mini App / WebView).
  * Memory token is cleared immediately on sign out.
  */
 export function initGoogleAuth(
@@ -119,6 +143,26 @@ export function initGoogleAuth(
     if (onFailure) onFailure();
     return () => {};
   }
+
+  // Complete redirect-based sign-in if we just returned from Google OAuth
+  void (async () => {
+    try {
+      isSigningIn = true;
+      const redirectResult = await getRedirectResult(auth);
+      if (redirectResult) {
+        const credential = GoogleAuthProvider.credentialFromResult(redirectResult);
+        if (credential?.accessToken) {
+          cachedAccessToken = credential.accessToken;
+          if (onSuccess) onSuccess(redirectResult.user, cachedAccessToken);
+        }
+      }
+    } catch (err) {
+      console.warn("[GoogleSheets] getRedirectResult failed:", err);
+    } finally {
+      isSigningIn = false;
+    }
+  })();
+
   return onAuthStateChanged(auth, async (user) => {
     if (user) {
       if (cachedAccessToken) {
@@ -134,7 +178,9 @@ export function initGoogleAuth(
 }
 
 /**
- * Trigger Google Sign In with popup and request required Workspace scopes
+ * Trigger Google Sign In and request required Workspace scopes.
+ * - Normal browser: signInWithPopup
+ * - LINE Mini App / restricted WebView: signInWithRedirect (popup fails with blank page)
  */
 export async function signInWithGoogle(): Promise<{ user: User; accessToken: string }> {
   if (!auth) {
@@ -144,6 +190,13 @@ export async function signInWithGoogle(): Promise<{ user: User; accessToken: str
   }
   try {
     isSigningIn = true;
+
+    if (isLikelyInLineWebView()) {
+      await signInWithRedirect(auth, provider);
+      // Page navigates away; result handled by getRedirectResult in initGoogleAuth
+      return new Promise(() => {});
+    }
+
     const result = await signInWithPopup(auth, provider);
     const credential = GoogleAuthProvider.credentialFromResult(result);
     if (!credential?.accessToken) {
@@ -157,7 +210,16 @@ export async function signInWithGoogle(): Promise<{ user: User; accessToken: str
       throw new Error("หน้าต่างเข้าสู่ระบบ Google ถูกปิดก่อนทำรายการเสร็จสิ้น");
     }
     if (err?.code === "auth/popup-blocked") {
-      throw new Error("เบราว์เซอร์บล็อกหน้าต่างป็อปอัป กรุณาอนุญาตป็อปอัปสำหรับเว็บไซต์นี้");
+      try {
+        await signInWithRedirect(auth, provider);
+        return new Promise(() => {});
+      } catch {
+        throw new Error("เบราว์เซอร์บล็อกหน้าต่างป็อปอัป กรุณาอนุญาตป็อปอัป หรือเปิดผ่าน LINE Mini App อีกครั้ง");
+      }
+    }
+    if (err?.code === "auth/operation-not-supported-in-this-environment") {
+      await signInWithRedirect(auth, provider);
+      return new Promise(() => {});
     }
     throw error;
   } finally {
