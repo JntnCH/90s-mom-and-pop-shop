@@ -962,10 +962,12 @@ export function formatDailyOrderFlexMessage(
   const totalQuantity = templateItems.reduce((sum, item) => sum + item.quantity, 0);
   const totalCost = templateItems.reduce((sum, item) => sum + (item.total ?? 0), 0);
 
+  const targetContainerType: FlexContainerType = options?.containerType ?? "carousel";
+
   try {
     const customTemplate = getLatestPurchaseOrderFlexMessage();
     const customType = (customTemplate.contents as { type?: string })?.type;
-    if (options?.containerType && customType && customType !== options.containerType) {
+    if (customType && customType !== targetContainerType) {
       throw new Error("Custom template type does not match requested containerType");
     }
     return populatePurchaseOrderFlexTemplate(customTemplate, {
@@ -991,9 +993,13 @@ export function formatDailyOrderFlexMessage(
     }));
     return buildOrderFlexMessage(
       lineOrders,
-      `ใบสั่งซื้อประจำวัน (${resolvedDate})`,
+      `ใบสั่งซื้อสินค้าประจำวัน (${resolvedDate})`,
       getSystemStoreName(storeName),
-      options,
+      {
+        dateStr: resolvedDate,
+        containerType: targetContainerType,
+        ...options,
+      },
     );
   }
 }

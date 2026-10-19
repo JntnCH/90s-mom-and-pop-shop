@@ -30,6 +30,7 @@ import {
   createFullBleedPurchaseOrderFlexBubble,
   createMiniAppPortalFlexBubble,
   createPurchaseOrderFlexBubble,
+  createPurchaseOrderFlexCarousel,
   createStockAlertFlexBubble,
   DEFAULT_STORE_NAME,
   getSystemStoreName,
@@ -51,7 +52,7 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
   const [isLargeFont, setIsLargeFont] = useState<boolean>(true);
 
   const getCustomPOFlex = (large = isLargeFont) =>
-    createPurchaseOrderFlexBubble(
+    createPurchaseOrderFlexCarousel(
       [
         {
           name: "ปลาร้า แม่เหรียญ ฝาขาว 380 มล.",
@@ -80,6 +81,8 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
         fontSize: large ? "large" : "medium",
         separateQuantityUnit: true,
         includeZone: false,
+        groupBy: "category_no_header",
+        showGroupHeaders: false,
       },
     );
 
@@ -216,9 +219,17 @@ export function FlexSimulatorImporter({ onSaved }: FlexSimulatorImporterProps) {
   const handleResetToDefault = () => {
     if (confirm("ต้องการคืนค่าเป็นแม่แบบมาตรฐานของระบบใช่หรือไม่?")) {
       const freshPO = getCustomPOFlex(true);
-      handleJsonChange(JSON.stringify(freshPO, null, 2));
+      try {
+        localStorage.removeItem(FLEX_SIMULATOR_JSON_STORAGE_KEY);
+      } catch {
+        // ignore
+      }
+      setRawJson(JSON.stringify(freshPO, null, 2));
+      setParsedFlex(freshPO);
+      setParseError(null);
+      setIsCustomSaved(false);
       setIsLargeFont(true);
-      toast.success("คืนค่าแม่แบบมาตรฐาน 3 คอลัมน์ (รายการสินค้า, จำนวน, หน่วยนับ) เรียบร้อยแล้ว");
+      toast.success("คืนค่าแม่แบบมาตรฐาน Carousel 3 คอลัมน์ (รายการสินค้า, จำนวน, หน่วยนับ) เรียบร้อยแล้ว");
       window.dispatchEvent(new CustomEvent("minimark_store_change"));
       if (onSaved) onSaved();
     }

@@ -45,8 +45,8 @@ describe("order-export LINE Flex Message builder", () => {
 
     const contents = record["contents"] as Record<string, unknown>;
     expect(contents).toBeDefined();
-    expect(contents["type"]).toBe("bubble");
-    expect(contents["body"]).toBeDefined();
+    expect(contents["type"]).toBe("carousel");
+    expect(Array.isArray(contents["contents"])).toBe(true);
   });
 
   it("should support grouping options when building Flex Message", () => {

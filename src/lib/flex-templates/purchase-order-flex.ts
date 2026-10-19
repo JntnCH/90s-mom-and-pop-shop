@@ -283,7 +283,9 @@ function headerBox(meta: Meta, subtitle?: string): FlexBox {
     },
     {
       type: "text",
-      text: `📅 วันที่: ${meta.dateStr} เวลา ${meta.timeStr} น.`,
+      text: meta.dateStr.includes("เวลา")
+        ? `📅 วันที่: ${meta.dateStr}`
+        : `📅 วันที่: ${meta.dateStr} เวลา ${meta.timeStr} น.`,
       color: "#d1fae5",
       size: meta.isLargeFont ? "sm" : "xs",
       align: "center",
@@ -578,8 +580,8 @@ export function createPurchaseOrderFlex(
   items: FlexOrderItem[],
   options: PurchaseOrderFlexOptions = {},
 ) {
-  if (options.containerType === "carousel") {
-    return createPurchaseOrderFlexCarousel(items, options);
+  if (options.containerType === "bubble") {
+    return createPurchaseOrderFlexBubble(items, options);
   }
-  return createPurchaseOrderFlexBubble(items, options);
+  return createPurchaseOrderFlexCarousel(items, options);
 }

@@ -104,9 +104,7 @@ export function FlexMessageVisualizer({
 }: FlexMessageVisualizerProps) {
   const [copied, setCopied] = useState(false);
   const [copiedImg, setCopiedImg] = useState(false);
-  const [viewMode, setViewMode] = useState<"visual" | "fullbleed" | "json">(
-    imageUrl ? "fullbleed" : "visual",
-  );
+  const [viewMode, setViewMode] = useState<"visual" | "fullbleed" | "json">("visual");
   const [imageDisplayMode, setImageDisplayMode] = useState<"full" | "mockup">("full");
 
   const payload = flexData as FlexMessagePayload | null;

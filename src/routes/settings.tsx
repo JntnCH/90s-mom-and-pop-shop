@@ -72,6 +72,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   createDailySummaryFlexBubble,
   createMiniAppPortalFlexBubble,
+  createPurchaseOrderFlex,
   createPurchaseOrderFlexBubble,
   createStockAlertFlexBubble,
   DEFAULT_STORE_NAME,
@@ -721,7 +722,7 @@ function SettingsPage() {
       setPreviewFlexJson(getLatestPurchaseOrderFlexMessage());
       setPreviewFlexModalOpen(true);
     } catch {
-      const bubble = createPurchaseOrderFlexBubble(
+      const carousel = createPurchaseOrderFlex(
         [
           {
             name: "มาม่า บะหมี่กึ่งสำเร็จรูป รสต้มยำกุ้ง",
@@ -742,10 +743,16 @@ function SettingsPage() {
             costPrice: 17.5,
           },
         ],
-        { storeName: getSystemStoreName(), note: "ใบสั่งซื้อสินค้าประจำวัน (ตัวอย่าง)" },
+        {
+          storeName: getSystemStoreName(),
+          note: "ใบสั่งซื้อสินค้าประจำวัน",
+          containerType: "carousel",
+          groupBy: "category_no_header",
+          showGroupHeaders: false,
+        },
       );
       setPreviewFlexTitle("ใบสั่งซื้อสินค้า (purchase-order-flex.ts)");
-      setPreviewFlexJson(bubble);
+      setPreviewFlexJson(carousel);
       setPreviewFlexModalOpen(true);
     }
   };
