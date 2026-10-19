@@ -2,15 +2,18 @@ import {
   AlertCircle,
   ArrowDownToLine,
   ArrowUpFromLine,
+  Check,
   CheckCircle2,
   Cloud,
   CloudCheck,
   CloudUpload,
+  Copy,
   Database,
   ExternalLink,
   FileSpreadsheet,
   FolderOpen,
   Info,
+  Key,
   Layers,
   Loader2,
   LogOut,
@@ -18,6 +21,7 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
+  Settings2,
   ShieldCheck,
   Table as TableIcon,
   Trash2,
@@ -44,6 +48,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -83,6 +88,12 @@ import {
   type MigrationSummary,
   type SheetTabInfo,
   BACKUP_SHEET_TABS,
+  checkGoogleSheetsConfig,
+  saveGoogleSheetsConfigFn,
+  testGoogleSheetsConnectionFn,
+  resolveAccessToken,
+  extractSpreadsheetId,
+  type GoogleSheetsConfigStatus,
 } from "@/lib/google-sheets-service";
 import { MasterStore, type ProductItem } from "@/lib/store";
 import { fetchCloudSqlSnapshotFn } from "@/lib/line-server-fn";
@@ -138,8 +149,61 @@ export function GoogleSheetsSyncTab() {
     onConfirm: () => Promise<void>;
   } | null>(null);
 
+  // Service Account State (ตั้งค่าครั้งเดียวไม่ต้องล็อกอินซ้ำ)
+  const [serviceAccountConfig, setServiceAccountConfig] = useState<GoogleSheetsConfigStatus | null>(null);
+  const [isLoadingSaConfig, setIsLoadingSaConfig] = useState(true);
+  const [showSaConfigForm, setShowSaConfigForm] = useState(false);
+  const [saInputMode, setSaInputMode] = useState<"json" | "manual">("json");
+  const [saJsonInput, setSaJsonInput] = useState("");
+  const [saEmailInput, setSaEmailInput] = useState("");
+  const [saKeyInput, setSaKeyInput] = useState("");
+  const [saSpreadsheetInput, setSaSpreadsheetInput] = useState("");
+  const [isSavingSa, setIsSavingSa] = useState(false);
+  const [isTestingSa, setIsTestingSa] = useState(false);
+  const [saTestResult, setSaTestResult] = useState<{
+    success: boolean;
+    title?: string;
+    tabs?: string[];
+    message: string;
+  } | null>(null);
+  const [copiedEmail, setCopiedEmail] = useState(false);
+
+  const hasValidAuth = Boolean(user || serviceAccountConfig?.isConfigured || token);
+
+  const refreshSaConfig = async () => {
+    setIsLoadingSaConfig(true);
+    try {
+      const cfg = await checkGoogleSheetsConfig();
+      setServiceAccountConfig(cfg);
+      if (cfg.spreadsheetId) {
+        setSaSpreadsheetInput((prev) => prev || cfg.spreadsheetId || "");
+        if (!selectedSpreadsheetId) {
+          setSelectedSpreadsheetId(cfg.spreadsheetId);
+          setImportSpreadsheetId(cfg.spreadsheetId);
+        }
+      }
+      if (cfg.isConfigured) {
+        try {
+          const saToken = await resolveAccessToken();
+          setToken(saToken);
+          if (cfg.spreadsheetId) {
+            fetchSpreadsheetTabs(cfg.spreadsheetId, saToken);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to check service account config:", err);
+    } finally {
+      setIsLoadingSaConfig(false);
+    }
+  };
+
   // Initialize Auth
   useEffect(() => {
+    void refreshSaConfig();
+
     const unsubscribe = initGoogleAuth(
       (currentUser, activeToken) => {
         setUser(currentUser);
@@ -193,6 +257,84 @@ export function GoogleSheetsSyncTab() {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       toast.error("ออกจากระบบไม่สำเร็จ: " + msg);
+    }
+  };
+
+  const handleSaveServiceAccount = async () => {
+    setIsSavingSa(true);
+    setSaTestResult(null);
+    try {
+      const res = await saveGoogleSheetsConfigFn({
+        jsonKey: saInputMode === "json" ? saJsonInput : undefined,
+        clientEmail: saInputMode === "manual" ? saEmailInput : undefined,
+        privateKey: saInputMode === "manual" ? saKeyInput : undefined,
+        spreadsheetId: saSpreadsheetInput,
+      });
+
+      if (!res.success) {
+        toast.error(res.error || "บันทึก Service Account ไม่สำเร็จ");
+        return;
+      }
+
+      toast.success(res.message);
+      setShowSaConfigForm(false);
+      setSaJsonInput("");
+      setSaKeyInput("");
+      await refreshSaConfig();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSavingSa(false);
+    }
+  };
+
+  const handleTestServiceAccountConnection = async (targetId?: string) => {
+    const idToTest = targetId || saSpreadsheetInput || serviceAccountConfig?.spreadsheetId;
+    if (!idToTest) {
+      toast.error("กรุณาระบุ Spreadsheet ID หรือลิงก์ Google Sheet");
+      return;
+    }
+    setIsTestingSa(true);
+    setSaTestResult(null);
+    try {
+      const res = await testGoogleSheetsConnectionFn({
+        spreadsheetId: idToTest,
+      });
+      if (res.success) {
+        setSaTestResult({
+          success: true,
+          title: res.title,
+          tabs: res.tabs,
+          message: res.message,
+        });
+        toast.success(res.message);
+      } else {
+        setSaTestResult({
+          success: false,
+          message: res.error || "ทดสอบไม่สำเร็จ",
+        });
+        toast.error(res.error || "ทดสอบไม่สำเร็จ");
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSaTestResult({
+        success: false,
+        message: msg,
+      });
+      toast.error(msg);
+    } finally {
+      setIsTestingSa(false);
+    }
+  };
+
+  const handleCopyClientEmail = async (email: string) => {
+    try {
+      await navigator.clipboard.writeText(email);
+      setCopiedEmail(true);
+      toast.success("คัดลอกอีเมล Service Account แล้ว นำไปแชร์สิทธิ์ Editor ใน Google Sheet ได้เลย");
+      setTimeout(() => setCopiedEmail(false), 2000);
+    } catch {
+      toast.error("ไม่สามารถคัดลอกได้");
     }
   };
 
@@ -277,17 +419,22 @@ export function GoogleSheetsSyncTab() {
   // MIGRATE ALL SOURCES (Cloud SQL + Local) TO GOOGLE SHEETS
   const handleMigrateAllToSheets = async () => {
     let activeToken = token || getGoogleAccessToken();
-    if (!user || !activeToken) {
-      toast.info("กำลังเปิดหน้าต่างเข้าสู่ระบบ Google เพื่อเชื่อมต่อ...");
+    if (!activeToken) {
       try {
-        const signResult = await signInWithGoogle();
-        setUser(signResult.user);
-        setToken(signResult.accessToken);
-        activeToken = signResult.accessToken;
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "กรุณาเข้าสู่ระบบ Google เพื่อย้ายข้อมูล";
-        toast.error(msg);
-        return;
+        activeToken = await resolveAccessToken();
+        setToken(activeToken);
+      } catch {
+        toast.info("กำลังเปิดหน้าต่างเข้าสู่ระบบ Google เพื่อเชื่อมต่อ...");
+        try {
+          const signResult = await signInWithGoogle();
+          setUser(signResult.user);
+          setToken(signResult.accessToken);
+          activeToken = signResult.accessToken;
+        } catch (err: unknown) {
+          const msg = err instanceof Error ? err.message : "กรุณาเข้าสู่ระบบ Google หรือตั้งค่า Service Account เพื่อย้ายข้อมูล";
+          toast.error(msg);
+          return;
+        }
       }
     }
 
@@ -310,9 +457,15 @@ export function GoogleSheetsSyncTab() {
 
   // FULL DATABASE BACKUP HANDLER
   const handleExecuteFullBackup = async (forceNew: boolean = false) => {
-    if (!user && !getGoogleAccessToken()) {
-      toast.error("กรุณาเข้าสู่ระบบ Google ก่อนสำรองข้อมูล");
-      return;
+    let activeToken = token || getGoogleAccessToken();
+    if (!activeToken) {
+      try {
+        activeToken = await resolveAccessToken();
+        setToken(activeToken);
+      } catch {
+        toast.error("กรุณาตั้งค่า Service Account หรือเข้าสู่ระบบ Google ก่อนสำรองข้อมูล");
+        return;
+      }
     }
 
     const products = MasterStore.getProducts();
@@ -558,31 +711,321 @@ export function GoogleSheetsSyncTab() {
 
   return (
     <div className="space-y-6">
-      {/* 1. Header & Google Account Connection Card */}
+      {/* 1. PRIMARY: SERVICE ACCOUNT CONFIGURATION (SETUP ONCE, WORKS EVERYWHERE) */}
+      <Card className="rounded-2xl border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-500/5 via-card to-background shadow-xs overflow-hidden">
+        <CardHeader className="pb-3 border-b border-border/40">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="size-11 rounded-2xl bg-emerald-500/15 text-emerald-600 flex items-center justify-center border border-emerald-500/30 shrink-0">
+                <Key className="size-5" />
+              </div>
+              <div>
+                <CardTitle className="text-sm sm:text-base font-bold flex items-center gap-2 flex-wrap">
+                  <span>Google Service Account (ตั้งค่าครั้งเดียวไม่ต้องล็อกอินซ้ำ)</span>
+                  <Badge
+                    variant={serviceAccountConfig?.isConfigured ? "default" : "secondary"}
+                    className={
+                      serviceAccountConfig?.isConfigured
+                        ? "bg-emerald-600 text-white font-medium text-[10px]"
+                        : "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/30 text-[10px]"
+                    }
+                  >
+                    {serviceAccountConfig?.isConfigured ? "✅ เชื่อมต่อแล้ว" : "⚠️ ยังไม่ได้ตั้งค่า"}
+                  </Badge>
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  กำหนดค่า Service Account เพียงครั้งเดียว เพื่อให้ทุกคนใช้งานสำรองข้อมูลและส่งออกได้อัตโนมัติ โดยไม่ต้องกดล็อกอิน Google ทุกครั้ง
+                </CardDescription>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {serviceAccountConfig?.isConfigured && !showSaConfigForm ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs rounded-xl gap-1.5 border-emerald-500/30 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10"
+                    onClick={() => handleTestServiceAccountConnection()}
+                    disabled={isTestingSa}
+                  >
+                    {isTestingSa ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                    ทดสอบเชื่อมต่อ
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-xs rounded-xl gap-1 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowSaConfigForm(true)}
+                  >
+                    <Settings2 className="size-3.5" />
+                    แก้ไข
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={showSaConfigForm ? "outline" : "default"}
+                  className="h-8 text-xs rounded-xl gap-1.5"
+                  onClick={() => setShowSaConfigForm(!showSaConfigForm)}
+                >
+                  <Key className="size-3.5" />
+                  {showSaConfigForm ? "ปิดแบบฟอร์ม" : "ตั้งค่า Service Account"}
+                </Button>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+
+        <CardContent className="pt-4 space-y-4">
+          {/* Active Status Display */}
+          {serviceAccountConfig?.isConfigured && !showSaConfigForm && (
+            <div className="space-y-3">
+              <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="text-xs font-semibold text-foreground flex items-center gap-2">
+                    <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                    <span>อีเมล Service Account:</span>
+                    <code className="px-2 py-0.5 rounded bg-background border font-mono text-[11px] text-emerald-700 dark:text-emerald-300">
+                      {serviceAccountConfig.clientEmail}
+                    </code>
+                  </div>
+                  {serviceAccountConfig.clientEmail && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs gap-1 text-primary hover:bg-primary/10 shrink-0"
+                      onClick={() => handleCopyClientEmail(serviceAccountConfig.clientEmail!)}
+                    >
+                      {copiedEmail ? <Check className="size-3.5 text-emerald-600" /> : <Copy className="size-3.5" />}
+                      {copiedEmail ? "คัดลอกแล้ว" : "คัดลอกอีเมล"}
+                    </Button>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-muted-foreground pt-1 border-t border-emerald-500/20">
+                  <div className="flex items-center gap-1.5">
+                    <span>Google Sheet เริ่มต้น:</span>
+                    <span className="font-mono text-foreground font-medium">
+                      {serviceAccountConfig.spreadsheetId || "ใช้ตามรายการที่เลือกในระบบ"}
+                    </span>
+                  </div>
+                  {serviceAccountConfig.spreadsheetId && (
+                    <a
+                      href={`https://docs.google.com/spreadsheets/d/${serviceAccountConfig.spreadsheetId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 text-emerald-600 hover:underline text-xs"
+                    >
+                      <ExternalLink className="size-3" /> เปิด Google Sheet เล่มนี้
+                    </a>
+                  )}
+                </div>
+              </div>
+
+              {/* Instructions Reminder */}
+              <div className="text-[11px] text-muted-foreground flex items-start gap-1.5 px-1">
+                <Info className="size-3.5 text-muted-foreground shrink-0 mt-0.5" />
+                <span>
+                  <strong>สำคัญ:</strong> เพื่อให้ Service Account สามารถอ่านและบันทึกข้อมูลได้ กรุณากดปุ่ม <strong>แชร์ (Share)</strong> ใน Google Sheet แล้วเพิ่มอีเมลด้านบนพร้อมเลือกสิทธิ์ <strong>&quot;ผู้แก้ไข (Editor)&quot;</strong>
+                </span>
+              </div>
+            </div>
+          )}
+
+          {/* Configuration Form (when opening setup or editing) */}
+          {(showSaConfigForm || !serviceAccountConfig?.isConfigured) && (
+            <div className="p-4 rounded-xl border bg-card space-y-4 animate-in fade-in-50">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="text-xs font-bold text-foreground flex items-center gap-1.5">
+                  <Key className="size-4 text-primary" />
+                  กรอกข้อมูล Google Service Account:
+                </div>
+                <div className="flex items-center gap-1 bg-muted p-0.5 rounded-lg text-xs">
+                  <button
+                    type="button"
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                      saInputMode === "json"
+                        ? "bg-background text-foreground shadow-2xs font-bold"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => setSaInputMode("json")}
+                  >
+                    ไฟล์ JSON Key (แนะนำ)
+                  </button>
+                  <button
+                    type="button"
+                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                      saInputMode === "manual"
+                        ? "bg-background text-foreground shadow-2xs font-bold"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    onClick={() => setSaInputMode("manual")}
+                  >
+                    กรอก Email & Key
+                  </button>
+                </div>
+              </div>
+
+              {saInputMode === "json" ? (
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">วางเนื้อหาไฟล์ Service Account JSON (Key File):</Label>
+                  <Textarea
+                    placeholder='{"type": "service_account", "project_id": "...", "private_key": "-----BEGIN PRIVATE KEY-----\n...", "client_email": "..."}'
+                    value={saJsonInput}
+                    onChange={(e) => setSaJsonInput(e.target.value)}
+                    rows={5}
+                    className="font-mono text-xs rounded-xl"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    คัดลอกจากไฟล์ JSON ที่ดาวน์โหลดจาก Google Cloud Console (IAM & Admin ➔ Service Accounts ➔ Keys ➔ Add Key)
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Client Email (อีเมลของ Service Account):</Label>
+                    <Input
+                      placeholder="xxx@project-id.iam.gserviceaccount.com"
+                      value={saEmailInput}
+                      onChange={(e) => setSaEmailInput(e.target.value)}
+                      className="font-mono text-xs rounded-xl h-9"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Private Key (คีย์ส่วนตัว RSA):</Label>
+                    <Textarea
+                      placeholder="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----"
+                      value={saKeyInput}
+                      onChange={(e) => setSaKeyInput(e.target.value)}
+                      rows={4}
+                      className="font-mono text-xs rounded-xl"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div className="space-y-1.5">
+                <Label className="text-xs font-semibold">
+                  รหัส Google Spreadsheet ID หรือ ลิงก์ Google Sheet:
+                </Label>
+                <Input
+                  placeholder="เช่น https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit หรือเฉพาะรหัส ID"
+                  value={saSpreadsheetInput}
+                  onChange={(e) => setSaSpreadsheetInput(e.target.value)}
+                  className="font-mono text-xs rounded-xl h-9"
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  (ไม่บังคับ) หากระบุ ระบบจะใช้สเปรดชีตเล่มนี้เป็นฐานข้อมูลหลักอัตโนมัติ
+                </p>
+              </div>
+
+              {/* Instructions guide */}
+              <div className="p-3 rounded-xl bg-muted/40 border text-xs space-y-1.5 text-muted-foreground">
+                <div className="font-semibold text-foreground flex items-center gap-1.5">
+                  <Info className="size-3.5 text-primary" /> ขั้นตอนการตั้งค่า Service Account ง่ายๆ 4 ขั้นตอน:
+                </div>
+                <ol className="list-decimal list-inside space-y-1 pl-1 text-[11px]">
+                  <li>เปิด <strong>Google Cloud Console</strong> เลือกโปรเจกต์ และไปที่ <strong>IAM & Admin ➔ Service Accounts</strong></li>
+                  <li>สร้าง Service Account ใหม่ และสร้าง <strong>Key (เลือกแบบ JSON)</strong> ไฟล์จะถูกดาวน์โหลดลงเครื่อง</li>
+                  <li>เปิดใช้งาน <strong>Google Sheets API</strong> และ <strong>Google Drive API</strong> ใน API Library</li>
+                  <li>เปิด Google Sheet ที่ต้องการ กดปุ่ม <strong>แชร์ (Share)</strong> ➔ นำอีเมล Service Account ไปใส่ และให้สิทธิ์ <strong>Editor</strong></li>
+                </ol>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex items-center justify-end gap-2 pt-1 flex-wrap">
+                {serviceAccountConfig?.isConfigured && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-9 px-3 rounded-xl text-xs"
+                    onClick={() => setShowSaConfigForm(false)}
+                  >
+                    ยกเลิก
+                  </Button>
+                )}
+                {saSpreadsheetInput && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-9 px-3 rounded-xl text-xs gap-1.5"
+                    onClick={() => handleTestServiceAccountConnection(saSpreadsheetInput)}
+                    disabled={isTestingSa}
+                  >
+                    {isTestingSa ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+                    ทดสอบเชื่อมต่อ
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-9 px-4 rounded-xl text-xs font-bold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                  onClick={handleSaveServiceAccount}
+                  disabled={isSavingSa}
+                >
+                  {isSavingSa ? <Loader2 className="size-3.5 animate-spin" /> : <Check className="size-3.5" />}
+                  บันทึกการตั้งค่า Service Account
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* Test Result Display */}
+          {saTestResult && (
+            <Alert
+              className={`rounded-xl ${
+                saTestResult.success
+                  ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-900 dark:text-emerald-200"
+                  : "bg-destructive/10 border-destructive/30 text-destructive dark:text-red-300"
+              }`}
+            >
+              {saTestResult.success ? (
+                <CheckCircle2 className="size-4 text-emerald-600" />
+              ) : (
+                <AlertCircle className="size-4 text-destructive" />
+              )}
+              <AlertTitle className="text-xs font-bold">
+                {saTestResult.success ? "การทดสอบเชื่อมต่อสำเร็จ" : "การทดสอบเชื่อมต่อไม่สำเร็จ"}
+              </AlertTitle>
+              <AlertDescription className="text-xs mt-1">
+                {saTestResult.message}
+              </AlertDescription>
+            </Alert>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 2. SECONDARY: GOOGLE PERSONAL ACCOUNT (ALTERNATIVE) */}
       <Card className="rounded-2xl border bg-card shadow-xs">
         <CardHeader className="pb-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="size-12 rounded-2xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center border border-emerald-500/20 shrink-0">
-                <FileSpreadsheet className="size-6" />
+              <div className="size-10 rounded-2xl bg-muted text-muted-foreground flex items-center justify-center border shrink-0">
+                <FileSpreadsheet className="size-5" />
               </div>
               <div>
-                <CardTitle className="text-base sm:text-lg flex items-center gap-2">
-                  <span>Google Sheets Backup Database</span>
+                <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+                  <span>เชื่อมต่อ Google Account ส่วนบุคคล</span>
                   <Badge
                     variant={user ? "default" : "secondary"}
                     className={
                       user
-                        ? "bg-emerald-600 text-white font-medium"
-                        : "bg-muted text-muted-foreground"
+                        ? "bg-emerald-600 text-white font-medium text-[10px]"
+                        : "bg-muted text-muted-foreground text-[10px]"
                     }
                   >
-                    {user ? "เชื่อมต่อเรียบร้อย" : "ยังไม่ได้เชื่อมต่อ"}
+                    {user ? "เชื่อมต่อเรียบร้อย" : "ไม่ได้เชื่อมต่อ"}
                   </Badge>
                 </CardTitle>
-                <CardDescription className="text-xs sm:text-sm">
-                  จัดเก็บข้อมูลร้านค้าทุกอย่างลง Google Sheets
-                  เพื่อเป็นฐานข้อมูลสำรองและนำไปใช้งานต่อ
+                <CardDescription className="text-xs">
+                  ทางเลือกเพิ่มเติมสำหรับการเชื่อมต่อด้วยบัญชี Google ส่วนบุคคล (Popup / Redirect)
                 </CardDescription>
               </div>
             </div>
@@ -623,24 +1066,22 @@ export function GoogleSheetsSyncTab() {
                 <GoogleSignInButton
                   onClick={handleSignIn}
                   isLoading={isSigningIn}
-                  label="เชื่อมต่อ Google Sheets"
+                  label="เข้าสู่ระบบ Google"
                 />
               )}
             </div>
           </div>
         </CardHeader>
 
-        {!user && (
+        {!hasValidAuth && (
           <CardContent className="pt-0">
             <Alert className="rounded-xl bg-amber-500/10 border-amber-500/20 text-amber-900 dark:text-amber-200">
               <Info className="size-4 text-amber-600" />
               <AlertTitle className="text-xs font-semibold">
-                เชื่อมต่อบัญชี Google เพื่อเปิดใช้งานฐานข้อมูลสำรอง
+                เชื่อมต่อ Service Account หรือบัญชี Google เพื่อเปิดใช้งานฐานข้อมูลสำรอง
               </AlertTitle>
               <AlertDescription className="text-xs mt-1">
-                คลิกปุ่ม &quot;เชื่อมต่อ Google Sheets&quot;
-                ด้านบนเพื่ออนุญาตให้ระบบบันทึกและซิงค์ข้อมูลลง Google Sheets และ Google Drive
-                ในบัญชีของคุณ
+                กำหนดค่า Service Account ด้านบน (แนะนำ) หรือคลิกปุ่ม &quot;เข้าสู่ระบบ Google&quot; เพื่อเปิดใช้งานการสำรองข้อมูลลง Google Sheets
               </AlertDescription>
             </Alert>
           </CardContent>

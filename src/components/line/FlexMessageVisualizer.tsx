@@ -81,12 +81,12 @@ export interface FlexMessagePayload {
 
 interface FlexMessageVisualizerProps {
   flexData: unknown;
-  title?: string;
-  className?: string;
-  onSendTest?: () => void;
-  imageUrl?: string;
-  imageBlob?: Blob;
-  storeName?: string;
+  title?: string | undefined;
+  className?: string | undefined;
+  onSendTest?: (() => void) | undefined;
+  imageUrl?: string | undefined;
+  imageBlob?: Blob | undefined;
+  storeName?: string | undefined;
 }
 
 /**

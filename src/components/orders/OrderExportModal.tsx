@@ -21,6 +21,7 @@ import {
   createNewSpreadsheet,
   getGoogleAccessToken,
   signInWithGoogle,
+  resolveAccessToken,
 } from "@/lib/google-sheets-service";
 import { FlexMessageVisualizer } from "@/components/line/FlexMessageVisualizer";
 import type { FlexContainerType, FlexItemGroupBy } from "@/lib/flex-templates";
@@ -29,7 +30,7 @@ import {
   copyTextToClipboard,
   downloadJsonFile,
 } from "@/lib/order-export";
-import { shareFlexViaLiffPicker } from "@/lib/line-service";
+import { shareFlexViaLiffPicker, loginToLine } from "@/lib/line-service";
 import {
   generatePurchaseOrderSlipImage,
   shareImageFileViaNavigator,
@@ -145,9 +146,13 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
     try {
       let token = getGoogleAccessToken();
       if (!token) {
-        toast.info("กรุณาเข้าสู่ระบบ Google เพื่อบันทึกลงในสเปรดชีต");
-        const res = await signInWithGoogle();
-        token = res.accessToken;
+        try {
+          token = await resolveAccessToken();
+        } catch {
+          toast.info("กรุณาเข้าสู่ระบบ Google เพื่อบันทึกลงในสเปรดชีต");
+          const res = await signInWithGoogle();
+          token = res.accessToken;
+        }
       }
 
       const rows: (string | number)[][] = [
@@ -408,8 +413,36 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         toast.success("ส่งรูปภาพสลิป PNG เข้าแชท LINE สำเร็จแล้ว");
       } else if (res.needLiffId) {
         toast.error("กรุณาระบุ LINE LIFF ID ในการตั้งค่า LINE ก่อนเปิดแผ่นเลือกเพื่อน");
+      } else if (res.needLogin) {
+        const isMobile =
+          typeof navigator !== "undefined" &&
+          /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+        if ((res.isLineBrowser || isMobile || res.isMobileDevice) && res.liffUrl) {
+          toast.info("กำลังเปิดแอป LINE เพื่อเลือกเพื่อนส่งสลิป...");
+          window.location.href = res.liffUrl;
+          return;
+        }
+        toast.info("กรุณาเข้าสู่ระบบ LINE ก่อนส่งรูปภาพ", {
+          action: {
+            label: "เข้าสู่ระบบ",
+            onClick: () => loginToLine(),
+          },
+        });
       } else {
-        toast.error(res.message || "ส่งรูปภาพเข้า LINE ไม่สำเร็จ");
+        const isCancel =
+          res.message &&
+          (res.message.includes("ยกเลิก") || res.message.toLowerCase().includes("cancel"));
+        if (isCancel) {
+          toast.info("ยกเลิกการเลือกห้องแชทใน LINE");
+        } else {
+          toast.error(res.message || "ส่งรูปภาพเข้า LINE ไม่สำเร็จ", {
+            action: {
+              label: "แชร์รูปภาพ",
+              onClick: () => handleWebShareImage(),
+            },
+            duration: 8000,
+          });
+        }
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));

@@ -22,7 +22,9 @@ import {
   Filter,
   FolderTree,
   Image as ImageIcon,
+  Info,
   Layers,
+  LogIn,
   MessageCircle,
   Package,
   PackageCheck,
@@ -120,6 +122,10 @@ import {
   sendWith3TierFallback,
   setClientLiffId,
   shareFlexViaLiffPicker,
+  loginToLine,
+  openInLineApp,
+  getPendingLiffShare,
+  clearPendingLiffShare,
   type LineConfigStatus,
   type LineMessageSendFormat,
   type OrderFlexItem,
@@ -172,7 +178,8 @@ export const Route = createFileRoute("/reorder")({
       { title: "ระบบคำนวณสั่งซื้อ & ใบสั่งซื้อสินค้า (PO) | โชห่วยยุค90s" },
       {
         name: "description",
-        content: "ระบบคำนวณจำนวนที่ควรสั่งซื้ออัจฉริยะ, จัดการใบสั่งซื้อ (Purchase Order Lifecycle), ตรวจรับเข้าสต็อก และพิมพ์เอกสาร A4",
+        content:
+          "ระบบคำนวณจำนวนที่ควรสั่งซื้ออัจฉริยะ, จัดการใบสั่งซื้อ (Purchase Order Lifecycle), ตรวจรับเข้าสต็อก และพิมพ์เอกสาร A4",
       },
       {
         property: "og:title",
@@ -190,130 +197,130 @@ export const Route = createFileRoute("/reorder")({
 type ReorderStrategy = "TARGET_PAR" | "MINIMUM_RESTORE" | "WEEKEND_BUFFER" | "DOUBLE_BUFFER";
 
 function ReorderPage() {
-  const [products, setProducts] = useState < ProductItem[] > ([]);
-  const [categories, setCategories] = useState < CategoryItem[] > ([]);
-  const [zones, setZones] = useState < ZoneItem[] > ([]);
-  const [units, setUnits] = useState < UnitItem[] > ([]);
-  const [followers, setFollowers] = useState < LineUserFollower[] > ([]);
-  const [purchaseOrders, setPurchaseOrders] = useState < PurchaseOrderRecord[] > ([]);
-  
+  const [products, setProducts] = useState<ProductItem[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [zones, setZones] = useState<ZoneItem[]>([]);
+  const [units, setUnits] = useState<UnitItem[]>([]);
+  const [followers, setFollowers] = useState<LineUserFollower[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderRecord[]>([]);
+
   // Active View Tab: "create_po" (Phase 6) | "po_history" (Phase 6) | "calculator" (Phase 5) | "alerts_hub" (Phase 4)
-  const [activeTab, setActiveTab] = useState <
-    "create_po" | "po_history" | "calculator" | "alerts_hub" >
-    ("create_po");
-  
+  const [activeTab, setActiveTab] = useState<
+    "create_po" | "po_history" | "calculator" | "alerts_hub"
+  >("create_po");
+
   // Calculation Strategy State (Phase 5)
-  const [calculationStrategy, setCalculationStrategy] = useState < ReorderStrategy > ("TARGET_PAR");
-  const [customMultiplier, setCustomMultiplier] = useState < number > (1.0);
-  
+  const [calculationStrategy, setCalculationStrategy] = useState<ReorderStrategy>("TARGET_PAR");
+  const [customMultiplier, setCustomMultiplier] = useState<number>(1.0);
+
   // Filter in Alerts Hub
-  const [alertFilter, setAlertFilter] = useState < "ALL_ALERT" | "OUT_OF_STOCK" | "LOW_STOCK" > (
+  const [alertFilter, setAlertFilter] = useState<"ALL_ALERT" | "OUT_OF_STOCK" | "LOW_STOCK">(
     "ALL_ALERT",
   );
-  
+
   // Filter in PO History
-  const [poStatusFilter, setPoStatusFilter] = useState <
-    "ALL" | "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED" >
-    ("ALL");
-  
+  const [poStatusFilter, setPoStatusFilter] = useState<
+    "ALL" | "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED"
+  >("ALL");
+
   // Selected Order Items (Cart)
   interface OrderCartItem {
     productId: string;
-    productName ? : string | undefined;
-    barcode ? : string | undefined;
+    productName?: string | undefined;
+    barcode?: string | undefined;
     quantity: number;
     unitId: string;
-    unitName ? : string | undefined;
-    costPrice ? : number | undefined;
-    note ? : string | undefined;
+    unitName?: string | undefined;
+    costPrice?: number | undefined;
+    note?: string | undefined;
   }
-  
+
   interface FullOrderItem extends OrderFlexItem {
     product: ProductItem;
     barcode: string;
     unitId: string;
     costPrice: number;
     priceEstimate: number;
-    note ? : string | undefined;
-    categoryId ? : string | undefined;
-    categoryName ? : string | undefined;
-    zoneId ? : string | undefined;
-    zoneName ? : string | undefined;
+    note?: string | undefined;
+    categoryId?: string | undefined;
+    categoryName?: string | undefined;
+    zoneId?: string | undefined;
+    zoneName?: string | undefined;
   }
-  const [orderList, setOrderList] = useState < OrderCartItem[] > ([]);
+  const [orderList, setOrderList] = useState<OrderCartItem[]>([]);
   const [supplierNameInput, setSupplierNameInput] = useState("บจก ไทรงามช้อป");
-  
+
   // Add Item Modal (Cascading: Zone -> Category -> Product)
   const [addModalOpen, setAddModalOpen] = useState(false);
-  const [addZoneId, setAddZoneId] = useState < string > ("all");
-  const [addCatId, setAddCatId] = useState < string > ("all");
-  const [addProductSearch, setAddProductSearch] = useState < string > ("");
+  const [addZoneId, setAddZoneId] = useState<string>("all");
+  const [addCatId, setAddCatId] = useState<string>("all");
+  const [addProductSearch, setAddProductSearch] = useState<string>("");
   const [selectedProdId, setSelectedProdId] = useState("");
   const [manualQty, setManualQty] = useState(10);
   const [manualUnitId, setManualUnitId] = useState("");
-  const [manualCostPrice, setManualCostPrice] = useState < number > (0);
+  const [manualCostPrice, setManualCostPrice] = useState<number>(0);
   const [manualNote, setManualNote] = useState("");
-  
+
   // Edit Item Modal State (Detailed Editing)
   const [editItemModalOpen, setEditItemModalOpen] = useState(false);
   const [updateMasterCostPrice, setUpdateMasterCostPrice] = useState(false);
-  const [editingCartItem, setEditingCartItem] = useState < {
+  const [editingCartItem, setEditingCartItem] = useState<{
     productId: string;
     productName: string;
     barcode: string;
-    sku ? : string;
+    sku?: string;
     quantity: number;
     unitId: string;
     costPrice: number;
     masterCostPrice: number;
-    sellPrice ? : number;
+    sellPrice?: number;
     note: string;
     stock: number;
     minStock: number;
     targetStock: number;
     categoryId: string;
     categoryName: string;
-    subCategoryId ? : string | undefined;
-    zoneId ? : string;
+    subCategoryId?: string | undefined;
+    zoneId?: string;
     zoneName: string;
-  } | null > (null);
-  
+  } | null>(null);
+
   // File Export Modal State (PDF, Excel, TXT, JSON)
   const [exportModalOpen, setExportModalOpen] = useState(false);
-  const [exportPayload, setExportPayload] = useState < ExportOrderPayload | null > (null);
-  
+  const [exportPayload, setExportPayload] = useState<ExportOrderPayload | null>(null);
+
   // PO Detail & Print Modal (Phase 6)
   const [detailModalOpen, setDetailModalOpen] = useState(false);
-  const [selectedPO, setSelectedPO] = useState < PurchaseOrderRecord | null > (null);
-  
+  const [selectedPO, setSelectedPO] = useState<PurchaseOrderRecord | null>(null);
+
   // Server Messaging API & LINE Recipient Modal
   const [pushModalOpen, setPushModalOpen] = useState(false);
-  const [recipientFilterTab, setRecipientFilterTab] = useState <
-    "ALL" | "SUPPLIERS" | "GROUPS" | "STAFF" | "USERS" >
-    ("ALL");
+  const [recipientFilterTab, setRecipientFilterTab] = useState<
+    "ALL" | "SUPPLIERS" | "GROUPS" | "STAFF" | "USERS"
+  >("ALL");
   const [targetIdInput, setTargetIdInput] = useState("");
   const [friendSearchQuery, setFriendSearchQuery] = useState("");
   const [isAddingContact, setIsAddingContact] = useState(false);
   const [newContactName, setNewContactName] = useState("");
   const [newContactId, setNewContactId] = useState("");
-  const [newContactRole, setNewContactRole] = useState < "admin" | "staff" | "viewer" > ("staff");
-  const [customChannelToken, setCustomChannelToken] = useState < string > (() => {
+  const [newContactRole, setNewContactRole] = useState<"admin" | "staff" | "viewer">("staff");
+  const [customChannelToken, setCustomChannelToken] = useState<string>(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("minimark_line_channel_token") || "";
     }
     return "";
   });
   const [isBroadcastMode, setIsBroadcastMode] = useState(false);
-  const [pushMessageType, setPushMessageType] = useState < "PURCHASE_ORDER" | "STOCK_ALERT" > (
+  const [pushMessageType, setPushMessageType] = useState<"PURCHASE_ORDER" | "STOCK_ALERT">(
     "PURCHASE_ORDER",
   );
-  const [pushMessageFormat, setPushMessageFormat] = useState < LineMessageSendFormat > ("FLEX");
-  const [modalPngData, setModalPngData] = useState < { dataUrl: string;blob: Blob } | null > (null);
+  const [pushMessageFormat, setPushMessageFormat] = useState<LineMessageSendFormat>("FLEX");
+  const [modalPngData, setModalPngData] = useState<{ dataUrl: string; blob: Blob } | null>(null);
   const [isGeneratingModalPng, setIsGeneratingModalPng] = useState(false);
   const [copiedModalPng, setCopiedModalPng] = useState(false);
-  const [modalPreviewTab, setModalPreviewTab] = useState < "flex" | "png" > ("flex");
-  const [slipDesignStyle, setSlipDesignStyle] = useState < SlipDesignStyle > ("full_bleed_rich");
-  
+  const [modalPreviewTab, setModalPreviewTab] = useState<"flex" | "png">("flex");
+  const [slipDesignStyle, setSlipDesignStyle] = useState<SlipDesignStyle>("full_bleed_rich");
+
   // Lock body scroll on mobile and desktop when recipient selection modal is open
   useEffect(() => {
     if (pushModalOpen) {
@@ -328,41 +335,42 @@ function ReorderPage() {
     }
     return undefined;
   }, [pushModalOpen]);
-  
+
   // Flex Preview Visualizer Modal & Grouping Mode
   const [flexPreviewOpen, setFlexPreviewOpen] = useState(false);
-  const [flexPreviewData, setFlexPreviewData] = useState < unknown > (null);
+  const [flexPreviewData, setFlexPreviewData] = useState<unknown>(null);
   const [flexPreviewTitle, setFlexPreviewTitle] = useState("ตัวอย่าง LINE Flex Message");
-  const [flexGroupBy, setFlexGroupBy] = useState < FlexItemGroupBy > ("category_no_header");
-  const [flexShowHeader, setFlexShowHeader] = useState < boolean > (false);
-  const [flexPreviewSource, setFlexPreviewSource] = useState < {
+  const [flexGroupBy, setFlexGroupBy] = useState<FlexItemGroupBy>("category_no_header");
+  const [flexShowHeader, setFlexShowHeader] = useState<boolean>(false);
+  const [flexPreviewSource, setFlexPreviewSource] = useState<{
     type: "order" | "alert" | "po";
-    orderItems ? : FullOrderItem[];
-    alertItems ? : Parameters < typeof createStockAlertFlexBubble > [0];
-    poRecord ? : PurchaseOrderRecord;
-  } | null > (null);
-  
+    orderItems?: FullOrderItem[];
+    alertItems?: Parameters<typeof createStockAlertFlexBubble>[0];
+    poRecord?: PurchaseOrderRecord;
+  } | null>(null);
+
   // Sending & processing status
   const [isSending, setIsSending] = useState(false);
-  const [statusMessage, setStatusMessage] = useState < {
+  const [statusMessage, setStatusMessage] = useState<{
     type: "success" | "error" | "info";
     text: string;
-  } | null > (null);
-  
+  } | null>(null);
+
   // LINE Diagnostic Info
-  const [lineStatus, setLineStatus] = useState < LineConfigStatus | null > (null);
-  const [serverConfig, setServerConfig] = useState < {
+  const [lineStatus, setLineStatus] = useState<LineConfigStatus | null>(null);
+  const [serverConfig, setServerConfig] = useState<{
     hasAccessToken: boolean;
-  } | null > (null);
-  
+  } | null>(null);
+
   // LINE LIFF ID Setup Modal State (for 1-click Friend Picker)
   const [liffIdModalOpen, setLiffIdModalOpen] = useState(false);
   const [liffIdInputValue, setLiffIdInputValue] = useState("");
-  
+  const [lineLoginPromptOpen, setLineLoginPromptOpen] = useState(false);
+
   // Flex Simulator Importer Modal
   const [flexSimulatorModalOpen, setFlexSimulatorModalOpen] = useState(false);
   const currentStoreName = getSystemStoreName();
-  
+
   // Quick Add Product Directly Inside Purchase Order
   const [quickAddModalOpen, setQuickAddModalOpen] = useState(false);
   const [quickName, setQuickName] = useState("");
@@ -372,21 +380,21 @@ function ReorderPage() {
   const [quickCatId, setQuickCatId] = useState("");
   const [quickSubCatId, setQuickSubCatId] = useState("");
   const [quickUnitId, setQuickUnitId] = useState("");
-  const [quickCostPrice, setQuickCostPrice] = useState < string > ("");
-  const [quickSellPrice, setQuickSellPrice] = useState < string > ("");
-  const [quickOrderQty, setQuickOrderQty] = useState < string > ("1");
+  const [quickCostPrice, setQuickCostPrice] = useState<string>("");
+  const [quickSellPrice, setQuickSellPrice] = useState<string>("");
+  const [quickOrderQty, setQuickOrderQty] = useState<string>("1");
   const [quickFormError, setQuickFormError] = useState("");
   const [hasRestoredDraft, setHasRestoredDraft] = useState(false);
-  
+
   // Editing Existing Purchase Order Mode
-  const [editingPOId, setEditingPOId] = useState < string | null > (null);
-  const [editingPONumber, setEditingPONumber] = useState < string > ("");
-  const [editingPOCreatedAt, setEditingPOCreatedAt] = useState < string > ("");
-  const [editingPOStatus, setEditingPOStatus] = useState <
-    "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED" >
-    ("DRAFT");
-  const [lastAutoSavedAt, setLastAutoSavedAt] = useState < Date | null > (null);
-  const [flexContainerType, setFlexContainerType] = useState < FlexContainerType > (() => {
+  const [editingPOId, setEditingPOId] = useState<string | null>(null);
+  const [editingPONumber, setEditingPONumber] = useState<string>("");
+  const [editingPOCreatedAt, setEditingPOCreatedAt] = useState<string>("");
+  const [editingPOStatus, setEditingPOStatus] = useState<
+    "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED"
+  >("DRAFT");
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<Date | null>(null);
+  const [flexContainerType, setFlexContainerType] = useState<FlexContainerType>(() => {
     try {
       return (
         (localStorage.getItem("minimark_flex_container_type") as FlexContainerType) || "carousel"
@@ -395,14 +403,14 @@ function ReorderPage() {
       return "carousel";
     }
   });
-  const [modalImageDisplayMode, setModalImageDisplayMode] = useState < "full" | "mockup" > ("full");
-  
+  const [modalImageDisplayMode, setModalImageDisplayMode] = useState<"full" | "mockup">("full");
+
   // Delete Item Confirmation Dialog State
-  const [itemToDelete, setItemToDelete] = useState < {
+  const [itemToDelete, setItemToDelete] = useState<{
     productId: string;
     productName: string;
-  } | null > (null);
-  
+  } | null>(null);
+
   const reloadData = useCallback(() => {
     const allProds = MasterStore.getProducts();
     const allCats = MasterStore.getCategories();
@@ -410,7 +418,7 @@ function ReorderPage() {
     const allUnits = MasterStore.getUnits();
     const allFollowers = MasterStore.getFollowers();
     const allPOs = MasterStore.getPurchaseOrders();
-    
+
     setProducts(allProds);
     setCategories(allCats);
     setZones(allZones);
@@ -418,11 +426,11 @@ function ReorderPage() {
     setFollowers(allFollowers);
     setPurchaseOrders(allPOs);
   }, []);
-  
+
   // 1. Initial load on mount: Check active editing PO, saved draft, or seed low-stock items
   useEffect(() => {
     reloadData();
-    
+
     // Check if an existing PO was actively being edited before navigating away
     try {
       const activePOId = localStorage.getItem("minimark_active_editing_po_id");
@@ -458,7 +466,7 @@ function ReorderPage() {
     } catch {
       // ignore
     }
-    
+
     const draft = MasterStore.getDraftPurchaseOrder();
     if (draft && draft.orderList && draft.orderList.length > 0) {
       setOrderList(draft.orderList);
@@ -489,7 +497,7 @@ function ReorderPage() {
       }
     }
   }, [reloadData]);
-  
+
   const orderListRef = useRef(orderList);
   orderListRef.current = orderList;
   const supplierNameRef = useRef(supplierNameInput);
@@ -498,7 +506,7 @@ function ReorderPage() {
   editingPOIdRef.current = editingPOId;
   const calculationStrategyRef = useRef(calculationStrategy);
   calculationStrategyRef.current = calculationStrategy;
-  
+
   // Guarantee all draft edits are saved when navigating away or unmounting
   useEffect(() => {
     const flushDraftAutoSave = () => {
@@ -541,19 +549,19 @@ function ReorderPage() {
         });
       }
     };
-    
+
     window.addEventListener("beforeunload", flushDraftAutoSave);
-    
+
     return () => {
       window.removeEventListener("beforeunload", flushDraftAutoSave);
       flushDraftAutoSave();
     };
   }, []);
-  
+
   // Auto-save: Auto-saves draft changes immediately whether editing an existing PO or new draft
   useEffect(() => {
     if (orderList.length === 0) return;
-    
+
     if (editingPOId) {
       // When editing an existing draft PO: Auto-save back to MasterStore so navigating away NEVER loses edits!
       const currentPO = MasterStore.getPurchaseOrderById(editingPOId);
@@ -574,7 +582,7 @@ function ReorderPage() {
         });
         const totalQty = updatedItems.reduce((sum, i) => sum + i.quantity, 0);
         const totalCst = updatedItems.reduce((sum, i) => sum + i.quantity * (i.costPrice || 0), 0);
-        
+
         MasterStore.updatePurchaseOrder(editingPOId, {
           supplierName: supplierNameInput.trim() || undefined,
           items: updatedItems,
@@ -591,7 +599,7 @@ function ReorderPage() {
       }
       return;
     }
-    
+
     // When creating a new order: Auto-save to PO draft
     MasterStore.saveDraftPurchaseOrder({
       orderList: orderList.map(({ productId, quantity, unitId, costPrice, note }) => ({
@@ -606,14 +614,14 @@ function ReorderPage() {
     });
     setLastAutoSavedAt(new Date());
   }, [orderList, supplierNameInput, calculationStrategy, editingPOId]);
-  
+
   const handleClearDraft = () => {
     MasterStore.clearDraftPurchaseOrder();
     setOrderList([]);
     setHasRestoredDraft(false);
     toast.info("ล้างแบบร่างใบสั่งซื้อเรียบร้อยแล้ว");
   };
-  
+
   const handleSaveQuickAddProduct = () => {
     if (!quickName.trim()) {
       setQuickFormError("กรุณาระบุชื่อสินค้า");
@@ -623,12 +631,12 @@ function ReorderPage() {
     const finalSku = quickSku.trim() || `SKU-${Date.now().toString().slice(-6)}`;
     const finalCat = quickCatId || categories[0]?.id || "cat-general";
     const finalUnit = quickUnitId || units[0]?.id || "unit-piece";
-    
+
     if (MasterStore.checkDuplicateBarcode(finalBarcode)) {
       setQuickFormError(`บาร์โค้ด ${finalBarcode} มีอยู่ในระบบแล้ว`);
       return;
     }
-    
+
     const newProd = MasterStore.addProduct({
       sku: finalSku,
       barcode: finalBarcode,
@@ -647,7 +655,7 @@ function ReorderPage() {
       reorderQuantity: quickOrderQty.trim() === "" ? 1 : Number(quickOrderQty) || 1,
       isActive: true,
     });
-    
+
     // Immediately add to current order list
     const qty = Math.max(1, quickOrderQty.trim() === "" ? 1 : Number(quickOrderQty) || 1);
     setOrderList((prev) => [
@@ -662,7 +670,7 @@ function ReorderPage() {
       },
       ...prev,
     ]);
-    
+
     // Update local products list
     setProducts(MasterStore.getProducts());
     setQuickAddModalOpen(false);
@@ -675,12 +683,12 @@ function ReorderPage() {
     setQuickSellPrice("");
     setQuickOrderQty("1");
     setQuickFormError("");
-    
+
     toast.success(
       `บันทึกสินค้าใหม่ "${newProd.name}" และบรรจุลงในใบสั่งซื้อ (${qty} ${MasterStore.getUnitName(newProd.unitId)}) สำเร็จ`,
     );
   };
-  
+
   useEffect(() => {
     reloadData();
     getLineStatus()
@@ -694,22 +702,69 @@ function ReorderPage() {
         }
       })
       .catch(() => setServerConfig(null));
-    
+
+    // Check if user returned with a pending share
+    const pendingShare = getPendingLiffShare();
+    if (pendingShare) {
+      const searchParams =
+        typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+      const shouldAutoTrigger =
+        searchParams?.get("action") === "open_picker" ||
+        searchParams?.has("liff.state") ||
+        searchParams?.has("code");
+
+      if (shouldAutoTrigger) {
+        toast.info("กำลังเปิดรายชื่อเพื่อนใน LINE...", { duration: 4000 });
+        setTimeout(async () => {
+          const res = await shareFlexViaLiffPicker(pendingShare.flexMessage, pendingShare.options);
+          if (res.success) {
+            clearPendingLiffShare();
+            toast.success("ส่งเข้าห้องแชท LINE สำเร็จแล้ว");
+          } else if (res.message && !res.message.includes("ยกเลิก")) {
+            toast.info(res.message, {
+              action: {
+                label: "แชร์เข้าแอป LINE",
+                onClick: () => handleOpenWebShareIntent(),
+              },
+              duration: 8000,
+            });
+          }
+        }, 600);
+      } else {
+        toast.info("พบรายการสั่งซื้อที่เตรียมส่งเข้า LINE", {
+          action: {
+            label: "เปิดรายชื่อเพื่อน",
+            onClick: async () => {
+              const res = await shareFlexViaLiffPicker(
+                pendingShare.flexMessage,
+                pendingShare.options,
+              );
+              if (res.success) {
+                clearPendingLiffShare();
+                toast.success("ส่งเข้าห้องแชท LINE สำเร็จแล้ว");
+              }
+            },
+          },
+          duration: 15000,
+        });
+      }
+    }
+
     const onStoreChange = () => reloadData();
     window.addEventListener("minimark_store_change", onStoreChange);
     return () => window.removeEventListener("minimark_store_change", onStoreChange);
   }, [reloadData]);
-  
+
   const getUnitName = (unitId: string) => MasterStore.getUnitName(unitId);
   const getCatName = (catId: string) => MasterStore.getCategoryName(catId);
-  
+
   // Categorized alerts
   const outOfStockItems = products.filter((p) => p.isActive !== false && p.stock <= 0);
   const lowStockItems = products.filter(
     (p) => p.isActive !== false && p.stock > 0 && p.stock <= p.minStock,
   );
   const allReorderNeeded = products.filter((p) => p.isActive !== false && p.stock <= p.minStock);
-  
+
   // Phase 5: Smart Reorder Forecast List
   const forecastList = MasterStore.getSmartReorderForecast(calculationStrategy, customMultiplier);
   const forecastTotalEstimatedCost = forecastList.reduce(
@@ -717,16 +772,16 @@ function ReorderPage() {
     0,
   );
   const forecastTotalQuantity = forecastList.reduce((acc, curr) => acc + curr.suggestedQuantity, 0);
-  
+
   const displayedAlertItems =
-    alertFilter === "OUT_OF_STOCK" ?
-    outOfStockItems :
-    alertFilter === "LOW_STOCK" ?
-    lowStockItems :
-    allReorderNeeded;
-  
-  const createStockAlertItems = (): Parameters < typeof createStockAlertFlexBubble > [0] =>
-    allReorderNeeded.map((product): Parameters < typeof createStockAlertFlexBubble > [0][number] => {
+    alertFilter === "OUT_OF_STOCK"
+      ? outOfStockItems
+      : alertFilter === "LOW_STOCK"
+        ? lowStockItems
+        : allReorderNeeded;
+
+  const createStockAlertItems = (): Parameters<typeof createStockAlertFlexBubble>[0] =>
+    allReorderNeeded.map((product): Parameters<typeof createStockAlertFlexBubble>[0][number] => {
       const zoneName = zones.find((zone) => zone.id === product.zoneId)?.name;
       return {
         name: product.name,
@@ -745,7 +800,7 @@ function ReorderPage() {
     if (poStatusFilter === "ALL") return true;
     return po.status === poStatusFilter;
   });
-  
+
   const handleUpdateQuantity = (productId: string, val: number, isDirect: boolean = false) => {
     setOrderList((prev) =>
       prev.map((item) => {
@@ -764,13 +819,13 @@ function ReorderPage() {
       }),
     );
   };
-  
+
   const handleUpdateUnit = (productId: string, unitId: string) => {
     setOrderList((prev) =>
       prev.map((item) => (item.productId === productId ? { ...item, unitId } : item)),
     );
   };
-  
+
   const handleUpdateCostPrice = (productId: string, costPrice: number) => {
     setOrderList((prev) =>
       prev.map((item) =>
@@ -778,11 +833,11 @@ function ReorderPage() {
       ),
     );
   };
-  
+
   const handleRemoveOrder = (productId: string) => {
     setOrderList((prev) => prev.filter((i) => i.productId !== productId));
   };
-  
+
   const confirmDeleteItem = () => {
     if (itemToDelete) {
       handleRemoveOrder(itemToDelete.productId);
@@ -790,7 +845,7 @@ function ReorderPage() {
       setItemToDelete(null);
     }
   };
-  
+
   const handleEditPO = (po: PurchaseOrderRecord) => {
     try {
       localStorage.setItem("minimark_active_editing_po_id", po.id);
@@ -802,7 +857,7 @@ function ReorderPage() {
     setEditingPOCreatedAt(po.createdAt);
     setEditingPOStatus(po.status);
     setSupplierNameInput(po.supplierName || "");
-    
+
     const loadedItems: OrderCartItem[] = po.items.map((i) => {
       const matchedProd = products.find((p) => p.id === i.productId);
       const matchedUnit = units.find((u) => u.name === i.unitName);
@@ -817,14 +872,14 @@ function ReorderPage() {
         note: i.note,
       };
     });
-    
+
     setOrderList(loadedItems);
     setHasRestoredDraft(false);
     setLastAutoSavedAt(new Date());
     setActiveTab("create_po");
     toast.info(`กำลังแก้ไขใบสั่งซื้อ ${po.orderNumber}`);
   };
-  
+
   const handleCancelEditPO = () => {
     try {
       localStorage.removeItem("minimark_active_editing_po_id");
@@ -843,20 +898,21 @@ function ReorderPage() {
     }
     toast.info("ยกเลิกการแก้ไขใบสั่งซื้อแล้ว");
   };
-  
+
   // Filter available products for cascading selection in Add Item Modal
   const availableProductsForAdd = products.filter((p) => {
     if (p.isActive === false) return false;
     const matchesZone = addZoneId === "all" || p.zoneId === addZoneId;
     const matchesCat = addCatId === "all" || p.categoryId === addCatId;
     const query = addProductSearch.toLowerCase().trim();
-    const matchesSearch = !query ||
+    const matchesSearch =
+      !query ||
       p.name.toLowerCase().includes(query) ||
       p.barcode.toLowerCase().includes(query) ||
       (p.sku && p.sku.toLowerCase().includes(query));
     return matchesZone && matchesCat && matchesSearch;
   });
-  
+
   const handleOpenAddModal = () => {
     setAddZoneId("all");
     setAddCatId("all");
@@ -879,7 +935,7 @@ function ReorderPage() {
     }
     setAddModalOpen(true);
   };
-  
+
   const handleOpenEditItemModal = (item: FullOrderItem) => {
     const p = item.product;
     setUpdateMasterCostPrice(true);
@@ -905,7 +961,7 @@ function ReorderPage() {
     });
     setEditItemModalOpen(true);
   };
-  
+
   const handleSaveEditItem = () => {
     if (!editingCartItem) return;
     const qty = Math.max(1, Number(editingCartItem.quantity) || 1);
@@ -913,7 +969,7 @@ function ReorderPage() {
     const name = editingCartItem.productName.trim() || "สินค้า";
     const barcode = editingCartItem.barcode.trim() || generateStoreBarcode("EAN_13").barcode;
     const note = editingCartItem.note.trim();
-    
+
     // 1. Update in current order list
     setOrderList((prev) =>
       prev.map((item) => {
@@ -932,7 +988,7 @@ function ReorderPage() {
         return item;
       }),
     );
-    
+
     // 2. Always update the product in MasterStore as well
     MasterStore.updateProduct(editingCartItem.productId, {
       name,
@@ -947,17 +1003,18 @@ function ReorderPage() {
       zoneId: editingCartItem.zoneId || undefined,
     });
     setProducts(MasterStore.getProducts());
-    
+
     toast.success(`บันทึกข้อมูลสินค้า "${name}" และอัปเดตใบสั่งซื้อเรียบร้อยแล้ว`);
     setEditItemModalOpen(false);
   };
-  
+
   const handleOpenExportCurrentOrder = () => {
     if (fullItems.length === 0) return;
     const payload: ExportOrderPayload = {
       orderNumber: editingPOId ? editingPONumber : "DRAFT",
-      createdAt: editingPOId ?
-        editingPOCreatedAt : new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH"),
+      createdAt: editingPOId
+        ? editingPOCreatedAt
+        : new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH"),
       storeName: currentStoreName,
       supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
       items: fullItems.map((f) => ({
@@ -977,7 +1034,7 @@ function ReorderPage() {
     setExportPayload(payload);
     setExportModalOpen(true);
   };
-  
+
   const handleOpenExportPO = (po: PurchaseOrderRecord) => {
     const payload: ExportOrderPayload = {
       orderNumber: po.orderNumber,
@@ -1004,34 +1061,34 @@ function ReorderPage() {
     setExportPayload(payload);
     setExportModalOpen(true);
   };
-  
+
   const handleAddManualItem = () => {
     const prodId = selectedProdId || availableProductsForAdd[0]?.id;
     if (!prodId) return;
     const prod = products.find((p) => p.id === prodId);
     if (!prod) return;
-    
+
     const qty = Math.max(1, Number(manualQty) || 1);
     const uId = manualUnitId || prod.unitId;
     const cost =
-      manualCostPrice !== undefined && manualCostPrice >= 0 ?
-      Number(manualCostPrice) :
-      prod.costPrice;
+      manualCostPrice !== undefined && manualCostPrice >= 0
+        ? Number(manualCostPrice)
+        : prod.costPrice;
     const note = manualNote.trim();
-    
+
     setOrderList((prev) => {
       const existing = prev.find((i) => i.productId === prodId);
       if (existing) {
         return prev.map((i) =>
-          i.productId === prodId ?
-          {
-            ...i,
-            quantity: i.quantity + qty,
-            unitId: uId,
-            costPrice: cost,
-            note: note || i.note,
-          } :
-          i,
+          i.productId === prodId
+            ? {
+                ...i,
+                quantity: i.quantity + qty,
+                unitId: uId,
+                costPrice: cost,
+                note: note || i.note,
+              }
+            : i,
         );
       }
       return [
@@ -1045,11 +1102,11 @@ function ReorderPage() {
         },
       ];
     });
-    
+
     toast.success(`เพิ่ม "${prod.name}" (${qty} ${getUnitName(uId)}) ลงในใบสั่งซื้อแล้ว`);
     setAddModalOpen(false);
   };
-  
+
   const handleApplyForecastToCart = () => {
     const calculatedItems = forecastList.map((f) => ({
       productId: f.product.id,
@@ -1064,7 +1121,7 @@ function ReorderPage() {
       text: `นำเข้าจำนวนสั่งซื้อที่คำนวณตามสูตร (${calculatedItems.length} รายการ, รวม ${forecastTotalQuantity} ชิ้น) เข้าสู่ใบสั่งซื้อเรียบร้อยแล้ว`,
     });
   };
-  
+
   const handleApplySingleForecast = (item: (typeof forecastList)[0]) => {
     setOrderList((prev) => {
       const existing = prev.find((i) => i.productId === item.product.id);
@@ -1084,16 +1141,16 @@ function ReorderPage() {
       ];
     });
   };
-  
+
   // Convert orderList to complete items with product data
   const fullItems: FullOrderItem[] = orderList.map((item): FullOrderItem => {
     const product = products.find((p) => p.id === item.productId);
     const effectiveUnitId = item.unitId || product?.unitId || units[0]?.id || "unit-piece";
     const effectiveUnitName = item.unitName || getUnitName(effectiveUnitId);
     const effectiveCostPrice =
-      item.costPrice !== undefined && item.costPrice >= 0 ?
-      item.costPrice :
-      (product?.costPrice ?? 0);
+      item.costPrice !== undefined && item.costPrice >= 0
+        ? item.costPrice
+        : (product?.costPrice ?? 0);
     const effectiveProduct: ProductItem = product || {
       id: item.productId,
       sku: item.productId,
@@ -1113,7 +1170,7 @@ function ReorderPage() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    
+
     const zoneName = zones.find((z) => z.id === effectiveProduct.zoneId)?.name;
     return {
       product: effectiveProduct,
@@ -1131,17 +1188,17 @@ function ReorderPage() {
       ...(zoneName !== undefined ? { zoneName } : {}),
     };
   });
-  
+
   const totalCost = fullItems.reduce((acc, curr) => acc + (curr.priceEstimate || 0), 0);
   const totalQuantity = fullItems.reduce((acc, curr) => acc + curr.quantity, 0);
-  
+
   // Phase 6 Action: Save or Update Purchase Order Record
   const handleSavePO = (
     status: "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED" = "ORDERED",
     switchTab: boolean = true,
   ) => {
     if (fullItems.length === 0) return undefined;
-    
+
     // If currently editing an existing PO, update it!
     if (editingPOId) {
       const updated = MasterStore.updatePurchaseOrder(editingPOId, {
@@ -1160,10 +1217,12 @@ function ReorderPage() {
         totalQuantity,
         totalCost,
         status,
-        sentViaLineAt: status === "ORDERED" ?
-          new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH") : undefined,
+        sentViaLineAt:
+          status === "ORDERED"
+            ? new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH")
+            : undefined,
       });
-      
+
       if (updated) {
         try {
           localStorage.removeItem("minimark_active_editing_po_id");
@@ -1190,13 +1249,13 @@ function ReorderPage() {
         return updated;
       }
     }
-    
+
     try {
       localStorage.removeItem("minimark_active_editing_po_id");
     } catch {
       /* ignore */
     }
-    
+
     const poRecord = MasterStore.savePurchaseOrder({
       supplierName: supplierNameInput.trim() || undefined,
       items: fullItems.map((f) => ({
@@ -1213,10 +1272,12 @@ function ReorderPage() {
       totalQuantity,
       totalCost,
       status,
-      sentViaLineAt: status === "ORDERED" ?
-        new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH") : undefined,
+      sentViaLineAt:
+        status === "ORDERED"
+          ? new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH")
+          : undefined,
     });
-    
+
     setPurchaseOrders(MasterStore.getPurchaseOrders());
     MasterStore.clearDraftPurchaseOrder();
     setOrderList([]);
@@ -1233,7 +1294,7 @@ function ReorderPage() {
     }
     return poRecord;
   };
-  
+
   // Phase 6 Action: Receive Purchase Order into Stock
   const handleReceivePO = (po: PurchaseOrderRecord) => {
     if (confirm(`ต้องการตรวจรับสินค้าตามใบสั่งซื้อ ${po.orderNumber} เข้าสู่สต็อกใช่หรือไม่?`)) {
@@ -1255,7 +1316,7 @@ function ReorderPage() {
       }
     }
   };
-  
+
   // Phase 6 Action: Cancel PO
   const handleCancelPO = (po: PurchaseOrderRecord) => {
     if (confirm(`ต้องการยกเลิกใบสั่งซื้อ ${po.orderNumber} ใช่หรือไม่?`)) {
@@ -1267,7 +1328,7 @@ function ReorderPage() {
       reloadData();
     }
   };
-  
+
   // Phase 6 Action: Delete PO
   const handleDeletePO = (po: PurchaseOrderRecord) => {
     if (confirm(`ต้องการลบใบสั่งซื้อ ${po.orderNumber} ออกจากระบบถาวรใช่หรือไม่?`)) {
@@ -1279,13 +1340,13 @@ function ReorderPage() {
       reloadData();
     }
   };
-  
+
   // View PO Detail Modal
   const handleOpenPODetail = (po: PurchaseOrderRecord) => {
     setSelectedPO(po);
     setDetailModalOpen(true);
   };
-  
+
   // Print A4 Document Handler
   const handlePrintPODocument = () => {
     if (selectedPO) {
@@ -1303,81 +1364,82 @@ function ReorderPage() {
     }
     window.print();
   };
-  
+
   const generateCurrentModalPng = useCallback(
-    async (overrideType ? : "PURCHASE_ORDER" | "STOCK_ALERT", overrideStyle ? : SlipDesignStyle) => {
-        const type = overrideType || pushMessageType;
-        const chosenStyle = overrideStyle || slipDesignStyle;
-        setIsGeneratingModalPng(true);
-        try {
-          if (type === "STOCK_ALERT") {
-            const alertPayload = allReorderNeeded.map((product) => {
-              const zoneName = zones.find((zone) => zone.id === product.zoneId)?.name;
-              return {
-                name: product.name,
-                stock: product.stock,
-                minStock: product.minStock,
-                unitName: getUnitName(product.unitId),
-                status: (product.stock <= 0 ? "OUT_OF_STOCK" : "LOW_STOCK") as "OUT_OF_STOCK" | "LOW_STOCK",
-                categoryName: getCatName(product.categoryId),
-                zoneName,
-              };
-            });
-            const res = await generateStockAlertSlipImage({
-              storeName: currentStoreName,
-              alertItems: alertPayload,
-              style: chosenStyle,
-            });
-            setModalPngData({ dataUrl: res.dataUrl, blob: res.blob });
-            return res;
-          } else {
-            const orderDateStr = formatPurchaseOrderSentAt();
-            const res = await generatePurchaseOrderSlipImage({
-              orderNumber: editingPOId ? editingPONumber : "DRAFT",
-              createdAt: orderDateStr,
-              storeName: currentStoreName,
-              supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
-              style: chosenStyle,
-              items: fullItems.map((f) => ({
-                name: f.name,
-                quantity: f.quantity,
-                unitName: f.unitName,
-                costPrice: f.costPrice,
-                total: f.priceEstimate,
-                barcode: f.barcode,
-                zoneName: f.zoneName,
-                categoryName: f.categoryName,
-                note: f.note,
-              })),
-              totalQuantity,
-              totalCost,
-            });
-            setModalPngData({ dataUrl: res.dataUrl, blob: res.blob });
-            return res;
-          }
-        } catch (err) {
-          console.error("Failed to generate modal PNG slip:", err);
-          toast.error("สร้างรูปภาพสลิปไม่สำเร็จ");
-          return null;
-        } finally {
-          setIsGeneratingModalPng(false);
+    async (overrideType?: "PURCHASE_ORDER" | "STOCK_ALERT", overrideStyle?: SlipDesignStyle) => {
+      const type = overrideType || pushMessageType;
+      const chosenStyle = overrideStyle || slipDesignStyle;
+      setIsGeneratingModalPng(true);
+      try {
+        if (type === "STOCK_ALERT") {
+          const alertPayload = allReorderNeeded.map((product) => {
+            const zoneName = zones.find((zone) => zone.id === product.zoneId)?.name;
+            return {
+              name: product.name,
+              stock: product.stock,
+              minStock: product.minStock,
+              unitName: getUnitName(product.unitId),
+              status: (product.stock <= 0 ? "OUT_OF_STOCK" : "LOW_STOCK") as
+                "OUT_OF_STOCK" | "LOW_STOCK",
+              categoryName: getCatName(product.categoryId),
+              zoneName,
+            };
+          });
+          const res = await generateStockAlertSlipImage({
+            storeName: currentStoreName,
+            alertItems: alertPayload,
+            style: chosenStyle,
+          });
+          setModalPngData({ dataUrl: res.dataUrl, blob: res.blob });
+          return res;
+        } else {
+          const orderDateStr = formatPurchaseOrderSentAt();
+          const res = await generatePurchaseOrderSlipImage({
+            orderNumber: editingPOId ? editingPONumber : "DRAFT",
+            createdAt: orderDateStr,
+            storeName: currentStoreName,
+            supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
+            style: chosenStyle,
+            items: fullItems.map((f) => ({
+              name: f.name,
+              quantity: f.quantity,
+              unitName: f.unitName,
+              costPrice: f.costPrice,
+              total: f.priceEstimate,
+              barcode: f.barcode,
+              zoneName: f.zoneName,
+              categoryName: f.categoryName,
+              note: f.note,
+            })),
+            totalQuantity,
+            totalCost,
+          });
+          setModalPngData({ dataUrl: res.dataUrl, blob: res.blob });
+          return res;
         }
-      },
-      [
-        pushMessageType,
-        slipDesignStyle,
-        allReorderNeeded,
-        zones,
-        currentStoreName,
-        editingPOId,
-        editingPONumber,
-        supplierNameInput,
-        fullItems,
-        totalQuantity,
-        totalCost,
-      ],
+      } catch (err) {
+        console.error("Failed to generate modal PNG slip:", err);
+        toast.error("สร้างรูปภาพสลิปไม่สำเร็จ");
+        return null;
+      } finally {
+        setIsGeneratingModalPng(false);
+      }
+    },
+    [
+      pushMessageType,
+      slipDesignStyle,
+      allReorderNeeded,
+      zones,
+      currentStoreName,
+      editingPOId,
+      editingPONumber,
+      supplierNameInput,
+      fullItems,
+      totalQuantity,
+      totalCost,
+    ],
   );
-  
+
   // Send Order to LINE - opens recipient & friend selection modal
   const handleSendOrderToLine = (
     target: "group" | "personal",
@@ -1421,7 +1483,7 @@ function ReorderPage() {
     }
     setPushModalOpen(true);
   };
-  
+
   // Send Stock Alert to LINE - opens recipient & friend selection modal
   const handleSendStockAlertToLine = (
     target: "group" | "personal",
@@ -1465,7 +1527,7 @@ function ReorderPage() {
     }
     setPushModalOpen(true);
   };
-  
+
   // Flex Preview Handlers with Grouping & Container Type (Carousel vs Bubble) Support
   const currentOrderFlexOptions = (
     groupBy = flexGroupBy,
@@ -1474,7 +1536,8 @@ function ReorderPage() {
   ) => ({
     groupBy,
     showGroupHeaders: showHeaders,
-    includeZone: groupBy === "zone" ||
+    includeZone:
+      groupBy === "zone" ||
       groupBy === "zone_no_header" ||
       groupBy === "zone_then_category" ||
       groupBy === "category_then_zone",
@@ -1482,17 +1545,17 @@ function ReorderPage() {
     supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
     containerType,
   });
-  
+
   const buildCurrentOrderShareText = (
-      dateStr: string,
-      groupBy = flexGroupBy,
-      showHeaders = flexShowHeader,
-    ) =>
+    dateStr: string,
+    groupBy = flexGroupBy,
+    showHeaders = flexShowHeader,
+  ) =>
     `${formatOrderPlainText(fullItems, dateStr, currentStoreName, groupBy, showHeaders)}\nเลขที่ใบสั่งซื้อ: ${editingPOId ? editingPONumber : "DRAFT"}\nซัพพลายเออร์: ${supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป"}`;
-  
+
   const handlePreviewOrderFlex = (
-    overrideGroupBy ? : FlexItemGroupBy,
-    overrideContainerType ? : FlexContainerType,
+    overrideGroupBy?: FlexItemGroupBy,
+    overrideContainerType?: FlexContainerType,
   ) => {
     if (fullItems.length === 0) return;
     const gb = overrideGroupBy || flexGroupBy;
@@ -1507,9 +1570,9 @@ function ReorderPage() {
       );
       setFlexPreviewData(flexMsg);
       setFlexPreviewTitle(
-        ct === "carousel" ?
-        "ตัวอย่าง LINE Flex แบบ 1. Carousel (สไลด์หลายการ์ด)" :
-        "ตัวอย่าง LINE Flex แบบ 2. Bubble (การ์ดยาวเดี่ยว)",
+        ct === "carousel"
+          ? "ตัวอย่าง LINE Flex แบบ 1. Carousel (สไลด์หลายการ์ด)"
+          : "ตัวอย่าง LINE Flex แบบ 2. Bubble (การ์ดยาวเดี่ยว)",
       );
       setFlexPreviewSource({ type: "order", orderItems: fullItems });
       setFlexPreviewOpen(true);
@@ -1517,10 +1580,10 @@ function ReorderPage() {
       toast.error(error instanceof Error ? error.message : String(error));
     }
   };
-  
+
   const handlePreviewStockAlertFlex = (
-    overrideGroupBy ? : FlexItemGroupBy,
-    overrideContainerType ? : FlexContainerType,
+    overrideGroupBy?: FlexItemGroupBy,
+    overrideContainerType?: FlexContainerType,
   ) => {
     if (allReorderNeeded.length === 0) return;
     const gb = overrideGroupBy || flexGroupBy;
@@ -1534,18 +1597,18 @@ function ReorderPage() {
     });
     setFlexPreviewData(flexMsg);
     setFlexPreviewTitle(
-      ct === "carousel" ?
-      `แจ้งเตือนสต็อกแบบ Carousel (${allReorderNeeded.length} รายการ)` :
-      `แจ้งเตือนสต็อกแบบ Bubble (${allReorderNeeded.length} รายการ)`,
+      ct === "carousel"
+        ? `แจ้งเตือนสต็อกแบบ Carousel (${allReorderNeeded.length} รายการ)`
+        : `แจ้งเตือนสต็อกแบบ Bubble (${allReorderNeeded.length} รายการ)`,
     );
     setFlexPreviewSource({ type: "alert", alertItems: alertPayload });
     setFlexPreviewOpen(true);
   };
-  
+
   const handlePreviewPOHistoryFlex = (
     po: PurchaseOrderRecord,
-    overrideGroupBy ? : FlexItemGroupBy,
-    overrideContainerType ? : FlexContainerType,
+    overrideGroupBy?: FlexItemGroupBy,
+    overrideContainerType?: FlexContainerType,
   ) => {
     try {
       const ct = overrideContainerType || flexContainerType;
@@ -1559,9 +1622,9 @@ function ReorderPage() {
         }),
       );
       setFlexPreviewTitle(
-        ct === "carousel" ?
-        `ใบสั่งซื้อ ${po.orderNumber} (แบบ 1. Carousel)` :
-        `ใบสั่งซื้อ ${po.orderNumber} (แบบ 2. Bubble)`,
+        ct === "carousel"
+          ? `ใบสั่งซื้อ ${po.orderNumber} (แบบ 1. Carousel)`
+          : `ใบสั่งซื้อ ${po.orderNumber} (แบบ 2. Bubble)`,
       );
       setFlexPreviewSource({ type: "po", poRecord: po });
       setFlexPreviewOpen(true);
@@ -1569,25 +1632,25 @@ function ReorderPage() {
       toast.error(error instanceof Error ? error.message : String(error));
     }
   };
-  
-  const handleUpdateFlexGrouping = (newGrouping: FlexItemGroupBy, overrideShowHeader ? : boolean) => {
+
+  const handleUpdateFlexGrouping = (newGrouping: FlexItemGroupBy, overrideShowHeader?: boolean) => {
     const nextShowHeader =
-      overrideShowHeader !== undefined ?
-      overrideShowHeader :
-      newGrouping === "category_no_header" ||
-      newGrouping === "zone_no_header" ||
-      newGrouping === "none" ?
-      false :
-      newGrouping === "category" ||
-      newGrouping === "zone" ||
-      newGrouping === "zone_then_category" ?
-      true :
-      flexShowHeader;
-    
+      overrideShowHeader !== undefined
+        ? overrideShowHeader
+        : newGrouping === "category_no_header" ||
+            newGrouping === "zone_no_header" ||
+            newGrouping === "none"
+          ? false
+          : newGrouping === "category" ||
+              newGrouping === "zone" ||
+              newGrouping === "zone_then_category"
+            ? true
+            : flexShowHeader;
+
     setFlexGroupBy(newGrouping);
     setFlexShowHeader(nextShowHeader);
     if (!flexPreviewSource) return;
-    
+
     if (flexPreviewSource.type === "order" && flexPreviewSource.orderItems) {
       const orderDateStr = formatPurchaseOrderSentAt();
       const flexMsg = formatDailyOrderFlexMessage(
@@ -1611,7 +1674,8 @@ function ReorderPage() {
         formatDailyOrderFlexMessage(getPurchaseOrderFlexItems(po), po.createdAt, currentStoreName, {
           groupBy: newGrouping,
           showGroupHeaders: nextShowHeader,
-          includeZone: newGrouping === "zone" ||
+          includeZone:
+            newGrouping === "zone" ||
             newGrouping === "zone_no_header" ||
             newGrouping === "zone_then_category" ||
             newGrouping === "category_then_zone",
@@ -1622,7 +1686,7 @@ function ReorderPage() {
       );
     }
   };
-  
+
   const handleUpdateContainerType = (newContainerType: FlexContainerType) => {
     setFlexContainerType(newContainerType);
     try {
@@ -1630,9 +1694,9 @@ function ReorderPage() {
     } catch {
       /* ignore */
     }
-    
+
     if (!flexPreviewSource) return;
-    
+
     if (flexPreviewSource.type === "order" && flexPreviewSource.orderItems) {
       const orderDateStr = formatPurchaseOrderSentAt();
       const flexMsg = formatDailyOrderFlexMessage(
@@ -1643,9 +1707,9 @@ function ReorderPage() {
       );
       setFlexPreviewData(flexMsg);
       setFlexPreviewTitle(
-        newContainerType === "carousel" ?
-        "ตัวอย่าง LINE Flex แบบ 1. Carousel (สไลด์หลายการ์ด)" :
-        "ตัวอย่าง LINE Flex แบบ 2. Bubble (การ์ดยาวเดี่ยว)",
+        newContainerType === "carousel"
+          ? "ตัวอย่าง LINE Flex แบบ 1. Carousel (สไลด์หลายการ์ด)"
+          : "ตัวอย่าง LINE Flex แบบ 2. Bubble (การ์ดยาวเดี่ยว)",
       );
     } else if (flexPreviewSource.type === "alert" && flexPreviewSource.alertItems) {
       const flexMsg = createStockAlertFlex(flexPreviewSource.alertItems, {
@@ -1656,9 +1720,9 @@ function ReorderPage() {
       });
       setFlexPreviewData(flexMsg);
       setFlexPreviewTitle(
-        newContainerType === "carousel" ?
-        `แจ้งเตือนสต็อกแบบ Carousel (${allReorderNeeded.length} รายการ)` :
-        `แจ้งเตือนสต็อกแบบ Bubble (${allReorderNeeded.length} รายการ)`,
+        newContainerType === "carousel"
+          ? `แจ้งเตือนสต็อกแบบ Carousel (${allReorderNeeded.length} รายการ)`
+          : `แจ้งเตือนสต็อกแบบ Bubble (${allReorderNeeded.length} รายการ)`,
       );
     } else if (flexPreviewSource.type === "po" && flexPreviewSource.poRecord) {
       const po = flexPreviewSource.poRecord;
@@ -1672,13 +1736,13 @@ function ReorderPage() {
         }),
       );
       setFlexPreviewTitle(
-        newContainerType === "carousel" ?
-        `ใบสั่งซื้อ ${po.orderNumber} (แบบ 1. Carousel)` :
-        `ใบสั่งซื้อ ${po.orderNumber} (แบบ 2. Bubble)`,
+        newContainerType === "carousel"
+          ? `ใบสั่งซื้อ ${po.orderNumber} (แบบ 1. Carousel)`
+          : `ใบสั่งซื้อ ${po.orderNumber} (แบบ 2. Bubble)`,
       );
     }
   };
-  
+
   // Add new friend / contact to local store
   const handleAddNewContact = () => {
     if (!newContactName.trim() || !newContactId.trim()) return;
@@ -1702,8 +1766,8 @@ function ReorderPage() {
       text: `เพิ่มรายชื่อ "${newFollower.displayName}" เรียบร้อยแล้ว`,
     });
   };
-  
-  const handleSaveLiffIdAndOpenPicker = (e ? : React.FormEvent) => {
+
+  const handleSaveLiffIdAndOpenPicker = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const id = liffIdInputValue.trim();
     if (!id) {
@@ -1717,9 +1781,9 @@ function ReorderPage() {
       handleOpenLiffTargetPicker(pushMessageType);
     }, 150);
   };
-  
+
   // Open Native LINE Contact Picker (shareTargetPicker)
-  const handleOpenLiffTargetPicker = async (overrideType ? : "PURCHASE_ORDER" | "STOCK_ALERT") => {
+  const handleOpenLiffTargetPicker = async (overrideType?: "PURCHASE_ORDER" | "STOCK_ALERT") => {
     const msgType = overrideType || pushMessageType;
     setIsSending(true);
     setStatusMessage(null);
@@ -1736,14 +1800,14 @@ function ReorderPage() {
           // ignore
         }
       }
-      
+
       if (!liffId) {
         setIsSending(false);
         setLiffIdInputValue("");
         setLiffIdModalOpen(true);
         return;
       }
-      
+
       let flexMsg: unknown;
       let plainText = "";
       if (msgType === "STOCK_ALERT") {
@@ -1770,31 +1834,31 @@ function ReorderPage() {
         );
         plainText = buildCurrentOrderShareText(orderDateStr);
       }
-      
+
       let pngBase64 = modalPngData?.dataUrl;
       if ((pushMessageFormat === "IMAGE_PNG" || pushMessageFormat === "BOTH") && !pngBase64) {
         const gen = await generateCurrentModalPng(msgType);
         pngBase64 = gen?.dataUrl;
       }
-      
+
       // Directly trigger Native LINE LIFF shareTargetPicker with Flex Message and/or PNG Image
       const res = await shareFlexViaLiffPicker(flexMsg, {
         altSummary: plainText,
         format: pushMessageFormat,
         imageBase64: pngBase64,
       });
-      
+
       if (res.success) {
         playScanSuccessSound({ force: true });
         if (msgType === "PURCHASE_ORDER") {
           handleSavePO("ORDERED", false);
         }
         const formatLabel =
-          pushMessageFormat === "IMAGE_PNG" ?
-          "รูปภาพ PNG" :
-          pushMessageFormat === "BOTH" ?
-          "Flex Message และรูปภาพ PNG" :
-          "Flex Message";
+          pushMessageFormat === "IMAGE_PNG"
+            ? "รูปภาพ PNG"
+            : pushMessageFormat === "BOTH"
+              ? "Flex Message และรูปภาพ PNG"
+              : "Flex Message";
         setStatusMessage({
           type: "success",
           text: `ส่ง LINE ${formatLabel} ไปยังห้องแชทเพื่อนที่เลือกสำเร็จเรียบร้อย`,
@@ -1804,12 +1868,44 @@ function ReorderPage() {
       } else if (res.needLiffId) {
         setLiffIdInputValue("");
         setLiffIdModalOpen(true);
-      } else {
+      } else if (res.needLogin) {
+        const isMobile =
+          typeof navigator !== "undefined" &&
+          /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+        if ((res.isLineBrowser || isMobile || res.isMobileDevice) && res.liffUrl) {
+          toast.info("กำลังเปิดแอป LINE เพื่อเลือกห้องแชทเพื่อน...");
+          const targetUrl = res.liffUrl.includes("?")
+            ? `${res.liffUrl}&action=open_picker`
+            : `${res.liffUrl}?action=open_picker`;
+          window.location.href = targetUrl;
+          return;
+        }
+        setPushModalOpen(false);
+        setLineLoginPromptOpen(true);
         setStatusMessage({
           type: "error",
           text: res.message,
         });
-        toast.error(res.message);
+        toast.info("กรุณาเข้าสู่ระบบ LINE เพื่อเปิดรายชื่อเพื่อน");
+      } else {
+        const isCancel =
+          res.message &&
+          (res.message.includes("ยกเลิก") || res.message.toLowerCase().includes("cancel"));
+        if (isCancel) {
+          toast.info("ยกเลิกการเลือกห้องแชทใน LINE");
+        } else {
+          setStatusMessage({
+            type: "error",
+            text: res.message,
+          });
+          toast.error(res.message, {
+            action: {
+              label: "แชร์ผ่านแอป LINE",
+              onClick: () => handleOpenWebShareIntent(),
+            },
+            duration: 8000,
+          });
+        }
       }
     } catch (err) {
       setStatusMessage({
@@ -1820,7 +1916,7 @@ function ReorderPage() {
       setIsSending(false);
     }
   };
-  
+
   // Open Web Share Intent (Text only fallback due to browser URL limit)
   const handleOpenWebShareIntent = () => {
     let plainText = "";
@@ -1834,7 +1930,7 @@ function ReorderPage() {
       const orderDateStr = new Date().toLocaleDateString("th-TH");
       plainText = buildCurrentOrderShareText(orderDateStr);
     }
-    
+
     const url = `https://line.me/R/share?text=${encodeURIComponent(plainText)}`;
     const link = document.createElement("a");
     link.href = url;
@@ -1843,7 +1939,7 @@ function ReorderPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    
+
     if (pushMessageType === "PURCHASE_ORDER") {
       handleSavePO("ORDERED");
     }
@@ -1853,7 +1949,7 @@ function ReorderPage() {
     });
     setPushModalOpen(false);
   };
-  
+
   // Send via Server Messaging API or Interactive Delivery (Flex Message / PNG Image / Both)
   const handleSendServerPush = async () => {
     if (!isBroadcastMode && !targetIdInput.trim()) {
@@ -1865,24 +1961,24 @@ function ReorderPage() {
     }
     setIsSending(true);
     setStatusMessage(null);
-    
+
     const tokenToUse =
       customChannelToken.trim() ||
-      (typeof window !== "undefined" ?
-        localStorage.getItem("minimark_line_channel_token") || "" :
-        "");
-    
+      (typeof window !== "undefined"
+        ? localStorage.getItem("minimark_line_channel_token") || ""
+        : "");
+
     if (customChannelToken.trim() && typeof window !== "undefined") {
       localStorage.setItem("minimark_line_channel_token", customChannelToken.trim());
     }
-    
+
     const targetObj = followers.find((f) => f.userId === targetIdInput.trim());
     const targetName = targetObj ? targetObj.displayName : targetIdInput;
-    
+
     // Prepare image if needed
     let pngBase64 = modalPngData?.dataUrl;
     let pngUrl: string | undefined;
-    
+
     if (pushMessageFormat === "IMAGE_PNG" || pushMessageFormat === "BOTH") {
       if (!pngBase64) {
         const gen = await generateCurrentModalPng(pushMessageType);
@@ -1899,14 +1995,14 @@ function ReorderPage() {
         }
       }
     }
-    
+
     const formatLabel =
-      pushMessageFormat === "IMAGE_PNG" ?
-      "รูปภาพ PNG" :
-      pushMessageFormat === "BOTH" ?
-      "Flex Message และรูปภาพ PNG" :
-      "Flex Message";
-    
+      pushMessageFormat === "IMAGE_PNG"
+        ? "รูปภาพ PNG"
+        : pushMessageFormat === "BOTH"
+          ? "Flex Message และรูปภาพ PNG"
+          : "Flex Message";
+
     try {
       if (pushMessageType === "STOCK_ALERT") {
         const alertPayload = createStockAlertItems();
@@ -1915,7 +2011,7 @@ function ReorderPage() {
           groupBy: flexGroupBy,
         });
         const plainText = `⚠️ แจ้งเตือนสินค้าต้องสั่งซื้อ ${allReorderNeeded.length} รายการ (${currentStoreName})`;
-        
+
         if (tokenToUse || serverConfig?.hasAccessToken) {
           const res = await sendWith3TierFallback({
             summary: plainText,
@@ -1928,13 +2024,14 @@ function ReorderPage() {
             imageBase64: pngBase64,
             imageUrl: pngUrl,
           });
-          
+
           if (res.success) {
             playScanSuccessSound({ force: true });
             setStatusMessage({
               type: "success",
-              text: isBroadcastMode ?
-                `บรอดแคสต์ ${formatLabel} แจ้งเตือนสต็อกไปยังทุกคนสำเร็จ` : `ส่ง ${formatLabel} แจ้งเตือนสต็อกไปยัง "${targetName}" สำเร็จเรียบร้อย`,
+              text: isBroadcastMode
+                ? `บรอดแคสต์ ${formatLabel} แจ้งเตือนสต็อกไปยังทุกคนสำเร็จ`
+                : `ส่ง ${formatLabel} แจ้งเตือนสต็อกไปยัง "${targetName}" สำเร็จเรียบร้อย`,
             });
             toast.success(`ส่ง ${formatLabel} แจ้งเตือนไปยัง ${targetName} สำเร็จ`);
             setPushModalOpen(false);
@@ -1948,13 +2045,14 @@ function ReorderPage() {
             return;
           }
         }
-        
+
         // Live delivery confirmation (เมื่อไม่ได้ตั้งค่า Token ไว้)
         playScanSuccessSound({ force: true });
         setStatusMessage({
           type: "success",
-          text: isBroadcastMode ?
-            `บรอดแคสต์ ${formatLabel} แจ้งเตือนสต็อกไปยังทุกคนเรียบร้อยแล้ว` : `ส่ง ${formatLabel} แจ้งเตือนสต็อกไปยัง "${targetName}" เรียบร้อยแล้ว`,
+          text: isBroadcastMode
+            ? `บรอดแคสต์ ${formatLabel} แจ้งเตือนสต็อกไปยังทุกคนเรียบร้อยแล้ว`
+            : `ส่ง ${formatLabel} แจ้งเตือนสต็อกไปยัง "${targetName}" เรียบร้อยแล้ว`,
         });
         toast.success(`ส่ง ${formatLabel} แจ้งเตือนสต็อกให้ ${targetName} สำเร็จ`);
         setPushModalOpen(false);
@@ -1970,7 +2068,7 @@ function ReorderPage() {
           currentOrderFlexOptions(),
         );
         const plainText = buildCurrentOrderShareText(orderDateStr);
-        
+
         if (tokenToUse || serverConfig?.hasAccessToken) {
           const res = await sendWith3TierFallback({
             summary: plainText,
@@ -1983,14 +2081,15 @@ function ReorderPage() {
             imageBase64: pngBase64,
             imageUrl: pngUrl,
           });
-          
+
           if (res.success) {
             playScanSuccessSound({ force: true });
             handleSavePO("ORDERED");
             setStatusMessage({
               type: "success",
-              text: isBroadcastMode ?
-                `บรอดแคสต์ ${formatLabel} ใบสั่งซื้อสินค้าไปยังทุกคนสำเร็จ และบันทึกสถานะเรียบร้อย` : `ส่ง ${formatLabel} ใบสั่งซื้อสินค้าไปยัง "${targetName}" สำเร็จ และบันทึกสถานะเรียบร้อย`,
+              text: isBroadcastMode
+                ? `บรอดแคสต์ ${formatLabel} ใบสั่งซื้อสินค้าไปยังทุกคนสำเร็จ และบันทึกสถานะเรียบร้อย`
+                : `ส่ง ${formatLabel} ใบสั่งซื้อสินค้าไปยัง "${targetName}" สำเร็จ และบันทึกสถานะเรียบร้อย`,
             });
             toast.success(`ส่ง ${formatLabel} ใบสั่งซื้อให้ ${targetName} เรียบร้อย`);
             setPushModalOpen(false);
@@ -2004,14 +2103,15 @@ function ReorderPage() {
             return;
           }
         }
-        
+
         // Live delivery confirmation (เมื่อไม่ได้ตั้งค่า Token ไว้)
         playScanSuccessSound({ force: true });
         handleSavePO("ORDERED");
         setStatusMessage({
           type: "success",
-          text: isBroadcastMode ?
-            `บรอดแคสต์ ${formatLabel} ใบสั่งซื้อสินค้าไปยังทุกคนเรียบร้อย และปรับสถานะเป็น "สั่งซื้อแล้ว"` : `ส่ง ${formatLabel} ใบสั่งซื้อสินค้า (${fullItems.length} รายการ, ฿${totalCost.toLocaleString()}) ไปยัง "${targetName}" สำเร็จ และปรับสถานะเป็น "สั่งซื้อแล้ว"`,
+          text: isBroadcastMode
+            ? `บรอดแคสต์ ${formatLabel} ใบสั่งซื้อสินค้าไปยังทุกคนเรียบร้อย และปรับสถานะเป็น "สั่งซื้อแล้ว"`
+            : `ส่ง ${formatLabel} ใบสั่งซื้อสินค้า (${fullItems.length} รายการ, ฿${totalCost.toLocaleString()}) ไปยัง "${targetName}" สำเร็จ และปรับสถานะเป็น "สั่งซื้อแล้ว"`,
         });
         toast.success(`ส่ง ${formatLabel} ใบสั่งซื้อให้ ${targetName} เรียบร้อย`);
         setPushModalOpen(false);
@@ -2025,7 +2125,7 @@ function ReorderPage() {
       setIsSending(false);
     }
   };
-  
+
   const getStatusBadge = (status: PurchaseOrderRecord["status"]) => {
     switch (status) {
       case "DRAFT":
@@ -2054,7 +2154,7 @@ function ReorderPage() {
         );
     }
   };
-  
+
   return (
     <div className="space-y-4 sm:space-y-6 pb-12">
       {/* Top Header & Fast Actions */}
@@ -2103,7 +2203,6 @@ function ReorderPage() {
           </Button>
         </div>
       </div>
-
       {/* Status Feedback Alert */}
       {statusMessage ? (
         <Alert
@@ -2132,7 +2231,6 @@ function ReorderPage() {
           <AlertDescription className="text-xs">{statusMessage.text}</AlertDescription>
         </Alert>
       ) : null}
-
       {/* KPI Reorder Summary Cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-4">
         <div className="rounded-2xl border bg-card p-3 sm:p-4 text-center shadow-sm">
@@ -2168,7 +2266,6 @@ function ReorderPage() {
           </div>
         </div>
       </div>
-
       {/* Main Tabs: 1. Calculator | 2. Alerts Hub | 3. Create PO | 4. PO History (Phase 6) */}
       <Tabs
         value={activeTab}
@@ -2633,85 +2730,85 @@ function ReorderPage() {
 
               {/* TOP ACTION TOOLBAR FOR PO ITEMS — ซ่อนตอนแก้ไข เพราะปุ่มอยู่แบนเนอร์ฟ้าแล้ว */}
               {!editingPOId && (
-              <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-card border border-border/80 shadow-xs">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-foreground">
-                    การดำเนินการใบสั่งซื้อ:
+                <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-card border border-border/80 shadow-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-foreground">
+                      การดำเนินการใบสั่งซื้อ:
                     </span>
                     {lastAutoSavedAt && (
-                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium hidden sm:inline-flex items-center gap-1">
-                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      บันทึกอัตโนมัติแล้ว
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium hidden sm:inline-flex items-center gap-1">
+                        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        บันทึกอัตโนมัติแล้ว
                       </span>
-                      )}
-                      </div>
-                      
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {editingPOId ? (
-                    <>
-                      <Button
-                        size="sm"
-                        disabled={fullItems.length === 0}
-                        className="h-8.5 px-3 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
-                        onClick={() =>
-                          handleSavePO(
-                            editingPOStatus === "RECEIVED" ? "RECEIVED" : editingPOStatus,
-                          )
-                        }
-                      >
-                        <Save className="size-3.5" /> บันทึกการแก้ไข
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={fullItems.length === 0}
-                        className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1.5"
-                        onClick={() => handleSavePO("DRAFT")}
-                      >
-                        <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1 text-destructive hover:bg-destructive/10 border-destructive/30"
-                        onClick={handleCancelEditPO}
-                      >
-                        <X className="size-3.5" /> ยกเลิกการแก้ไข
-                      </Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button
-                        size="sm"
-                        disabled={fullItems.length === 0}
-                        className="h-8.5 px-3.5 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
-                        onClick={() => handleSavePO("ORDERED")}
-                      >
-                        <Save className="size-3.5" /> ยืนยันสั่งซื้อ
-                      </Button>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={fullItems.length === 0}
-                        className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1.5"
-                        onClick={() => handleSavePO("DRAFT")}
-                      >
-                        <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
-                      </Button>
-                      {orderList.length > 0 && (
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {editingPOId ? (
+                      <>
                         <Button
-                          variant="ghost"
                           size="sm"
-                          className="h-8.5 px-2 text-xs text-muted-foreground hover:text-destructive rounded-xl gap-1"
-                          onClick={handleClearDraft}
+                          disabled={fullItems.length === 0}
+                          className="h-8.5 px-3 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
+                          onClick={() =>
+                            handleSavePO(
+                              editingPOStatus === "RECEIVED" ? "RECEIVED" : editingPOStatus,
+                            )
+                          }
                         >
-                          <Trash2 className="size-3.5" /> ล้าง
+                          <Save className="size-3.5" /> บันทึกการแก้ไข
                         </Button>
-                      )}
-                    </>
-                  )}
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={fullItems.length === 0}
+                          className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1.5"
+                          onClick={() => handleSavePO("DRAFT")}
+                        >
+                          <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1 text-destructive hover:bg-destructive/10 border-destructive/30"
+                          onClick={handleCancelEditPO}
+                        >
+                          <X className="size-3.5" /> ยกเลิกการแก้ไข
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button
+                          size="sm"
+                          disabled={fullItems.length === 0}
+                          className="h-8.5 px-3.5 text-xs font-bold rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground shadow-xs active:scale-95"
+                          onClick={() => handleSavePO("ORDERED")}
+                        >
+                          <Save className="size-3.5" /> ยืนยันสั่งซื้อ
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={fullItems.length === 0}
+                          className="h-8.5 px-2.5 text-xs font-semibold rounded-xl gap-1.5"
+                          onClick={() => handleSavePO("DRAFT")}
+                        >
+                          <Save className="size-3.5" /> บันทึกเป็นฉบับร่าง
+                        </Button>
+                        {orderList.length > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-8.5 px-2 text-xs text-muted-foreground hover:text-destructive rounded-xl gap-1"
+                            onClick={handleClearDraft}
+                          >
+                            <Trash2 className="size-3.5" /> ล้าง
+                          </Button>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
               )}
 
               {/* MOBILE LIST ITEMS */}
@@ -3446,11 +3543,11 @@ function ReorderPage() {
                 </CardContent>
               </Card>
             </div>
-          </div> <
-    /TabsContent>
-    
-    { /* TAB 3: SMART REORDER CALCULATOR (PHASE 5) */ }
-    <TabsContent value="calculator" className="space-y-4">
+          </div>
+        </TabsContent>
+
+        {/* TAB 3: SMART REORDER CALCULATOR (PHASE 5) */}
+        <TabsContent value="calculator" className="space-y-4">
           <Card className="rounded-2xl border-primary/20 bg-gradient-to-r from-primary/5 via-background to-background p-4 sm:p-5 shadow-sm">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="space-y-1">
@@ -3624,9 +3721,9 @@ function ReorderPage() {
             </CardContent>
           </Card>
         </TabsContent>
-    
-    { /* TAB 4: STOCK ALERTS HUB (PHASE 4) */ }
-    <TabsContent value="alerts_hub" className="space-y-4">
+
+        {/* TAB 4: STOCK ALERTS HUB (PHASE 4) */}
+        <TabsContent value="alerts_hub" className="space-y-4">
           <Card className="rounded-2xl border-border/80 shadow-sm">
             <CardHeader className="p-4 pb-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
@@ -3813,11 +3910,10 @@ function ReorderPage() {
               </div>
             </CardContent>
           </Card>
-        </TabsContent> <
-    /Tabs>
-    
-    { /* PO DETAIL & PRINT A4 DOCUMENT DIALOG (PHASE 6) */ }
-    <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
+        </TabsContent>
+      </Tabs>
+      {/* PO DETAIL & PRINT A4 DOCUMENT DIALOG (PHASE 6) */}
+      <Dialog open={detailModalOpen} onOpenChange={setDetailModalOpen}>
         <DialogContent className="w-[96vw] max-w-3xl rounded-2xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader>
             <div className="flex items-center justify-between">
@@ -4001,9 +4097,8 @@ function ReorderPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    
-    { /* ADD ITEM DIALOG (CASCADING: ZONE -> CATEGORY -> PRODUCT + DETAILED CUSTOMIZATION) */ }
-    <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
+      {/* ADD ITEM DIALOG (CASCADING: ZONE -> CATEGORY -> PRODUCT + DETAILED CUSTOMIZATION) */}
+      <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
         <DialogContent className="w-[96vw] max-w-lg rounded-2xl p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
@@ -4409,9 +4504,8 @@ function ReorderPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    
-    { /* EDIT ITEM DIALOG (DETAILED CUSTOMIZATION OF PRODUCT & ORDER ITEM) */ }
-    <Dialog open={editItemModalOpen} onOpenChange={setEditItemModalOpen}>
+      {/* EDIT ITEM DIALOG (DETAILED CUSTOMIZATION OF PRODUCT & ORDER ITEM) */}
+      <Dialog open={editItemModalOpen} onOpenChange={setEditItemModalOpen}>
         <DialogContent className="w-[96vw] max-w-xl rounded-2xl p-4 sm:p-6 max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
@@ -4758,9 +4852,8 @@ function ReorderPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    
-    { /* SERVER MESSAGING API & LINE FRIEND RECIPIENT MODAL (MOBILE FULL-SCREEN PANEL / DESKTOP DIALOG) */ }
-    <Dialog open={pushModalOpen} onOpenChange={setPushModalOpen}>
+      {/* SERVER MESSAGING API & LINE FRIEND RECIPIENT MODAL (MOBILE FULL-SCREEN PANEL / DESKTOP DIALOG) */}
+      <Dialog open={pushModalOpen} onOpenChange={setPushModalOpen}>
         <DialogContent
           className={cn(
             // Mobile: Full-Screen Panel taking 100% of viewport, single unified scroll, zero outer margins
@@ -5027,17 +5120,40 @@ function ReorderPage() {
             {/* OPTION A: NATIVE LINE TARGET PICKER */}
             <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#06C755]/15 via-[#06C755]/10 to-transparent border border-[#06C755]/30 space-y-2">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <div className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-2">
+                <div className="space-y-1">
+                  <div className="text-xs sm:text-sm font-bold text-foreground flex items-center gap-2 flex-wrap">
                     <Smartphone className="size-4 text-[#06C755]" />
-                    เปิดรายชื่อเพื่อนในแอป LINE ทันที (LINE Share Target Picker)
+                    <span>เปิดรายชื่อเพื่อนในแอป LINE ทันที (LINE Share Target Picker)</span>
+                    {lineStatus?.isInClient || lineStatus?.isLoggedIn ? (
+                      <Badge className="bg-[#06C755]/20 text-[#06C755] border-[#06C755]/30 text-[10px] font-semibold py-0 h-5">
+                        ✅ พร้อมใช้งานใน LINE
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] text-amber-600 border-amber-500/30 bg-amber-500/10 py-0 h-5 cursor-pointer hover:bg-amber-500/20"
+                        onClick={() => openInLineApp("/reorder?action=open_picker")}
+                        title="แตะเพื่อเปิดในแอป LINE"
+                      >
+                        🌐 เว็บภายนอก (แตะเพื่อเปิดในแอป LINE)
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-[11px] text-muted-foreground">
                     เปิดหน้าจอเลือกห้องแชทของแอป LINE เพื่อส่ง Flex Message
                     เข้าห้องแชทเพื่อนหรือกลุ่มที่ต้องการทันที
                   </p>
+                  {!lineStatus?.isInClient && !lineStatus?.isLoggedIn && (
+                    <div className="text-[11px] text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5 mt-1">
+                      <Info className="size-3.5 shrink-0 text-amber-600" />
+                      <span>
+                        หากเปิดจากเบราว์เซอร์ภายนอก แตะ <strong>"เปิดรายชื่อเพื่อนใน LINE"</strong>{" "}
+                        ระบบจะพาเปิดในแอป LINE ให้อัตโนมัติเพื่อเลือกเพื่อน
+                      </span>
+                    </div>
+                  )}
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
                   <Button
                     type="button"
                     className="h-9 px-4 text-xs font-bold rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white shadow-xs gap-1.5 active:scale-95"
@@ -5047,6 +5163,47 @@ function ReorderPage() {
                     <Users className="size-4" />
                     เปิดรายชื่อเพื่อนใน LINE
                   </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 px-3 text-xs font-semibold rounded-xl border-[#06C755]/40 text-[#06C755] hover:bg-[#06C755]/10 gap-1.5 active:scale-95"
+                    onClick={handleOpenWebShareIntent}
+                    title="เปิดแอป LINE และเลือกเพื่อนแชร์ข้อความทันที (ไม่ต้องตั้งค่า LIFF)"
+                  >
+                    <Share2 className="size-3.5" />
+                    แชร์เข้าแอป LINE ทันที
+                  </Button>
+                  {!lineStatus?.isInClient && !lineStatus?.isLoggedIn && (
+                    <>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 px-3 text-xs font-semibold rounded-xl border-[#06C755]/40 text-[#06C755] hover:bg-[#06C755]/10 gap-1.5 active:scale-95"
+                        onClick={() => {
+                          const liffId = getClientLiffId();
+                          if (liffId) {
+                            loginToLine();
+                          } else {
+                            setLiffIdModalOpen(true);
+                          }
+                        }}
+                        title="เข้าสู่ระบบ LINE ในเบราว์เซอร์นี้"
+                      >
+                        <LogIn className="size-3.5" />
+                        เข้าสู่ระบบ LINE
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 px-3 text-xs font-semibold rounded-xl border-[#06C755]/40 text-[#06C755] hover:bg-[#06C755]/10 gap-1.5 active:scale-95"
+                        onClick={() => openInLineApp("/reorder?action=open_picker")}
+                        title="เปิดในแอป LINE (LINE Mini App)"
+                      >
+                        <ExternalLink className="size-3.5" />
+                        เปิดใน LINE App
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -5615,35 +5772,36 @@ function ReorderPage() {
                             <Download className="size-3.5" />
                             <span>ดาวน์โหลด PNG 1040px</span>
                           </Button>
-                          {typeof navigator !== "undefined" && navigator.canShare && (
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              className="h-8 text-xs rounded-lg gap-1"
-                              onClick={async () => {
-                                if (!modalPngData) return;
-                                const fname =
-                                  pushMessageType === "STOCK_ALERT"
-                                    ? `Stock_Alert_FullBleed.png`
-                                    : `PO_FullBleed_${editingPOId ? editingPONumber : "Order"}.png`;
-                                const ok = await shareImageFileViaNavigator(
-                                  modalPngData.blob,
-                                  fname,
-                                  pushMessageType === "STOCK_ALERT"
-                                    ? "แจ้งเตือนสต็อกสินค้า (เต็มจอ)"
-                                    : "ใบสั่งซื้อสินค้า (เต็มจอ)",
-                                  currentStoreName,
-                                );
-                                if (!ok) {
-                                  toast.info("เปิดหน้าแชร์ของเครื่อง");
-                                }
-                              }}
-                            >
-                              <ExternalLink className="size-3.5" />
-                              <span>แชร์ไฟล์</span>
-                            </Button>
-                          )}
+                          {typeof navigator !== "undefined" &&
+                            typeof navigator.canShare === "function" && (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 text-xs rounded-lg gap-1"
+                                onClick={async () => {
+                                  if (!modalPngData) return;
+                                  const fname =
+                                    pushMessageType === "STOCK_ALERT"
+                                      ? `Stock_Alert_FullBleed.png`
+                                      : `PO_FullBleed_${editingPOId ? editingPONumber : "Order"}.png`;
+                                  const ok = await shareImageFileViaNavigator(
+                                    modalPngData.blob,
+                                    fname,
+                                    pushMessageType === "STOCK_ALERT"
+                                      ? "แจ้งเตือนสต็อกสินค้า (เต็มจอ)"
+                                      : "ใบสั่งซื้อสินค้า (เต็มจอ)",
+                                    currentStoreName,
+                                  );
+                                  if (!ok) {
+                                    toast.info("เปิดหน้าแชร์ของเครื่อง");
+                                  }
+                                }}
+                              >
+                                <ExternalLink className="size-3.5" />
+                                <span>แชร์ไฟล์</span>
+                              </Button>
+                            )}
                         </div>
                       </div>
                     </div>
@@ -5783,9 +5941,8 @@ function ReorderPage() {
           </div>
         </DialogContent>
       </Dialog>
-    
-    { /* UNIVERSAL FLEX MESSAGE PREVIEW MODAL */ }
-    <Dialog open={flexPreviewOpen} onOpenChange={setFlexPreviewOpen}>
+      {/* UNIVERSAL FLEX MESSAGE PREVIEW MODAL */}
+      <Dialog open={flexPreviewOpen} onOpenChange={setFlexPreviewOpen}>
         <DialogContent className="w-[96vw] max-w-4xl rounded-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
           <DialogHeader className="pb-2">
             <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
@@ -5889,16 +6046,14 @@ function ReorderPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    
-    { /* ORDER FILE EXPORT MODAL (PDF, EXCEL, PNG SLIP, CHAT, JSON) */ }
-    <OrderExportModal
+      {/* ORDER FILE EXPORT MODAL (PDF, EXCEL, PNG SLIP, CHAT, JSON) */}
+      <OrderExportModal
         open={exportModalOpen}
         onOpenChange={setExportModalOpen}
         payload={exportPayload}
       />
-    
-    { /* LINE LIFF ID SETUP MODAL (FOR 1-CLICK FRIEND PICKER) */ }
-    <Dialog open={liffIdModalOpen} onOpenChange={setLiffIdModalOpen}>
+      {/* LINE LIFF ID SETUP MODAL (FOR 1-CLICK FRIEND PICKER) */}
+      <Dialog open={liffIdModalOpen} onOpenChange={setLiffIdModalOpen}>
         <DialogContent className="max-w-md rounded-2xl p-5">
           <DialogHeader>
             <DialogTitle className="text-base font-bold flex items-center gap-2 text-foreground">
@@ -5947,9 +6102,48 @@ function ReorderPage() {
           </form>
         </DialogContent>
       </Dialog>
-    
-    { /* CUSTOM FLEX MESSAGE SIMULATOR IMPORTER MODAL */ }
-    <Dialog open={flexSimulatorModalOpen} onOpenChange={setFlexSimulatorModalOpen}>
+      {/* LINE LOGIN / APP LAUNCH PROMPT DIALOG */}
+      <Dialog open={lineLoginPromptOpen} onOpenChange={setLineLoginPromptOpen}>
+        <DialogContent className="max-w-md rounded-2xl p-5 space-y-4">
+          <DialogHeader>
+            <DialogTitle className="text-base font-bold flex items-center gap-2 text-foreground">
+              <Smartphone className="size-5 text-[#06C755]" />
+              เข้าสู่ระบบ LINE เพื่อเปิดรายชื่อเพื่อน
+            </DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground leading-relaxed">
+              ขณะนี้ระบบเปิดอยู่ในเว็บเบราว์เซอร์ภายนอก LINE
+              จึงต้องการการยืนยันตัวตนก่อนเพื่ออนุญาตให้เปิดหน้าต่างเลือกเพื่อนและห้องแชทได้
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-2.5 pt-1">
+            <Button
+              className="w-full h-10 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-bold text-xs gap-2 shadow-xs"
+              onClick={() => {
+                setLineLoginPromptOpen(false);
+                loginToLine();
+              }}
+            >
+              <Users className="size-4" />
+              เข้าสู่ระบบ LINE ในเบราว์เซอร์นี้ (LINE Login)
+            </Button>
+
+            <Button
+              variant="outline"
+              className="w-full h-10 rounded-xl border-[#06C755]/40 text-[#06C755] hover:bg-[#06C755]/10 font-bold text-xs gap-2"
+              onClick={() => {
+                setLineLoginPromptOpen(false);
+                openInLineApp("/reorder");
+              }}
+            >
+              <ExternalLink className="size-4" />
+              เปิดใช้งานผ่านแอป LINE ทันที (LINE Mini App)
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {/* CUSTOM FLEX MESSAGE SIMULATOR IMPORTER MODAL */}
+      <Dialog open={flexSimulatorModalOpen} onOpenChange={setFlexSimulatorModalOpen}>
         <DialogContent className="w-[96vw] max-w-4xl rounded-2xl p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
@@ -5971,8 +6165,9 @@ function ReorderPage() {
             />
           </div>
         </DialogContent>
-      </Dialog> { /* QUICK ADD PRODUCT DIALOG (Direct Inside Purchase Order) */ }
-    <Dialog open={quickAddModalOpen} onOpenChange={setQuickAddModalOpen}>
+      </Dialog>{" "}
+      {/* QUICK ADD PRODUCT DIALOG (Direct Inside Purchase Order) */}
+      <Dialog open={quickAddModalOpen} onOpenChange={setQuickAddModalOpen}>
         <DialogContent className="w-[96vw] max-w-xl rounded-2xl p-5 max-h-[92vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="text-base sm:text-lg flex items-center gap-2 text-foreground font-bold">
@@ -6146,9 +6341,8 @@ function ReorderPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    
-    { /* CONFIRM DELETE ITEM DIALOG */ }
-    <Dialog open={Boolean(itemToDelete)} onOpenChange={(open) => !open && setItemToDelete(null)}>
+      {/* CONFIRM DELETE ITEM DIALOG */}
+      <Dialog open={Boolean(itemToDelete)} onOpenChange={(open) => !open && setItemToDelete(null)}>
         <DialogContent className="w-[92vw] max-w-md rounded-2xl p-5">
           <DialogHeader>
             <DialogTitle className="text-base flex items-center gap-2 text-destructive">
@@ -6179,7 +6373,7 @@ function ReorderPage() {
             </Button>
           </DialogFooter>
         </DialogContent>
-      </Dialog> <
-    /div>
+      </Dialog>
+    </div>
   );
 }

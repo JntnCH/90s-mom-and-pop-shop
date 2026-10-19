@@ -17,6 +17,23 @@ import {
 import { BackupService, type BackupPackage } from "./backup-restore";
 import { PrinterService } from "./printer-service";
 import { fetchCloudSqlSnapshotFn } from "./line-server-fn";
+import {
+  getGoogleSheetsAccessTokenFn,
+  getGoogleSheetsConfigFn,
+  saveGoogleSheetsConfigFn,
+  testGoogleSheetsConnectionFn,
+  extractSpreadsheetId,
+  type GoogleSheetsConfigStatus,
+} from "./google-sheets-server-fn";
+
+export {
+  getGoogleSheetsAccessTokenFn,
+  getGoogleSheetsConfigFn,
+  saveGoogleSheetsConfigFn,
+  testGoogleSheetsConnectionFn,
+  extractSpreadsheetId,
+  type GoogleSheetsConfigStatus,
+};
 
 /**
  * Scopes configured and authorized via set_up_oauth
@@ -245,13 +262,46 @@ export function getGoogleAccessToken(): string | null {
 }
 
 /**
+ * Resolve effective Google access token (checking Service Account first, then OAuth token)
+ */
+export async function resolveAccessToken(token?: string): Promise<string> {
+  if (token && token.trim()) return token.trim();
+  if (cachedAccessToken && cachedAccessToken.trim()) return cachedAccessToken.trim();
+  try {
+    const res = await getGoogleSheetsAccessTokenFn();
+    if (res.success && res.token) {
+      cachedAccessToken = res.token;
+      return res.token;
+    }
+  } catch (err) {
+    console.warn("[GoogleSheets] Failed to fetch service account token:", err);
+  }
+  throw new Error(
+    "ต้องเชื่อมต่อ Google Sheets ก่อนดำเนินการ (กรุณากำหนดค่า Service Account หรือเข้าสู่ระบบ Google)",
+  );
+}
+
+/**
+ * Check if a Service Account is configured and return status
+ */
+export async function checkGoogleSheetsConfig(): Promise<GoogleSheetsConfigStatus> {
+  try {
+    return await getGoogleSheetsConfigFn();
+  } catch {
+    return {
+      isConfigured: false,
+      clientEmail: null,
+      spreadsheetId: null,
+      source: "none",
+    };
+  }
+}
+
+/**
  * List Google Spreadsheets created by or accessible to this app
  */
 export async function listUserSpreadsheets(token?: string): Promise<DriveSpreadsheetFile[]> {
-  const activeToken = token || cachedAccessToken;
-  if (!activeToken) {
-    throw new Error("ต้องเข้าสู่ระบบ Google ก่อนดำเนินการ");
-  }
+  const activeToken = await resolveAccessToken(token);
 
   const query = encodeURIComponent(
     "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
@@ -282,10 +332,7 @@ export async function getSpreadsheetMetadata(
   spreadsheetId: string,
   token?: string,
 ): Promise<{ title: string; sheets: SheetTabInfo[]; spreadsheetUrl: string }> {
-  const activeToken = token || cachedAccessToken;
-  if (!activeToken) {
-    throw new Error("ต้องเข้าสู่ระบบ Google ก่อนดำเนินการ");
-  }
+  const activeToken = await resolveAccessToken(token);
 
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}?fields=properties.title,spreadsheetUrl,sheets.properties`;
   const res = await fetch(url, {
@@ -334,10 +381,7 @@ export async function readSpreadsheetValues(
   range: string,
   token?: string,
 ): Promise<string[][]> {
-  const activeToken = token || cachedAccessToken;
-  if (!activeToken) {
-    throw new Error("ต้องเข้าสู่ระบบ Google ก่อนดำเนินการ");
-  }
+  const activeToken = await resolveAccessToken(token);
 
   const encodedRange = encodeURIComponent(range);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}`;
@@ -386,10 +430,7 @@ export async function createMultiSheetSpreadsheet(
   sheetsData: Array<{ title: string; rows: (string | number)[][] }>,
   token?: string,
 ): Promise<{ spreadsheetId: string; spreadsheetUrl: string }> {
-  const activeToken = token || cachedAccessToken;
-  if (!activeToken) {
-    throw new Error("ต้องเข้าสู่ระบบ Google ก่อนดำเนินการ");
-  }
+  const activeToken = await resolveAccessToken(token);
 
   const body = {
     properties: {
@@ -447,10 +488,7 @@ export async function updateSpreadsheetRange(
   values: (string | number)[][],
   token?: string,
 ): Promise<{ updatedRows: number; updatedColumns: number }> {
-  const activeToken = token || cachedAccessToken;
-  if (!activeToken) {
-    throw new Error("ต้องเข้าสู่ระบบ Google ก่อนดำเนินการ");
-  }
+  const activeToken = await resolveAccessToken(token);
 
   const encodedRange = encodeURIComponent(range);
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/${encodedRange}?valueInputOption=USER_ENTERED`;
@@ -794,10 +832,7 @@ export async function backupFullDatabaseToGoogleSheets(options?: {
   spreadsheetTitle?: string;
   token?: string;
 }): Promise<GoogleSheetBackupMeta> {
-  const activeToken = options?.token || cachedAccessToken;
-  if (!activeToken) {
-    throw new Error("ต้องเข้าสู่ระบบ Google ก่อนดำเนินการสำรองข้อมูล");
-  }
+  const activeToken = await resolveAccessToken(options?.token);
 
   // Pre-fetch latest data from Cloud SQL / server if available to ensure complete unified backup
   try {
@@ -907,10 +942,7 @@ export async function restoreFullDatabaseFromGoogleSheets(
   message: string;
   stats: { products: number; orders: number; movements: number };
 }> {
-  const activeToken = token || cachedAccessToken;
-  if (!activeToken) {
-    throw new Error("ต้องเข้าสู่ระบบ Google ก่อนดำเนินการ");
-  }
+  const activeToken = await resolveAccessToken(token);
 
   // 1. Try reading Raw JSON sheet first (full fidelity restore)
   try {
@@ -1074,10 +1106,7 @@ export async function migrateAllSourcesToGoogleSheets(options?: {
   spreadsheetTitle?: string;
   token?: string;
 }): Promise<MigrationSummary> {
-  const activeToken = options?.token || cachedAccessToken;
-  if (!activeToken) {
-    throw new Error("ต้องเข้าสู่ระบบ Google ก่อนเริ่มย้ายข้อมูล");
-  }
+  const activeToken = await resolveAccessToken(options?.token);
 
   // 1. Fetch Cloud SQL snapshot from server
   let cloudSqlData: {

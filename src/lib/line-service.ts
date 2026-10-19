@@ -164,52 +164,54 @@ export function setClientLiffId(id: string): void {
 }
 
 let liffInstance: typeof import("@line/liff").default | null = null;
-let isInitializingLiff = false;
+let liffInitPromise: Promise<boolean> | null = null;
 
 /**
- * Initializes LINE LIFF SDK safely (Browser-only)
+ * Initializes LINE LIFF SDK safely (Browser-only) with promise singleton
  */
 export async function initLiff(): Promise<boolean> {
   if (typeof window === "undefined") return false;
   if (liffInstance) return true;
-  if (isInitializingLiff) {
-    await new Promise((resolve) => setTimeout(resolve, 400));
-    if (liffInstance) return true;
-  }
+  if (liffInitPromise) return liffInitPromise;
 
-  let liffId = getClientLiffId();
-  if (!liffId) {
-    try {
-      const cfg = await getLineServerConfigFn();
-      if (cfg?.configuredLiffId) {
-        setClientLiffId(cfg.configuredLiffId);
-        liffId = cfg.configuredLiffId;
+  liffInitPromise = (async () => {
+    let liffId = getClientLiffId();
+    if (!liffId) {
+      try {
+        const cfg = await getLineServerConfigFn();
+        if (cfg?.configuredLiffId) {
+          setClientLiffId(cfg.configuredLiffId);
+          liffId = cfg.configuredLiffId;
+        }
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
     }
-  }
-  if (!liffId) {
-    return false;
-  }
-
-  isInitializingLiff = true;
-  try {
-    const liffMod = await import("@line/liff");
-    const liff = liffMod.default;
-
-    if (!liff.id) {
-      await liff.init({ liffId, withLoginOnExternalBrowser: false });
+    if (!liffId) {
+      return false;
     }
-    liffInstance = liff;
-    return true;
-  } catch (err) {
-    console.warn("LIFF initialization note:", err);
-    liffInstance = null;
-    return false;
-  } finally {
-    isInitializingLiff = false;
-  }
+
+    try {
+      const liffMod = await import("@line/liff");
+      const liff =
+        (liffMod as unknown as { default?: typeof import("@line/liff").default }).default ||
+        liffMod;
+
+      if (!liff.id) {
+        await liff.init({ liffId, withLoginOnExternalBrowser: false });
+      }
+      liffInstance = liff as typeof import("@line/liff").default;
+      return true;
+    } catch (err) {
+      console.warn("LIFF initialization note:", err);
+      liffInstance = null;
+      return false;
+    } finally {
+      liffInitPromise = null;
+    }
+  })();
+
+  return liffInitPromise;
 }
 
 /**
@@ -217,6 +219,9 @@ export async function initLiff(): Promise<boolean> {
  */
 export async function getLineStatus(): Promise<LineConfigStatus> {
   try {
+    if (!liffInstance) {
+      await initLiff();
+    }
     const liffId = getClientLiffId();
     if (!liffId) {
       return {
@@ -379,7 +384,7 @@ export function buildOrderPlainText(
   let counter = 0;
 
   grouped.forEach((grp) => {
-    if (!isNoHeader && grp.headerTitle && groupBy !== "none") {
+    if (!isNoHeader && grp.headerTitle) {
       text += `${grp.headerTitle} (${grp.items.length} รายการ)\n`;
     }
     grp.items.forEach(({ item }) => {
@@ -443,6 +448,10 @@ export async function shareFlexViaLiffPicker(
   success: boolean;
   message: string;
   needLiffId?: boolean;
+  needLogin?: boolean;
+  isLineBrowser?: boolean;
+  isMobileDevice?: boolean;
+  liffUrl?: string;
 }> {
   const options: SharePickerOptions =
     typeof altSummaryOrOptions === "string"
@@ -527,9 +536,41 @@ export async function shareFlexViaLiffPicker(
     }
 
     if (typeof liffInstance.isLoggedIn === "function" && !liffInstance.isLoggedIn()) {
+      const userAgent = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+      const isLineBrowser = /Line\//i.test(userAgent);
+      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(userAgent);
+      const currentPath =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : "/reorder";
+      const cleanPath = currentPath.startsWith("/") ? currentPath : `/${currentPath}`;
+      const liffUrl = `https://liff.line.me/${liffId}${cleanPath}`;
+
+      try {
+        if (typeof window !== "undefined") {
+          const payloadJson = JSON.stringify({
+            flexMessage,
+            options,
+            altSummary,
+            timestamp: Date.now(),
+          });
+          sessionStorage.setItem("minimark_pending_liff_share", payloadJson);
+          localStorage.setItem("minimark_pending_liff_share", payloadJson);
+        }
+      } catch {
+        // ignore storage error
+      }
+
       return {
         success: false,
-        message: "ระบบเปิดในโหมดเว็บภายนอก กรุณาเลือกผู้รับจากรายชื่อในระบบ หรือเปิดผ่านลิงก์ LIFF",
+        needLogin: true,
+        isLineBrowser,
+        isMobileDevice,
+        liffUrl,
+        message:
+          isLineBrowser || isMobileDevice
+            ? "ตรวจพบเปิดในเว็บภายนอก: ระบบจะพาคุณไปยังแอป LINE เพื่อเลือกเพื่อนและส่งทันที"
+            : "เปิดในเบราว์เซอร์ภายนอก: กรุณาเข้าสู่ระบบ LINE เพื่อเปิดรายชื่อเพื่อน",
       };
     }
 
@@ -564,6 +605,70 @@ export async function shareFlexViaLiffPicker(
       success: false,
       message: `LINE Share Target Picker (${errMsg}): กรุณาตรวจสอบว่าเปิด Share Target Picker: ON และปิด-เปิดแอป LINE ใหม่อีกครั้ง`,
     };
+  }
+}
+
+/**
+ * Trigger LINE Login for external browsers
+ */
+export function loginToLine(redirectUri?: string): void {
+  if (typeof window === "undefined") return;
+  if (liffInstance && typeof liffInstance.login === "function") {
+    liffInstance.login({ redirectUri: redirectUri || window.location.href });
+  } else {
+    const liffId = getClientLiffId();
+    if (liffId) {
+      window.location.href = `https://liff.line.me/${liffId}${window.location.pathname}${window.location.search}`;
+    }
+  }
+}
+
+/**
+ * Open the current page or specified path inside the native LINE App (via LIFF Universal Link)
+ */
+export function openInLineApp(customPath?: string): void {
+  if (typeof window === "undefined") return;
+  const liffId = getClientLiffId();
+  if (!liffId) return;
+  const path = customPath || `${window.location.pathname}${window.location.search}`;
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  window.location.href = `https://liff.line.me/${liffId}${cleanPath}`;
+}
+
+export interface PendingLiffSharePayload {
+  flexMessage: unknown;
+  options: SharePickerOptions;
+  altSummary: string;
+  timestamp: number;
+}
+
+export function getPendingLiffShare(): PendingLiffSharePayload | null {
+  if (typeof window === "undefined") return null;
+  try {
+    let raw = sessionStorage.getItem("minimark_pending_liff_share");
+    if (!raw) {
+      raw = localStorage.getItem("minimark_pending_liff_share");
+    }
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingLiffSharePayload;
+    if (Date.now() - (parsed.timestamp || 0) > 30 * 60 * 1000) {
+      sessionStorage.removeItem("minimark_pending_liff_share");
+      localStorage.removeItem("minimark_pending_liff_share");
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingLiffShare(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem("minimark_pending_liff_share");
+    localStorage.removeItem("minimark_pending_liff_share");
+  } catch {
+    // ignore
   }
 }
 
