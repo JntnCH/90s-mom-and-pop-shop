@@ -91,7 +91,7 @@ export interface LineConfigStatus {
   error?: string | undefined;
 }
 
-export const DEFAULT_LINE_LIFF_ID = "2011710264-gaZ7oEcK";
+export const DEFAULT_LINE_LIFF_ID = "2012055857-2hI1T2K2";
 
 let memoryLiffId: string | null = DEFAULT_LINE_LIFF_ID;
 
@@ -833,18 +833,18 @@ export async function sendWith3TierFallback(
     }
   }
 
-  // If intent fallback is explicitly disabled, report the exact error
-  if (options.disableIntentFallback) {
-    return {
-      success: false,
-      channel: "server_api",
-      tier: 1,
-      message:
-        tier1ErrorReason ||
-        "ไม่สามารถส่ง Flex Message ได้ กรุณาตรวจสอบ Channel Access Token หรือ User ID / Group ID",
-      fallbackReason: tier1ErrorReason,
-    };
-  }
+  // Never silently downgrade a Flex Message to plain text.
+if (format === "FLEX" || options.disableIntentFallback) {
+  return {
+    success: false,
+    channel: "server_api",
+    tier: 1,
+    message:
+      tier1ErrorReason ||
+      "ส่ง Flex Message ไม่สำเร็จ กรุณาตรวจสอบ LINE Messaging API และ LIFF",
+    fallbackReason: tier1ErrorReason,
+  };
+}
 
   // ─────────────────────────────────────────────────────────────
   // Tier 3: Web Share Intent (https://line.me/R/share) - Plain Text Fallback
