@@ -21,6 +21,8 @@ dist-ssr
 .dev.vars
 .data/
 firebase-applet-config.json
+public/assets/aistudio/
+.aistudio/user_uploads/
 
 # Editor directories and files
 .vscode/*

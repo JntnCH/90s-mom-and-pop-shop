@@ -13,7 +13,7 @@
     "test": "vitest run",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "deploy": "NITRO_PRESET=cloudflare-module npm run build && npx wrangler deploy",
+    "deploy": "rm -rf public/assets/aistudio .output/public/assets/aistudio && NITRO_PRESET=cloudflare-module npm run build && npx wrangler deploy",
     "deploy:incremental": "node scripts/incremental-deploy.mjs"
   },
   "overrides": {

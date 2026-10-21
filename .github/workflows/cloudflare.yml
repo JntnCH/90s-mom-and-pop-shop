@@ -38,6 +38,11 @@ jobs:
           fi
           node scripts/apply-d1-line-server-fn.mjs
 
+      - name: Prune oversized assets (> 20MB) to satisfy Cloudflare limit
+        run: |
+          rm -rf public/assets/aistudio .output/public/assets/aistudio || true
+          find public -type f -size +20M -delete || true
+
       - name: Build (Cloudflare Workers / Nitro)
         env:
           NITRO_PRESET: cloudflare-module
@@ -47,7 +52,9 @@ jobs:
           VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
           VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
           VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
-        run: npm run build
+        run: |
+          npm run build
+          find .output/public -type f -size +20M -delete || true
 
       - name: Upload build output
         uses: actions/upload-artifact@v4
