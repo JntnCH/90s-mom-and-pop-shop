@@ -123,6 +123,7 @@ function StockPage() {
   const getUnitName = (id: string) => units.find((u) => u.id === id)?.name || "ชิ้น";
   const getCatName = (id: string) => categories.find((c) => c.id === id)?.name || id;
   const getZoneName = (id?: string) => (id ? zones.find((z) => z.id === id)?.name || "-" : "-");
+  const getSubCatName = (id?: string) => MasterStore.getSubCategoryName(id);
 
   const filtered = products.filter((p) => {
     const query = search.toLowerCase().trim();
@@ -144,7 +145,7 @@ function StockPage() {
     else if (stockStatusFilter === "LOW_STOCK") matchStatus = isLow;
     else if (stockStatusFilter === "IN_STOCK") matchStatus = !isOut && !isLow;
 
-    return matchQuery && matchCat && matchZone && matchStatus;
+    return matchQuery && matchCat && matchSubCat && matchZone && matchStatus;
   });
 
   const lowStockCount = products.filter((p) => p.stock > 0 && p.stock <= p.minStock).length;
@@ -282,6 +283,8 @@ function StockPage() {
                 onChange={(val) => setSelectedSubCat(val || "all")}
                 placeholder="ทุกหมวดหมู่ย่อย"
                 className="h-10 rounded-xl"
+                includeAll={true}
+                allLabel="ทุกหมวดหมู่ย่อย"
               />
             </div>
             {/* สถานะสต็อก */}
@@ -360,8 +363,15 @@ function StockPage() {
                   {item.name}
                 </div>
 
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{getCatName(item.categoryId)}</span>
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-wrap">
+                  <span className="font-medium text-foreground/80">
+                    {getCatName(item.categoryId)}
+                  </span>
+                  {item.subCategoryId && (
+                    <span className="text-primary font-medium">
+                      › {getSubCatName(item.subCategoryId)}
+                    </span>
+                  )}
                   <span>•</span>
                   <span>โซน {getZoneName(item.zoneId)}</span>
                 </div>
@@ -460,7 +470,14 @@ function StockPage() {
                           {getZoneName(item.zoneId)}
                         </TableCell>
                         <TableCell className="text-muted-foreground text-sm">
-                          {getCatName(item.categoryId)}
+                          <div className="font-medium text-foreground">
+                            {getCatName(item.categoryId)}
+                          </div>
+                          {item.subCategoryId && (
+                            <div className="text-[11px] text-primary font-medium">
+                              › {getSubCatName(item.subCategoryId)}
+                            </div>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <span

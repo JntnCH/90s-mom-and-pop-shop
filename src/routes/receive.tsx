@@ -67,8 +67,10 @@ import { playScanBeep } from "@/lib/scanner-audio";
 import type { ScannedCodeType } from "@/lib/scanner-dedup";
 import {
   MasterStore,
+  type CategoryItem,
   type ProductItem,
   type PurchaseOrderRecord,
+  type SubCategoryItem,
   type UnitItem,
 } from "@/lib/store";
 
@@ -109,6 +111,8 @@ function ReceiveCheckPage() {
   const [activeMode, setActiveMode] = useState<"po_receive" | "scan_receive">("po_receive");
   const [items, setItems] = useState<ReceiveCheckItem[]>([]);
   const [products, setProducts] = useState<ProductItem[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [subCategories, setSubCategories] = useState<SubCategoryItem[]>([]);
   const [units, setUnits] = useState<UnitItem[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderRecord[]>([]);
   const [selectedPoId, setSelectedPoId] = useState<string>("");
@@ -119,6 +123,8 @@ function ReceiveCheckPage() {
 
   // Add Item Dialog
   const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addCatId, setAddCatId] = useState<string>("all");
+  const [addSubCatId, setAddSubCatId] = useState<string>("all");
   const [addSearch, setAddSearch] = useState("");
   const [addSelectedProdId, setAddSelectedProdId] = useState("");
   const [addExpectedQty, setAddExpectedQty] = useState<string>("1");
@@ -128,10 +134,77 @@ function ReceiveCheckPage() {
   // Real-time synchronization
   const reloadData = useCallback(() => {
     setProducts(MasterStore.getProducts());
+    setCategories(MasterStore.getCategories());
+    setSubCategories(MasterStore.getSubCategories());
     setUnits(MasterStore.getUnits());
     const pos = MasterStore.getPurchaseOrders();
     setPurchaseOrders(pos);
   }, []);
+
+  const filteredAddProducts = products.filter((p) => {
+    if (p.isActive === false) return false;
+    const matchesCat = addCatId === "all" || p.categoryId === addCatId;
+    const matchesSubCat = addSubCatId === "all" || p.subCategoryId === addSubCatId;
+    const q = addSearch.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      p.barcode.toLowerCase().includes(q) ||
+      (p.sku && p.sku.toLowerCase().includes(q));
+    return matchesCat && matchesSubCat && matchesSearch;
+  });
+
+  const handleSelectProductInReceiveModal = useCallback(
+    (prodId: string) => {
+      setAddSelectedProdId(prodId);
+      const p = products.find((pr) => pr.id === prodId);
+      if (p) {
+        setAddUnit(units.find((u) => u.id === p.unitId)?.name || "ชิ้น");
+      }
+    },
+    [products, units],
+  );
+
+  const syncReceiveProductFilters = useCallback(
+    (catId: string, subCatId: string, searchQuery: string) => {
+      const q = searchQuery.toLowerCase().trim();
+      const matched = products.filter((p) => {
+        if (p.isActive === false) return false;
+        const matchesCat = catId === "all" || p.categoryId === catId;
+        const matchesSubCat = subCatId === "all" || p.subCategoryId === subCatId;
+        const matchesSearch =
+          !q ||
+          p.name.toLowerCase().includes(q) ||
+          p.barcode.toLowerCase().includes(q) ||
+          (p.sku && p.sku.toLowerCase().includes(q));
+        return matchesCat && matchesSubCat && matchesSearch;
+      });
+
+      if (matched.length > 0) {
+        const stillValid = matched.find((p) => p.id === addSelectedProdId);
+        const target = stillValid || matched[0];
+        if (target) {
+          setAddSelectedProdId(target.id);
+          setAddUnit(units.find((u) => u.id === target.unitId)?.name || "ชิ้น");
+        }
+      } else {
+        setAddSelectedProdId("");
+      }
+    },
+    [products, units, addSelectedProdId],
+  );
+
+  useEffect(() => {
+    if (!addModalOpen) return;
+    if (filteredAddProducts.length === 0) {
+      if (addSelectedProdId !== "") setAddSelectedProdId("");
+      return;
+    }
+    const isCurrentValid = filteredAddProducts.some((p) => p.id === addSelectedProdId);
+    if (!isCurrentValid && filteredAddProducts[0]) {
+      handleSelectProductInReceiveModal(filteredAddProducts[0].id);
+    }
+  }, [addModalOpen, filteredAddProducts, addSelectedProdId, handleSelectProductInReceiveModal]);
 
   useEffect(() => {
     reloadData();
@@ -278,7 +351,8 @@ function ReceiveCheckPage() {
 
   // Add Item manually via Dialog
   const handleAddNewItemModal = () => {
-    const prod = products.find((p) => p.id === addSelectedProdId) || products[0];
+    const prod =
+      filteredAddProducts.find((p) => p.id === addSelectedProdId) || filteredAddProducts[0] || null;
     if (!prod) return;
 
     const uName = addUnit || units.find((u) => u.id === prod.unitId)?.name || "ชิ้น";
@@ -887,27 +961,134 @@ function ReceiveCheckPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-3.5 py-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold">ค้นหา / เลือกสินค้า *</Label>
-              <select
-                className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-xs shadow-xs"
-                value={addSelectedProdId}
-                onChange={(e) => {
-                  setAddSelectedProdId(e.target.value);
-                  const p = products.find((pr) => pr.id === e.target.value);
-                  if (p) {
-                    setAddUnit(units.find((u) => u.id === p.unitId)?.name || "ชิ้น");
-                  }
-                }}
-              >
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.barcode}) • สต็อก: {p.stock}
-                  </option>
-                ))}
-              </select>
+          <div className="space-y-3 py-2">
+            {/* Filter: Category & SubCategory */}
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">หมวดหมู่หลัก</Label>
+                <select
+                  className="w-full rounded-xl border border-input bg-background px-2.5 py-1.5 text-xs shadow-xs font-medium truncate"
+                  value={addCatId}
+                  onChange={(e) => {
+                    const newCat = e.target.value;
+                    setAddCatId(newCat);
+                    setAddSubCatId("all");
+                    syncReceiveProductFilters(newCat, "all", addSearch);
+                  }}
+                >
+                  <option value="all">📁 ทุกหมวดหมู่หลัก</option>
+                  {categories.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">หมวดหมู่ย่อย</Label>
+                <select
+                  className="w-full rounded-xl border border-input bg-background px-2.5 py-1.5 text-xs shadow-xs font-medium truncate"
+                  value={addSubCatId}
+                  onChange={(e) => {
+                    const newSub = e.target.value;
+                    setAddSubCatId(newSub);
+                    syncReceiveProductFilters(addCatId, newSub, addSearch);
+                  }}
+                >
+                  <option value="all">🌐 ทุกหมวดหมู่ย่อย</option>
+                  {subCategories
+                    .filter((s) => addCatId === "all" || !s.categoryId || s.categoryId === addCatId)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        › {s.name}
+                      </option>
+                    ))}
+                </select>
+              </div>
             </div>
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
+              <Input
+                placeholder="ค้นหาชื่อสินค้า เช่น เดนมาร์ก, บาร์โค้ด..."
+                className="pl-8 h-9 text-xs rounded-xl"
+                value={addSearch}
+                onChange={(e) => {
+                  const newQ = e.target.value;
+                  setAddSearch(newQ);
+                  syncReceiveProductFilters(addCatId, addSubCatId, newQ);
+                }}
+              />
+            </div>
+
+            {/* Product Dropdown & Quick Selection Cards */}
+            {(() => {
+              const activeReceiveProd =
+                filteredAddProducts.find((p) => p.id === addSelectedProdId) ||
+                filteredAddProducts[0] ||
+                null;
+
+              return (
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold">เลือกสินค้าตรวจรับ *</Label>
+                    <span className="text-[11px] text-muted-foreground font-medium">
+                      พบ {filteredAddProducts.length} รายการ
+                    </span>
+                  </div>
+                  <select
+                    className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-xs font-medium cursor-pointer"
+                    value={activeReceiveProd?.id || ""}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        handleSelectProductInReceiveModal(e.target.value);
+                      }
+                    }}
+                  >
+                    <option value="">
+                      -- แตะเลือกสินค้า ({filteredAddProducts.length} รายการ) --
+                    </option>
+                    {filteredAddProducts.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.barcode}) • สต็อก: {p.stock}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* Clickable Quick List (แตะเลือกสินค้าได้ทันที) */}
+                  <div className="grid grid-cols-1 gap-1 max-h-36 overflow-y-auto pr-1 pt-1">
+                    {filteredAddProducts.slice(0, 8).map((p) => {
+                      const isSelected = activeReceiveProd?.id === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => handleSelectProductInReceiveModal(p.id)}
+                          className={cn(
+                            "text-left px-2.5 py-1.5 rounded-xl border text-xs transition-all active:scale-[0.98] flex items-center justify-between gap-2",
+                            isSelected
+                              ? "bg-emerald-500/15 border-emerald-500 shadow-2xs ring-1.5 ring-emerald-500/40 font-semibold text-foreground"
+                              : "bg-card hover:bg-muted/60 text-muted-foreground",
+                          )}
+                        >
+                          <div className="truncate flex-1">
+                            <span className="font-medium text-foreground">{p.name}</span>
+                            <span className="text-[10px] text-muted-foreground font-mono ml-1.5">
+                              ({p.barcode})
+                            </span>
+                          </div>
+                          {isSelected && (
+                            <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">

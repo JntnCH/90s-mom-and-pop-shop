@@ -86,7 +86,13 @@ import {
 } from "@/lib/sales-document-service";
 import { playScanBeep } from "@/lib/scanner-audio";
 import type { ScannedCodeType } from "@/lib/scanner-dedup";
-import { MasterStore, type ProductItem, type UnitItem } from "@/lib/store";
+import {
+  MasterStore,
+  type CategoryItem,
+  type ProductItem,
+  type SubCategoryItem,
+  type UnitItem,
+} from "@/lib/store";
 import { thaiBahtText } from "@/lib/thai-baht-text";
 
 export const Route = createFileRoute("/issue")({
@@ -126,11 +132,15 @@ interface CartItem {
 function PosAndIssuePage() {
   const [activeTab, setActiveTab] = useState<"pos" | "internal_issue">("pos");
   const [products, setProducts] = useState<ProductItem[]>([]);
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [subCategories, setSubCategories] = useState<SubCategoryItem[]>([]);
   const [units, setUnits] = useState<UnitItem[]>([]);
 
   // POS State
   const [cart, setCart] = useState<CartItem[]>([]);
   const [barcodeSearch, setBarcodeSearch] = useState("");
+  const [posCatId, setPosCatId] = useState<string>("all");
+  const [posSubCatId, setPosSubCatId] = useState<string>("all");
   const [overallDiscount, setOverallDiscount] = useState<number>(0);
   const [vatType, setVatType] = useState<VatType>("INCLUDED");
   const [vatRate] = useState<number>(7);
@@ -153,6 +163,9 @@ function PosAndIssuePage() {
   const [promptPayQrUrl, setPromptPayQrUrl] = useState<string>("");
 
   // Internal Stock Issue State (Tab 2)
+  const [internalCatId, setInternalCatId] = useState<string>("all");
+  const [internalSubCatId, setInternalSubCatId] = useState<string>("all");
+  const [internalSearch, setInternalSearch] = useState<string>("");
   const [internalProdId, setInternalProdId] = useState("");
   const [internalQty, setInternalQty] = useState(1);
   const [internalReason, setInternalReason] = useState("สินค้าเสียหาย / ชำรุด");
@@ -161,11 +174,74 @@ function PosAndIssuePage() {
   const reloadData = useCallback(() => {
     const list = MasterStore.getProducts();
     setProducts(list);
+    setCategories(MasterStore.getCategories());
+    setSubCategories(MasterStore.getSubCategories());
     setUnits(MasterStore.getUnits());
     if (list.length > 0 && !internalProdId) {
       setInternalProdId(list[0]?.id || "");
     }
   }, [internalProdId]);
+
+  const filteredInternalProducts = products.filter((p) => {
+    if (p.isActive === false) return false;
+    const matchesCat = internalCatId === "all" || p.categoryId === internalCatId;
+    const matchesSubCat = internalSubCatId === "all" || p.subCategoryId === internalSubCatId;
+    const q = internalSearch.toLowerCase().trim();
+    const matchesSearch =
+      !q ||
+      p.name.toLowerCase().includes(q) ||
+      p.barcode.toLowerCase().includes(q) ||
+      (p.sku && p.sku.toLowerCase().includes(q));
+    return matchesCat && matchesSubCat && matchesSearch;
+  });
+
+  const filteredPosProducts = products.filter((p) => {
+    if (p.isActive === false) return false;
+    const matchesCat = posCatId === "all" || p.categoryId === posCatId;
+    const matchesSubCat = posSubCatId === "all" || p.subCategoryId === posSubCatId;
+    return matchesCat && matchesSubCat;
+  });
+
+  const syncInternalProductFilters = useCallback(
+    (catId: string, subCatId: string, searchQuery: string) => {
+      const q = searchQuery.toLowerCase().trim();
+      const matched = products.filter((p) => {
+        if (p.isActive === false) return false;
+        const matchesCat = catId === "all" || p.categoryId === catId;
+        const matchesSubCat = subCatId === "all" || p.subCategoryId === subCatId;
+        const matchesSearch =
+          !q ||
+          p.name.toLowerCase().includes(q) ||
+          p.barcode.toLowerCase().includes(q) ||
+          (p.sku && p.sku.toLowerCase().includes(q));
+        return matchesCat && matchesSubCat && matchesSearch;
+      });
+
+      if (matched.length > 0) {
+        const stillValid = matched.find((p) => p.id === internalProdId);
+        const target = stillValid || matched[0];
+        if (target) {
+          setInternalProdId(target.id);
+        }
+      } else {
+        setInternalProdId("");
+      }
+    },
+    [products, internalProdId],
+  );
+
+  // Auto-sync internalProdId when internal filters change
+  useEffect(() => {
+    if (activeTab !== "internal_issue") return;
+    if (filteredInternalProducts.length === 0) {
+      if (internalProdId !== "") setInternalProdId("");
+      return;
+    }
+    const isCurrentValid = filteredInternalProducts.some((p) => p.id === internalProdId);
+    if (!isCurrentValid && filteredInternalProducts[0]) {
+      setInternalProdId(filteredInternalProducts[0].id);
+    }
+  }, [activeTab, filteredInternalProducts, internalProdId]);
 
   useEffect(() => {
     reloadData();
@@ -399,8 +475,15 @@ function PosAndIssuePage() {
 
   // Internal Stock Issue (Tab 2)
   const handleConfirmInternalIssue = () => {
-    const prod = products.find((p) => p.id === internalProdId);
-    if (!prod) return;
+    const currentProd =
+      filteredInternalProducts.find((p) => p.id === internalProdId) ||
+      filteredInternalProducts[0] ||
+      null;
+    if (!currentProd) {
+      toast.error("กรุณาเลือกสินค้าที่ต้องการตัดจ่าย");
+      return;
+    }
+    const prod = currentProd;
 
     if (internalQty <= 0) {
       toast.error("จำนวนจ่ายออกต้องมากกว่า 0");
@@ -568,21 +651,60 @@ function PosAndIssuePage() {
               </Card>
 
               {/* Quick Touch Products Catalog */}
-              <Card className="rounded-2xl border-border/80 shadow-sm p-4 space-y-3">
+              <Card className="rounded-2xl border-border/80 shadow-sm p-4 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                    <Sparkles className="size-4 text-primary" /> สินค้ายอดนิยม (แตะเพื่อเพิ่มในบิล)
+                    <Sparkles className="size-4 text-primary" /> เลือกสินค้าหน้าร้าน
+                    (แตะเพื่อเพิ่มในบิล)
                   </span>
                   <Badge variant="outline" className="text-[10px]">
-                    {products.filter((p) => p.isActive !== false).length} สินค้า
+                    {filteredPosProducts.length} สินค้า
                   </Badge>
                 </div>
 
+                {/* Category & SubCategory Selectors for POS */}
+                <div className="grid grid-cols-2 gap-1.5">
+                  <select
+                    className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-[11px] shadow-xs truncate font-medium"
+                    value={posCatId}
+                    onChange={(e) => {
+                      setPosCatId(e.target.value);
+                      setPosSubCatId("all");
+                    }}
+                  >
+                    <option value="all">📁 ทุกหมวดหมู่หลัก</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="w-full rounded-lg border border-input bg-background px-2 py-1.5 text-[11px] shadow-xs truncate font-medium"
+                    value={posSubCatId}
+                    onChange={(e) => setPosSubCatId(e.target.value)}
+                  >
+                    <option value="all">🌐 ทุกหมวดหมู่ย่อย</option>
+                    {subCategories
+                      .filter(
+                        (s) => posCatId === "all" || !s.categoryId || s.categoryId === posCatId,
+                      )
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          › {s.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
                 <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
-                  {products
-                    .filter((p) => p.isActive !== false)
-                    .slice(0, 12)
-                    .map((p) => (
+                  {filteredPosProducts.length === 0 ? (
+                    <div className="col-span-2 py-6 text-center text-xs text-muted-foreground">
+                      ไม่พบสินค้าในหมวดหมู่นี้
+                    </div>
+                  ) : (
+                    filteredPosProducts.slice(0, 24).map((p) => (
                       <button
                         key={p.id}
                         type="button"
@@ -599,7 +721,8 @@ function PosAndIssuePage() {
                           <span className="text-muted-foreground text-[10px]">เหลือ {p.stock}</span>
                         </div>
                       </button>
-                    ))}
+                    ))
+                  )}
                 </div>
               </Card>
             </div>
@@ -1062,19 +1185,140 @@ function PosAndIssuePage() {
                 </Alert>
               )}
 
-              <div className="space-y-1.5">
-                <Label className="text-xs font-semibold">เลือกสินค้าที่ต้องการเบิกจ่าย *</Label>
-                <select
-                  className="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-xs shadow-xs"
-                  value={internalProdId}
-                  onChange={(e) => setInternalProdId(e.target.value)}
-                >
-                  {products.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} ({p.barcode}) • คงเหลือ {p.stock}
-                    </option>
-                  ))}
-                </select>
+              <div className="space-y-2 p-3 rounded-xl bg-muted/40 border">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-semibold">เลือกสินค้าที่ต้องการเบิกจ่าย *</Label>
+                  <span className="text-[11px] text-muted-foreground font-medium">
+                    พบ {filteredInternalProducts.length} รายการ
+                  </span>
+                </div>
+
+                {/* Filter: Category & SubCategory */}
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">หมวดหมู่หลัก</Label>
+                    <select
+                      className="w-full rounded-xl border border-input bg-background px-2.5 py-1.5 text-xs shadow-xs font-medium truncate"
+                      value={internalCatId}
+                      onChange={(e) => {
+                        const newCat = e.target.value;
+                        setInternalCatId(newCat);
+                        setInternalSubCatId("all");
+                        syncInternalProductFilters(newCat, "all", internalSearch);
+                      }}
+                    >
+                      <option value="all">📁 ทุกหมวดหมู่หลัก</option>
+                      {categories.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-[11px] text-muted-foreground">หมวดหมู่ย่อย</Label>
+                    <select
+                      className="w-full rounded-xl border border-input bg-background px-2.5 py-1.5 text-xs shadow-xs font-medium truncate"
+                      value={internalSubCatId}
+                      onChange={(e) => {
+                        const newSub = e.target.value;
+                        setInternalSubCatId(newSub);
+                        syncInternalProductFilters(internalCatId, newSub, internalSearch);
+                      }}
+                    >
+                      <option value="all">🌐 ทุกหมวดหมู่ย่อย</option>
+                      {subCategories
+                        .filter(
+                          (s) =>
+                            internalCatId === "all" ||
+                            !s.categoryId ||
+                            s.categoryId === internalCatId,
+                        )
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            › {s.name}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Search */}
+                <div className="relative">
+                  <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
+                  <Input
+                    placeholder="ค้นหาชื่อสินค้า เช่น เดนมาร์ก, บาร์โค้ด..."
+                    className="pl-8 h-9 text-xs rounded-xl"
+                    value={internalSearch}
+                    onChange={(e) => {
+                      const newQ = e.target.value;
+                      setInternalSearch(newQ);
+                      syncInternalProductFilters(internalCatId, internalSubCatId, newQ);
+                    }}
+                  />
+                </div>
+
+                {/* Product Dropdown & Quick Selection Cards */}
+                {(() => {
+                  const currentInternalProd =
+                    filteredInternalProducts.find((p) => p.id === internalProdId) ||
+                    filteredInternalProducts[0] ||
+                    null;
+
+                  return (
+                    <div className="space-y-2">
+                      <select
+                        className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-xs font-medium cursor-pointer"
+                        value={currentInternalProd?.id || ""}
+                        onChange={(e) => {
+                          if (e.target.value) setInternalProdId(e.target.value);
+                        }}
+                      >
+                        <option value="">
+                          -- แตะเลือกสินค้า ({filteredInternalProducts.length} รายการ) --
+                        </option>
+                        {filteredInternalProducts.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} ({p.barcode}) • คงเหลือ {p.stock}
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Quick Pick list */}
+                      {filteredInternalProducts.length > 0 && (
+                        <div className="grid grid-cols-1 gap-1 max-h-36 overflow-y-auto pr-1 pt-1">
+                          {filteredInternalProducts.slice(0, 6).map((p) => {
+                            const isSelected = currentInternalProd?.id === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => setInternalProdId(p.id)}
+                                className={cn(
+                                  "text-left px-2.5 py-1.5 rounded-xl border text-xs transition-all active:scale-[0.98] flex items-center justify-between gap-2",
+                                  isSelected
+                                    ? "bg-emerald-500/15 border-emerald-500 shadow-2xs ring-1.5 ring-emerald-500/40 font-semibold text-foreground"
+                                    : "bg-card hover:bg-muted/60 text-muted-foreground",
+                                )}
+                              >
+                                <div className="truncate flex-1">
+                                  <span className="font-medium text-foreground">{p.name}</span>
+                                  <span className="text-[10px] text-muted-foreground font-mono ml-1.5">
+                                    ({p.barcode}) • เหลือ {p.stock}
+                                  </span>
+                                </div>
+                                {isSelected && (
+                                  <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="grid grid-cols-2 gap-3">

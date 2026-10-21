@@ -155,7 +155,30 @@ export const DEFAULT_CATEGORIES: CategoryItem[] = [
   { id: "cat-general", code: "GEN", name: "สินค้าเบ็ดเตล็ด" },
 ];
 
-export const DEFAULT_SUBCATEGORIES: SubCategoryItem[] = [];
+export const DEFAULT_SUBCATEGORIES: SubCategoryItem[] = [
+  { id: "sub-bev-milk", categoryId: "cat-beverage", code: "MILK", name: "นมและผลิตภัณฑ์นม" },
+  { id: "sub-bev-soda", categoryId: "cat-beverage", code: "SODA", name: "น้ำอัดลมและน้ำหวาน" },
+  { id: "sub-bev-water", categoryId: "cat-beverage", code: "WTR", name: "น้ำดื่ม ชา และกาแฟ" },
+  { id: "sub-snk-chips", categoryId: "cat-snack", code: "CHIP", name: "มันฝรั่งทอดและสแน็ค" },
+  { id: "sub-snk-bisc", categoryId: "cat-snack", code: "BISC", name: "บิสกิต คุกกี้ และเวเฟอร์" },
+  { id: "sub-fod-nood", categoryId: "cat-food", code: "NOOD", name: "บะหมี่และโจ๊กกึ่งสำเร็จรูป" },
+  { id: "sub-fod-canned", categoryId: "cat-food", code: "CAND", name: "ปลากระป๋องและอาหารกระป๋อง" },
+  { id: "sub-fod-season", categoryId: "cat-food", code: "SEAS", name: "เครื่องปรุงรสและซอส" },
+  {
+    id: "sub-hsh-deter",
+    categoryId: "cat-household",
+    code: "DETR",
+    name: "ผงซักฟอกและน้ำยาทำความสะอาด",
+  },
+  {
+    id: "sub-hsh-tissue",
+    categoryId: "cat-household",
+    code: "TISS",
+    name: "กระดาษทิชชู่และถุงขยะ",
+  },
+  { id: "sub-per-bath", categoryId: "cat-personal", code: "BATH", name: "สบู่ แชมพู และยาสีฟัน" },
+  { id: "sub-gen-misc", categoryId: "cat-general", code: "MISC", name: "ของใช้เบ็ดเตล็ดทั่วไป" },
+];
 
 export const DEFAULT_UNITS: UnitItem[] = [
   { id: "unit-piece", name: "ชิ้น", shortName: "ชิ้น" },
@@ -341,7 +364,11 @@ export const MasterStore = {
 
   // SubCategories
   getSubCategories(categoryId?: string): SubCategoryItem[] {
-    const list = safeGet<SubCategoryItem[]>(STORAGE_KEYS.SUBCATEGORIES, DEFAULT_SUBCATEGORIES);
+    let list = safeGet<SubCategoryItem[]>(STORAGE_KEYS.SUBCATEGORIES, DEFAULT_SUBCATEGORIES);
+    if ((!list || list.length === 0) && DEFAULT_SUBCATEGORIES.length > 0) {
+      list = DEFAULT_SUBCATEGORIES;
+      safeSet(STORAGE_KEYS.SUBCATEGORIES, DEFAULT_SUBCATEGORIES);
+    }
     if (categoryId && categoryId !== "all" && categoryId !== "ALL") {
       return list.filter((s) => !s.categoryId || s.categoryId === categoryId);
     }

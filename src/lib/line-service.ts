@@ -834,17 +834,16 @@ export async function sendWith3TierFallback(
   }
 
   // Never silently downgrade a Flex Message to plain text.
-if (format === "FLEX" || options.disableIntentFallback) {
-  return {
-    success: false,
-    channel: "server_api",
-    tier: 1,
-    message:
-      tier1ErrorReason ||
-      "ส่ง Flex Message ไม่สำเร็จ กรุณาตรวจสอบ LINE Messaging API และ LIFF",
-    fallbackReason: tier1ErrorReason,
-  };
-}
+  if (format === "FLEX" || options.disableIntentFallback) {
+    return {
+      success: false,
+      channel: "server_api",
+      tier: 1,
+      message:
+        tier1ErrorReason || "ส่ง Flex Message ไม่สำเร็จ กรุณาตรวจสอบ LINE Messaging API และ LIFF",
+      fallbackReason: tier1ErrorReason,
+    };
+  }
 
   // ─────────────────────────────────────────────────────────────
   // Tier 3: Web Share Intent (https://line.me/R/share) - Plain Text Fallback

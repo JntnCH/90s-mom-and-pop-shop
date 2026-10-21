@@ -131,6 +131,10 @@ export { CategorySelect as MainCategorySelect };
  */
 export interface SubCategorySelectProps extends SelectProps {
   categoryId?: string | undefined;
+  includeAll?: boolean | undefined;
+  allLabel?: string | undefined;
+  includeNone?: boolean | undefined;
+  noneLabel?: string | undefined;
 }
 
 export function SubCategorySelect({
@@ -140,6 +144,10 @@ export function SubCategorySelect({
   placeholder = "เลือกหมวดหมู่ย่อย",
   disabled,
   className,
+  includeAll = false,
+  allLabel = "ทุกหมวดหมู่ย่อย",
+  includeNone = true,
+  noneLabel = "ไม่ระบุหมวดหมู่ย่อย",
 }: SubCategorySelectProps) {
   const [subCategories, setSubCategories] = useState<SubCategoryItem[]>([]);
 
@@ -153,7 +161,25 @@ export function SubCategorySelect({
   const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
 
   return (
-    <Select value={value || ""} onValueChange={onChange} disabled={Boolean(disabled)}>
+    <Select
+      value={
+        value === "" || value === undefined
+          ? includeAll
+            ? "all"
+            : includeNone
+              ? "none"
+              : ""
+          : value
+      }
+      onValueChange={(val) => {
+        if (val === "none") {
+          onChange?.("");
+        } else {
+          onChange?.(val);
+        }
+      }}
+      disabled={Boolean(disabled)}
+    >
       <SelectTrigger
         className={cn(
           "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
@@ -164,6 +190,27 @@ export function SubCategorySelect({
         <SelectValue placeholder={placeholder} />
       </SelectTrigger>
       <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
+        {includeAll && (
+          <SelectItem
+            value="all"
+            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden text-primary"
+          >
+            <span className="truncate block max-w-full">🌐 {allLabel}</span>
+          </SelectItem>
+        )}
+        {includeNone && !includeAll && (
+          <SelectItem
+            value="none"
+            className="text-base py-2 font-normal text-muted-foreground leading-normal cursor-pointer overflow-hidden"
+          >
+            <span className="truncate block max-w-full">⚪ {noneLabel}</span>
+          </SelectItem>
+        )}
+        {subCategories.length === 0 && !includeAll && !includeNone && (
+          <div className="py-3 px-3 text-xs text-center text-muted-foreground">
+            ไม่มีหมวดหมู่ย่อยในหมวดนี้
+          </div>
+        )}
         {subCategories.map((s) => (
           <SelectItem
             key={s.id}
@@ -171,7 +218,7 @@ export function SubCategorySelect({
             className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
           >
             <span className="truncate block max-w-full">
-              {s.name} ({s.code})
+              › {s.name} ({s.code})
             </span>
           </SelectItem>
         ))}

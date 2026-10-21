@@ -148,6 +148,7 @@ import {
   type LineUserFollower,
   type ProductItem,
   type PurchaseOrderRecord,
+  type SubCategoryItem,
   type UnitItem,
   type ZoneItem,
 } from "@/lib/store";
@@ -199,6 +200,7 @@ type ReorderStrategy = "TARGET_PAR" | "MINIMUM_RESTORE" | "WEEKEND_BUFFER" | "DO
 function ReorderPage() {
   const [products, setProducts] = useState<ProductItem[]>([]);
   const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [subCategories, setSubCategories] = useState<SubCategoryItem[]>([]);
   const [zones, setZones] = useState<ZoneItem[]>([]);
   const [units, setUnits] = useState<UnitItem[]>([]);
   const [followers, setFollowers] = useState<LineUserFollower[]>([]);
@@ -217,6 +219,12 @@ function ReorderPage() {
   const [alertFilter, setAlertFilter] = useState<"ALL_ALERT" | "OUT_OF_STOCK" | "LOW_STOCK">(
     "ALL_ALERT",
   );
+  const [alertCatFilter, setAlertCatFilter] = useState<string>("all");
+  const [alertSubCatFilter, setAlertSubCatFilter] = useState<string>("all");
+
+  // Filter in Smart Reorder Calculator
+  const [calcCatFilter, setCalcCatFilter] = useState<string>("all");
+  const [calcSubCatFilter, setCalcSubCatFilter] = useState<string>("all");
 
   // Filter in PO History
   const [poStatusFilter, setPoStatusFilter] = useState<
@@ -250,10 +258,11 @@ function ReorderPage() {
   const [orderList, setOrderList] = useState<OrderCartItem[]>([]);
   const [supplierNameInput, setSupplierNameInput] = useState("บจก ไทรงามช้อป");
 
-  // Add Item Modal (Cascading: Zone -> Category -> Product)
+  // Add Item Modal (Cascading: Zone -> Category -> SubCategory -> Product)
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [addZoneId, setAddZoneId] = useState<string>("all");
   const [addCatId, setAddCatId] = useState<string>("all");
+  const [addSubCatId, setAddSubCatId] = useState<string>("all");
   const [addProductSearch, setAddProductSearch] = useState<string>("");
   const [selectedProdId, setSelectedProdId] = useState("");
   const [manualQty, setManualQty] = useState(10);
@@ -415,6 +424,7 @@ function ReorderPage() {
   const reloadData = useCallback(() => {
     const allProds = MasterStore.getProducts();
     const allCats = MasterStore.getCategories();
+    const allSubCats = MasterStore.getSubCategories();
     const allZones = MasterStore.getZones();
     const allUnits = MasterStore.getUnits();
     const allFollowers = MasterStore.getFollowers();
@@ -422,6 +432,7 @@ function ReorderPage() {
 
     setProducts(allProds);
     setCategories(allCats);
+    setSubCategories(allSubCats);
     setZones(allZones);
     setUnits(allUnits);
     setFollowers(allFollowers);
@@ -768,18 +779,27 @@ function ReorderPage() {
 
   // Phase 5: Smart Reorder Forecast List
   const forecastList = MasterStore.getSmartReorderForecast(calculationStrategy, customMultiplier);
-  const forecastTotalEstimatedCost = forecastList.reduce(
+  const displayedForecastList = forecastList.filter((item) => {
+    if (calcCatFilter !== "all" && item.product.categoryId !== calcCatFilter) return false;
+    if (calcSubCatFilter !== "all" && item.product.subCategoryId !== calcSubCatFilter) return false;
+    return true;
+  });
+  const forecastTotalEstimatedCost = displayedForecastList.reduce(
     (acc, curr) => acc + curr.estimatedCost,
     0,
   );
-  const forecastTotalQuantity = forecastList.reduce((acc, curr) => acc + curr.suggestedQuantity, 0);
+  const forecastTotalQuantity = displayedForecastList.reduce(
+    (acc, curr) => acc + curr.suggestedQuantity,
+    0,
+  );
 
-  const displayedAlertItems =
-    alertFilter === "OUT_OF_STOCK"
-      ? outOfStockItems
-      : alertFilter === "LOW_STOCK"
-        ? lowStockItems
-        : allReorderNeeded;
+  const displayedAlertItems = allReorderNeeded.filter((p) => {
+    if (alertFilter === "OUT_OF_STOCK" && p.stock > 0) return false;
+    if (alertFilter === "LOW_STOCK" && (p.stock <= 0 || p.stock > p.minStock)) return false;
+    if (alertCatFilter !== "all" && p.categoryId !== alertCatFilter) return false;
+    if (alertSubCatFilter !== "all" && p.subCategoryId !== alertSubCatFilter) return false;
+    return true;
+  });
 
   const createStockAlertItems = (): Parameters<typeof createStockAlertFlexBubble>[0] =>
     allReorderNeeded.map((product): Parameters<typeof createStockAlertFlexBubble>[0][number] => {
@@ -905,18 +925,66 @@ function ReorderPage() {
     if (p.isActive === false) return false;
     const matchesZone = addZoneId === "all" || p.zoneId === addZoneId;
     const matchesCat = addCatId === "all" || p.categoryId === addCatId;
+    const matchesSubCat = addSubCatId === "all" || p.subCategoryId === addSubCatId;
     const query = addProductSearch.toLowerCase().trim();
     const matchesSearch =
       !query ||
       p.name.toLowerCase().includes(query) ||
       p.barcode.toLowerCase().includes(query) ||
       (p.sku && p.sku.toLowerCase().includes(query));
-    return matchesZone && matchesCat && matchesSearch;
+    return matchesZone && matchesCat && matchesSubCat && matchesSearch;
   });
+
+  const handleSelectProductInAddModal = useCallback(
+    (prodId: string) => {
+      setSelectedProdId(prodId);
+      const p = products.find((prod) => prod.id === prodId);
+      if (p) {
+        setManualQty(p.reorderQuantity || 10);
+        setManualUnitId(p.unitId);
+        setManualCostPrice(p.costPrice);
+      }
+    },
+    [products],
+  );
+
+  // Synchronous updater when filters change
+  const syncAddProductFilters = useCallback(
+    (zoneId: string, catId: string, subCatId: string, searchQuery: string) => {
+      const q = searchQuery.toLowerCase().trim();
+      const matched = products.filter((p) => {
+        if (p.isActive === false) return false;
+        const mZone = zoneId === "all" || p.zoneId === zoneId;
+        const mCat = catId === "all" || p.categoryId === catId;
+        const mSub = subCatId === "all" || p.subCategoryId === subCatId;
+        const mQuery =
+          !q ||
+          p.name.toLowerCase().includes(q) ||
+          p.barcode.toLowerCase().includes(q) ||
+          (p.sku && p.sku.toLowerCase().includes(q));
+        return mZone && mCat && mSub && mQuery;
+      });
+
+      if (matched.length > 0) {
+        const stillValid = matched.find((p) => p.id === selectedProdId);
+        const target = stillValid || matched[0];
+        if (target) {
+          setSelectedProdId(target.id);
+          setManualQty(target.reorderQuantity || 10);
+          setManualUnitId(target.unitId);
+          setManualCostPrice(target.costPrice);
+        }
+      } else {
+        setSelectedProdId("");
+      }
+    },
+    [products, selectedProdId],
+  );
 
   const handleOpenAddModal = () => {
     setAddZoneId("all");
     setAddCatId("all");
+    setAddSubCatId("all");
     setAddProductSearch("");
     const prods = products.length > 0 ? products : MasterStore.getProducts();
     if (products.length === 0) setProducts(prods);
@@ -936,6 +1004,19 @@ function ReorderPage() {
     }
     setAddModalOpen(true);
   };
+
+  // Auto-sync selected product when filters or available products change
+  useEffect(() => {
+    if (!addModalOpen) return;
+    if (availableProductsForAdd.length === 0) {
+      if (selectedProdId !== "") setSelectedProdId("");
+      return;
+    }
+    const isCurrentValid = availableProductsForAdd.some((p) => p.id === selectedProdId);
+    if (!isCurrentValid && availableProductsForAdd[0]) {
+      handleSelectProductInAddModal(availableProductsForAdd[0].id);
+    }
+  }, [addModalOpen, availableProductsForAdd, selectedProdId, handleSelectProductInAddModal]);
 
   const handleOpenEditItemModal = (item: FullOrderItem) => {
     const p = item.product;
@@ -1064,10 +1145,16 @@ function ReorderPage() {
   };
 
   const handleAddManualItem = () => {
-    const prodId = selectedProdId || availableProductsForAdd[0]?.id;
-    if (!prodId) return;
-    const prod = products.find((p) => p.id === prodId);
-    if (!prod) return;
+    const currentProd =
+      availableProductsForAdd.find((p) => p.id === selectedProdId) ||
+      availableProductsForAdd[0] ||
+      null;
+    if (!currentProd) {
+      toast.error("กรุณาเลือกสินค้า");
+      return;
+    }
+    const prodId = currentProd.id;
+    const prod = currentProd;
 
     const qty = Math.max(1, Number(manualQty) || 1);
     const uId = manualUnitId || prod.unitId;
@@ -1109,7 +1196,8 @@ function ReorderPage() {
   };
 
   const handleApplyForecastToCart = () => {
-    const calculatedItems = forecastList.map((f) => ({
+    const listToApply = displayedForecastList.length > 0 ? displayedForecastList : forecastList;
+    const calculatedItems = listToApply.map((f) => ({
       productId: f.product.id,
       quantity: f.suggestedQuantity,
       unitId: f.product.unitId,
@@ -1117,10 +1205,9 @@ function ReorderPage() {
     }));
     setOrderList(calculatedItems);
     setActiveTab("create_po");
-    setStatusMessage({
-      type: "success",
-      text: `นำเข้าจำนวนสั่งซื้อที่คำนวณตามสูตร (${calculatedItems.length} รายการ, รวม ${forecastTotalQuantity} ชิ้น) เข้าสู่ใบสั่งซื้อเรียบร้อยแล้ว`,
-    });
+    toast.success(
+      `นำเข้าจำนวนสั่งซื้อที่คำนวณตามสูตร (${calculatedItems.length} รายการ, รวม ${forecastTotalQuantity} ชิ้น) เข้าสู่ใบสั่งซื้อเรียบร้อยแล้ว`,
+    );
   };
 
   const handleApplySingleForecast = (item: (typeof forecastList)[0]) => {
@@ -3784,10 +3871,10 @@ function ReorderPage() {
                 <Button
                   className="h-10 rounded-xl text-xs font-semibold gap-1.5 shadow-sm active:scale-95 bg-primary text-primary-foreground"
                   onClick={handleApplyForecastToCart}
-                  disabled={forecastList.length === 0}
+                  disabled={displayedForecastList.length === 0}
                 >
-                  <ArrowRight className="size-4" /> ใช้ยอดคำนวณทั้งหมดในใบสั่ง (
-                  {forecastList.length})
+                  <ArrowRight className="size-4" /> ใช้ยอดคำนวณที่เลือกในใบสั่ง (
+                  {displayedForecastList.length})
                 </Button>
               </div>
             </div>
@@ -3796,18 +3883,59 @@ function ReorderPage() {
           {/* Calculator Items Table */}
           <Card className="rounded-2xl border-border/80 shadow-sm">
             <CardHeader className="p-4 pb-2">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div>
                   <CardTitle className="text-base flex items-center gap-2">
                     <Calculator className="size-5 text-primary" />{" "}
                     ผลลัพธ์การคำนวณจำนวนที่ควรสั่งซื้อ
                   </CardTitle>
                   <CardDescription className="text-xs">
-                    เปรียบเทียบ สต็อกปัจจุบัน ➔ เป้าหมาย ➔ จำนวนที่ระบบแนะนำให้สั่งซื้อ
+                    เปรียบเทียบ สต็อกปัจจุบัน ➔ เป้าหมาย ➔ จำนวนที่ระบบแนะนำให้สั่งซื้อ (
+                    {displayedForecastList.length} รายการ)
                   </CardDescription>
                 </div>
-                <div className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 rounded-xl border border-emerald-500/20">
-                  ประมาณการงบรวม: ฿{forecastTotalEstimatedCost.toLocaleString("th-TH")}
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Category Filter */}
+                  <select
+                    className="h-8.5 rounded-xl border border-input bg-background px-2.5 text-xs font-medium shadow-2xs"
+                    value={calcCatFilter}
+                    onChange={(e) => {
+                      setCalcCatFilter(e.target.value);
+                      setCalcSubCatFilter("all");
+                    }}
+                  >
+                    <option value="all">📁 ทุกหมวดหมู่หลัก</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  {/* SubCategory Filter */}
+                  <select
+                    className="h-8.5 rounded-xl border border-input bg-background px-2.5 text-xs font-medium shadow-2xs"
+                    value={calcSubCatFilter}
+                    onChange={(e) => setCalcSubCatFilter(e.target.value)}
+                  >
+                    <option value="all">🌐 ทุกหมวดหมู่ย่อย</option>
+                    {subCategories
+                      .filter(
+                        (s) =>
+                          calcCatFilter === "all" ||
+                          !s.categoryId ||
+                          s.categoryId === calcCatFilter,
+                      )
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          › {s.name}
+                        </option>
+                      ))}
+                  </select>
+
+                  <div className="font-mono text-xs font-bold text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40 px-3 py-1.5 rounded-xl border border-emerald-500/20">
+                    ประมาณการงบรวม: ฿{forecastTotalEstimatedCost.toLocaleString("th-TH")}
+                  </div>
                 </div>
               </div>
             </CardHeader>
@@ -3830,14 +3958,14 @@ function ReorderPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {forecastList.length === 0 ? (
+                    {displayedForecastList.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={9} className="text-center py-12 text-muted-foreground">
-                          ไม่มีสินค้าที่ต้องคำนวณสั่งซื้อ
+                          ไม่มีสินค้าที่ต้องคำนวณสั่งซื้อในหมวดหมู่ที่เลือก
                         </TableCell>
                       </TableRow>
                     ) : (
-                      forecastList.map((item) => {
+                      displayedForecastList.map((item) => {
                         const isAdded = orderList.some((o) => o.productId === item.product.id);
                         return (
                           <TableRow key={item.product.id}>
@@ -3976,31 +4104,73 @@ function ReorderPage() {
             </CardHeader>
 
             <CardContent className="p-4 space-y-3">
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                <Button
-                  size="sm"
-                  variant={alertFilter === "ALL_ALERT" ? "default" : "outline"}
-                  className="h-8 text-xs rounded-xl"
-                  onClick={() => setAlertFilter("ALL_ALERT")}
-                >
-                  ทั้งหมด ({allReorderNeeded.length})
-                </Button>
-                <Button
-                  size="sm"
-                  variant={alertFilter === "OUT_OF_STOCK" ? "destructive" : "outline"}
-                  className="h-8 text-xs rounded-xl text-destructive"
-                  onClick={() => setAlertFilter("OUT_OF_STOCK")}
-                >
-                  สินค้าหมด (0) ({outOfStockItems.length})
-                </Button>
-                <Button
-                  size="sm"
-                  variant={alertFilter === "LOW_STOCK" ? "secondary" : "outline"}
-                  className="h-8 text-xs rounded-xl text-amber-700 dark:text-amber-300"
-                  onClick={() => setAlertFilter("LOW_STOCK")}
-                >
-                  สินค้าใกล้หมด ({lowStockItems.length})
-                </Button>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-1">
+                {/* Status Pills */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+                  <Button
+                    size="sm"
+                    variant={alertFilter === "ALL_ALERT" ? "default" : "outline"}
+                    className="h-8 text-xs rounded-xl"
+                    onClick={() => setAlertFilter("ALL_ALERT")}
+                  >
+                    ทั้งหมด ({allReorderNeeded.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={alertFilter === "OUT_OF_STOCK" ? "destructive" : "outline"}
+                    className="h-8 text-xs rounded-xl text-destructive"
+                    onClick={() => setAlertFilter("OUT_OF_STOCK")}
+                  >
+                    สินค้าหมด ({outOfStockItems.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={alertFilter === "LOW_STOCK" ? "secondary" : "outline"}
+                    className="h-8 text-xs rounded-xl text-amber-700 dark:text-amber-300"
+                    onClick={() => setAlertFilter("LOW_STOCK")}
+                  >
+                    สินค้าใกล้หมด ({lowStockItems.length})
+                  </Button>
+                </div>
+
+                {/* Category & SubCategory Filter Dropdowns */}
+                <div className="flex items-center gap-2">
+                  <select
+                    className="h-8 rounded-xl border border-input bg-background px-2.5 text-xs font-medium shadow-2xs"
+                    value={alertCatFilter}
+                    onChange={(e) => {
+                      setAlertCatFilter(e.target.value);
+                      setAlertSubCatFilter("all");
+                    }}
+                  >
+                    <option value="all">📁 ทุกหมวดหมู่หลัก</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="h-8 rounded-xl border border-input bg-background px-2.5 text-xs font-medium shadow-2xs"
+                    value={alertSubCatFilter}
+                    onChange={(e) => setAlertSubCatFilter(e.target.value)}
+                  >
+                    <option value="all">🌐 ทุกหมวดหมู่ย่อย</option>
+                    {subCategories
+                      .filter(
+                        (s) =>
+                          alertCatFilter === "all" ||
+                          !s.categoryId ||
+                          s.categoryId === alertCatFilter,
+                      )
+                      .map((s) => (
+                        <option key={s.id} value={s.id}>
+                          › {s.name}
+                        </option>
+                      ))}
+                  </select>
+                </div>
               </div>
 
               {/* Desktop Alerts Table */}
@@ -4323,6 +4493,7 @@ function ReorderPage() {
                 onChange={(e) => {
                   const newZoneId = e.target.value;
                   setAddZoneId(newZoneId);
+                  let nextCat = addCatId;
                   if (addCatId !== "all") {
                     const catExistsInZone = products.some(
                       (p) =>
@@ -4331,9 +4502,11 @@ function ReorderPage() {
                         p.categoryId === addCatId,
                     );
                     if (!catExistsInZone) {
+                      nextCat = "all";
                       setAddCatId("all");
                     }
                   }
+                  syncAddProductFilters(newZoneId, nextCat, addSubCatId, addProductSearch);
                 }}
               >
                 <option value="all">
@@ -4359,21 +4532,26 @@ function ReorderPage() {
                   <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
                     2
                   </span>
-                  เลือกหมวดหมู่สินค้า (Category)
+                  เลือกหมวดหมู่หลัก (Category)
                 </Label>
                 <Badge variant="outline" className="text-[10px]">
                   {addCatId === "all"
-                    ? "ทุกหมวดหมู่"
-                    : categories.find((c) => c.id === addCatId)?.name || "หมวดหมู่"}
+                    ? "ทุกหมวดหมู่หลัก"
+                    : categories.find((c) => c.id === addCatId)?.name || "หมวดหมู่หลัก"}
                 </Badge>
               </div>
               <select
                 className="w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate"
                 value={addCatId}
-                onChange={(e) => setAddCatId(e.target.value)}
+                onChange={(e) => {
+                  const newCat = e.target.value;
+                  setAddCatId(newCat);
+                  setAddSubCatId("all");
+                  syncAddProductFilters(addZoneId, newCat, "all", addProductSearch);
+                }}
               >
                 <option value="all">
-                  📁 ทุกหมวดหมู่ในโซนนี้ (
+                  📁 ทุกหมวดหมู่หลักในโซนนี้ (
                   {
                     products.filter(
                       (p) =>
@@ -4406,12 +4584,70 @@ function ReorderPage() {
               </select>
             </div>
 
-            {/* STEP 3: SELECT PRODUCT */}
-            <div className="space-y-2 p-3 rounded-xl bg-muted/40 border">
+            {/* STEP 3: SELECT SUBCATEGORY (หมวดหมู่ย่อย) */}
+            <div className="space-y-1.5 p-3 rounded-xl bg-muted/40 border">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
                   <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
                     3
+                  </span>
+                  เลือกหมวดหมู่ย่อย (Sub Category)
+                </Label>
+                <Badge variant="outline" className="text-[10px]">
+                  {addSubCatId === "all"
+                    ? "ทุกหมวดหมู่ย่อย"
+                    : subCategories.find((s) => s.id === addSubCatId)?.name || "หมวดหมู่ย่อย"}
+                </Badge>
+              </div>
+              <select
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate"
+                value={addSubCatId}
+                onChange={(e) => {
+                  const newSub = e.target.value;
+                  setAddSubCatId(newSub);
+                  syncAddProductFilters(addZoneId, addCatId, newSub, addProductSearch);
+                }}
+              >
+                <option value="all">
+                  🌐 ทุกหมวดหมู่ย่อย (
+                  {
+                    products.filter(
+                      (p) =>
+                        p.isActive !== false &&
+                        (addZoneId === "all" || p.zoneId === addZoneId) &&
+                        (addCatId === "all" || p.categoryId === addCatId),
+                    ).length
+                  }{" "}
+                  สินค้า)
+                </option>
+                {subCategories
+                  .filter((s) => {
+                    if (addCatId === "all") return true;
+                    return !s.categoryId || s.categoryId === addCatId;
+                  })
+                  .map((s) => {
+                    const count = products.filter(
+                      (p) =>
+                        p.isActive !== false &&
+                        (addZoneId === "all" || p.zoneId === addZoneId) &&
+                        (addCatId === "all" || p.categoryId === addCatId) &&
+                        p.subCategoryId === s.id,
+                    ).length;
+                    return (
+                      <option key={s.id} value={s.id}>
+                        › {s.name} ({count} สินค้า)
+                      </option>
+                    );
+                  })}
+              </select>
+            </div>
+
+            {/* STEP 4: SELECT PRODUCT */}
+            <div className="space-y-2.5 p-3 rounded-xl bg-muted/40 border">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
+                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
+                    4
                   </span>
                   เลือกสินค้าที่ต้องการสั่งซื้อ *
                 </Label>
@@ -4424,10 +4660,14 @@ function ReorderPage() {
               <div className="relative">
                 <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
                 <Input
-                  placeholder="ค้นหาชื่อสินค้า, บาร์โค้ด หรือ SKU..."
-                  className="pl-8 h-8 text-xs rounded-lg"
+                  placeholder="พิมพ์ค้นหาชื่อสินค้า เช่น เดนมาร์ก, บาร์โค้ด หรือ SKU..."
+                  className="pl-8 h-9 text-xs rounded-xl"
                   value={addProductSearch}
-                  onChange={(e) => setAddProductSearch(e.target.value)}
+                  onChange={(e) => {
+                    const newQ = e.target.value;
+                    setAddProductSearch(newQ);
+                    syncAddProductFilters(addZoneId, addCatId, addSubCatId, newQ);
+                  }}
                 />
               </div>
 
@@ -4455,55 +4695,100 @@ function ReorderPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="space-y-1.5">
-                  <select
-                    className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs sm:text-sm shadow-xs font-medium"
-                    value={selectedProdId || availableProductsForAdd[0]?.id || ""}
-                    onChange={(e) => {
-                      const newId = e.target.value;
-                      setSelectedProdId(newId);
-                      const p = products.find((prod) => prod.id === newId);
-                      if (p) {
-                        setManualQty(p.reorderQuantity || 10);
-                        setManualUnitId(p.unitId);
-                        setManualCostPrice(p.costPrice);
-                      }
-                    }}
-                  >
-                    {availableProductsForAdd.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} • สต็อก: {p.stock} {getUnitName(p.unitId)} (ทุน ฿
-                        {p.costPrice.toFixed(2)})
-                      </option>
-                    ))}
-                  </select>
-                  <div className="flex items-center justify-between text-[11px] pt-0.5">
-                    <span className="text-muted-foreground">ไม่พบสินค้าที่ต้องการ?</span>
-                    <button
-                      type="button"
-                      className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline flex items-center gap-1"
-                      onClick={() => {
-                        setAddModalOpen(false);
-                        setQuickName(addProductSearch || "");
-                        setQuickBarcode("");
-                        setQuickSku("");
-                        setQuickCostPrice("0");
-                        setQuickSellPrice("0");
-                        setQuickOrderQty("10");
-                        setQuickFormError("");
-                        setQuickAddModalOpen(true);
-                      }}
-                    >
-                      <PackagePlus className="size-3" /> + เพิ่มสินค้าใหม่ด่วน
-                    </button>
-                  </div>
-                </div>
+                (() => {
+                  const currentProd =
+                    availableProductsForAdd.find((p) => p.id === selectedProdId) ||
+                    availableProductsForAdd[0] ||
+                    null;
+
+                  return (
+                    <div className="space-y-2">
+                      <select
+                        className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs sm:text-sm shadow-xs font-medium cursor-pointer"
+                        value={currentProd?.id || ""}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            handleSelectProductInAddModal(e.target.value);
+                          }
+                        }}
+                      >
+                        <option value="">
+                          -- กรุณาเลือกสินค้า ({availableProductsForAdd.length} รายการ) --
+                        </option>
+                        {availableProductsForAdd.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} • สต็อก: {p.stock} {getUnitName(p.unitId)} (ทุน ฿
+                            {p.costPrice.toFixed(2)})
+                          </option>
+                        ))}
+                      </select>
+
+                      {/* Interactive Quick-Pick Product Cards (แตะเลือกสินค้าได้ทันที) */}
+                      <div className="space-y-1">
+                        <span className="text-[11px] font-semibold text-muted-foreground block">
+                          หรือแตะเลือกสินค้าโดยตรงด้านล่าง:
+                        </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
+                          {availableProductsForAdd.slice(0, 10).map((p) => {
+                            const isSelected = currentProd?.id === p.id;
+                            return (
+                              <button
+                                key={p.id}
+                                type="button"
+                                onClick={() => handleSelectProductInAddModal(p.id)}
+                                className={cn(
+                                  "text-left p-2.5 rounded-xl border text-xs transition-all active:scale-[0.98] flex items-center justify-between gap-2",
+                                  isSelected
+                                    ? "bg-emerald-500/15 border-emerald-500 shadow-sm ring-2 ring-emerald-500/40 text-foreground font-semibold"
+                                    : "bg-card hover:bg-muted/60 text-muted-foreground",
+                                )}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="truncate font-medium text-foreground">
+                                    {p.name}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground font-mono truncate">
+                                    {p.barcode} • สต็อก: {p.stock} {getUnitName(p.unitId)}
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between text-[11px] pt-0.5">
+                        <span className="text-muted-foreground">ไม่พบสินค้าที่ต้องการ?</span>
+                        <button
+                          type="button"
+                          className="text-emerald-700 dark:text-emerald-400 font-semibold hover:underline flex items-center gap-1"
+                          onClick={() => {
+                            setAddModalOpen(false);
+                            setQuickName(addProductSearch || "");
+                            setQuickBarcode("");
+                            setQuickSku("");
+                            setQuickCostPrice("0");
+                            setQuickSellPrice("0");
+                            setQuickOrderQty("10");
+                            setQuickFormError("");
+                            setQuickAddModalOpen(true);
+                          }}
+                        >
+                          <PackagePlus className="size-3" /> + เพิ่มสินค้าใหม่ด่วน
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })()
               )}
 
               {/* Selected Product Card Preview & Detailed Form */}
               {(() => {
                 const currentProd =
-                  products.find((p) => p.id === selectedProdId) ||
+                  availableProductsForAdd.find((p) => p.id === selectedProdId) ||
                   availableProductsForAdd[0] ||
                   null;
                 if (!currentProd) return null;
