@@ -4488,7 +4488,7 @@ function ReorderPage() {
                 </Badge>
               </div>
               <select
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate"
+                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-md shadow-xs font-medium truncate"
                 value={addZoneId}
                 onChange={(e) => {
                   const newZoneId = e.target.value;
