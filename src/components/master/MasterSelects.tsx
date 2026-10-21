@@ -3,13 +3,6 @@ import React, { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   MasterStore,
   type CategoryItem,
   type SubCategoryItem,
@@ -18,12 +11,14 @@ import {
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
-interface SelectProps {
+export interface SelectProps {
   value?: string | undefined;
   onChange: (value: string) => void;
   placeholder?: string | undefined;
   disabled?: boolean | undefined;
   className?: string | undefined;
+  includeAll?: boolean | undefined;
+  allLabel?: string | undefined;
 }
 
 /**
@@ -35,6 +30,8 @@ export function ZoneSelect({
   placeholder = "เลือกโซนจัดเก็บ",
   disabled,
   className,
+  includeAll = false,
+  allLabel = "ทุกโซนจัดเก็บ",
 }: SelectProps) {
   const [zones, setZones] = useState<ZoneItem[]>([]);
 
@@ -46,31 +43,30 @@ export function ZoneSelect({
     return () => window.removeEventListener("minimark_store_change", load);
   }, []);
 
-  const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
+  const isFilter = includeAll || (placeholder && placeholder.startsWith("ทุก"));
 
   return (
-    <Select value={value || ""} onValueChange={onChange} disabled={Boolean(disabled)}>
-      <SelectTrigger
-        className={cn(
-          "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
-          cleanClassName,
-          "text-base",
-        )}
-      >
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
-        {zones.map((z) => (
-          <SelectItem
-            key={z.id}
-            value={z.id}
-            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
-          >
-            <span className="truncate block max-w-full">{z.name}</span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={Boolean(disabled)}
+      className={cn(
+        "w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed",
+        className,
+      )}
+    >
+      {placeholder && (
+        <option value="" disabled={!isFilter}>
+          {isFilter ? `🌐 ${allLabel || placeholder}` : placeholder}
+        </option>
+      )}
+      {zones.map((z) => (
+        <option key={z.id} value={z.id}>
+          📍 {z.code ? `${z.code} - ` : ""}
+          {z.name}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -83,6 +79,8 @@ export function CategorySelect({
   placeholder = "เลือกหมวดหมู่หลัก",
   disabled,
   className,
+  includeAll = false,
+  allLabel = "ทุกหมวดหมู่หลัก",
 }: SelectProps) {
   const [categories, setCategories] = useState<CategoryItem[]>([]);
 
@@ -94,33 +92,29 @@ export function CategorySelect({
     return () => window.removeEventListener("minimark_store_change", load);
   }, []);
 
-  const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
+  const isFilter = includeAll || (placeholder && placeholder.startsWith("ทุก"));
 
   return (
-    <Select value={value || ""} onValueChange={onChange} disabled={Boolean(disabled)}>
-      <SelectTrigger
-        className={cn(
-          "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
-          cleanClassName,
-          "text-base",
-        )}
-      >
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
-        {categories.map((c) => (
-          <SelectItem
-            key={c.id}
-            value={c.id}
-            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
-          >
-            <span className="truncate block max-w-full">
-              {c.name} ({c.code})
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={Boolean(disabled)}
+      className={cn(
+        "w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed",
+        className,
+      )}
+    >
+      {placeholder && (
+        <option value="" disabled={!isFilter}>
+          {isFilter ? `📁 ${allLabel || placeholder}` : placeholder}
+        </option>
+      )}
+      {categories.map((c) => (
+        <option key={c.id} value={c.id}>
+          🏷️ {c.name} {c.code ? `(${c.code})` : ""}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -158,20 +152,13 @@ export function SubCategorySelect({
     return () => window.removeEventListener("minimark_store_change", load);
   }, [categoryId]);
 
-  const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
+  const isFilter = includeAll || (placeholder && placeholder.startsWith("ทุก"));
 
   return (
-    <Select
-      value={
-        value === "" || value === undefined
-          ? includeAll
-            ? "all"
-            : includeNone
-              ? "none"
-              : ""
-          : value
-      }
-      onValueChange={(val) => {
+    <select
+      value={value === "none" ? "none" : value || (isFilter ? "" : "none")}
+      onChange={(e) => {
+        const val = e.target.value;
         if (val === "none") {
           onChange?.("");
         } else {
@@ -179,51 +166,24 @@ export function SubCategorySelect({
         }
       }}
       disabled={Boolean(disabled)}
+      className={cn(
+        "w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed",
+        className,
+      )}
     >
-      <SelectTrigger
-        className={cn(
-          "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
-          cleanClassName,
-          "text-base",
-        )}
-      >
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
-        {includeAll && (
-          <SelectItem
-            value="all"
-            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden text-primary"
-          >
-            <span className="truncate block max-w-full">🌐 {allLabel}</span>
-          </SelectItem>
-        )}
-        {includeNone && !includeAll && (
-          <SelectItem
-            value="none"
-            className="text-base py-2 font-normal text-muted-foreground leading-normal cursor-pointer overflow-hidden"
-          >
-            <span className="truncate block max-w-full">⚪ {noneLabel}</span>
-          </SelectItem>
-        )}
-        {subCategories.length === 0 && !includeAll && !includeNone && (
-          <div className="py-3 px-3 text-xs text-center text-muted-foreground">
-            ไม่มีหมวดหมู่ย่อยในหมวดนี้
-          </div>
-        )}
-        {subCategories.map((s) => (
-          <SelectItem
-            key={s.id}
-            value={s.id}
-            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
-          >
-            <span className="truncate block max-w-full">
-              › {s.name} ({s.code})
-            </span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+      {isFilter && <option value="">🌐 {allLabel || placeholder}</option>}
+      {!isFilter && includeNone && <option value="none">⚪ {noneLabel}</option>}
+      {subCategories.length === 0 && !isFilter && !includeNone && (
+        <option value="" disabled>
+          ไม่มีหมวดหมู่ย่อยในหมวดนี้
+        </option>
+      )}
+      {subCategories.map((s) => (
+        <option key={s.id} value={s.id}>
+          › {s.name} {s.code ? `(${s.code})` : ""}
+        </option>
+      ))}
+    </select>
   );
 }
 
@@ -236,6 +196,8 @@ export function UnitSelect({
   placeholder = "เลือกหน่วยนับ",
   disabled,
   className,
+  includeAll = false,
+  allLabel = "ทุกหน่วยนับ",
 }: SelectProps) {
   const [units, setUnits] = useState<UnitItem[]>([]);
 
@@ -247,31 +209,29 @@ export function UnitSelect({
     return () => window.removeEventListener("minimark_store_change", load);
   }, []);
 
-  const cleanClassName = className ? className.replace(/\btext-(?:xs|sm)\b/g, "").trim() : "";
+  const isFilter = includeAll || (placeholder && placeholder.startsWith("ทุก"));
 
   return (
-    <Select value={value || ""} onValueChange={onChange} disabled={Boolean(disabled)}>
-      <SelectTrigger
-        className={cn(
-          "text-base min-w-0 overflow-hidden [&>span]:truncate [&>span]:block [&>span]:max-w-full",
-          cleanClassName,
-          "text-base",
-        )}
-      >
-        <SelectValue placeholder={placeholder} />
-      </SelectTrigger>
-      <SelectContent className="max-h-72 overflow-y-auto overflow-x-hidden min-w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]">
-        {units.map((u) => (
-          <SelectItem
-            key={u.id}
-            value={u.id}
-            className="text-base py-2.5 font-medium leading-normal cursor-pointer overflow-hidden"
-          >
-            <span className="truncate block max-w-full">{u.name}</span>
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <select
+      value={value || ""}
+      onChange={(e) => onChange(e.target.value)}
+      disabled={Boolean(disabled)}
+      className={cn(
+        "w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed",
+        className,
+      )}
+    >
+      {placeholder && (
+        <option value="" disabled={!isFilter}>
+          {isFilter ? `📦 ${allLabel || placeholder}` : placeholder}
+        </option>
+      )}
+      {units.map((u) => (
+        <option key={u.id} value={u.id}>
+          📦 {u.name}
+        </option>
+      ))}
+    </select>
   );
 }
 

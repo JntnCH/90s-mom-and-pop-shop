@@ -39,6 +39,7 @@ import { FlexMessageVisualizer } from "@/components/line/FlexMessageVisualizer";
 import { FlexSimulatorImporter } from "@/components/line/FlexSimulatorImporter";
 import { BackupRestoreTab } from "@/components/settings/BackupRestoreTab";
 import { GoogleSheetsSyncTab } from "@/components/sheets/GoogleSheetsSyncTab";
+import { CategorySelect } from "@/components/master/MasterSelects";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -2466,23 +2467,14 @@ function SettingsPage() {
             <div className="space-y-3.5 py-2">
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">หมวดหมู่หลัก *</Label>
-                <Select
+                <CategorySelect
                   value={subCategoryForm.categoryId}
-                  onValueChange={(categoryId) =>
+                  onChange={(categoryId) =>
                     setSubCategoryForm((previous) => ({ ...previous, categoryId }))
                   }
-                >
-                  <SelectTrigger className="h-10 rounded-xl">
-                    <SelectValue placeholder="เลือกหมวดหมู่หลัก" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {categories.map((category) => (
-                      <SelectItem key={category.id} value={category.id}>
-                        {category.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  placeholder="เลือกหมวดหมู่หลัก"
+                  className="h-10 rounded-xl"
+                />
               </div>
               <div className="space-y-1.5">
                 <Label className="text-xs font-semibold">ชื่อหมวดหมู่ย่อย *</Label>

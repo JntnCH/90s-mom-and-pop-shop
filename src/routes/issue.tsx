@@ -94,6 +94,7 @@ import {
   type UnitItem,
 } from "@/lib/store";
 import { thaiBahtText } from "@/lib/thai-baht-text";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/issue")({
   head: () => ({

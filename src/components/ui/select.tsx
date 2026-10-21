@@ -1,152 +1,284 @@
 "use client";
 
 import * as React from "react";
-import * as SelectPrimitive from "@radix-ui/react-select";
-import { Check, ChevronDown, ChevronUp } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 
-const Select = SelectPrimitive.Root;
+interface SelectOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
 
-const SelectGroup = SelectPrimitive.Group;
+interface SelectContextType {
+  value?: string;
+  onValueChange?: (value: string) => void;
+  disabled?: boolean;
+  registerOption: (option: SelectOption) => void;
+  unregisterOption: (value: string) => void;
+  setPlaceholder: (p: string) => void;
+  setTriggerClassName: (cls: string) => void;
+}
 
-const SelectValue = SelectPrimitive.Value;
+const SelectContext = React.createContext<SelectContextType | null>(null);
 
-const SelectTrigger = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Trigger>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
->(({ className, children, ...props }, ref) => (
-  <SelectPrimitive.Trigger
-    ref={ref}
-    className={cn(
-      "flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background cursor-pointer data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
-      className,
-    )}
-    {...props}
-  >
-    {children}
-    <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 opacity-50 shrink-0 ml-1.5" />
-    </SelectPrimitive.Icon>
-  </SelectPrimitive.Trigger>
-));
-SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
+function useSelectContext() {
+  return React.useContext(SelectContext);
+}
 
-const SelectScrollUpButton = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.ScrollUpButton>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.ScrollUpButton>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.ScrollUpButton
-    ref={ref}
-    className={cn("flex cursor-default items-center justify-center py-1", className)}
-    {...props}
-  >
-    <ChevronUp className="h-4 w-4" />
-  </SelectPrimitive.ScrollUpButton>
-));
-SelectScrollUpButton.displayName = SelectPrimitive.ScrollUpButton.displayName;
+function extractText(node: React.ReactNode): string {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (!node) return "";
+  if (Array.isArray(node)) return node.map(extractText).join("");
+  if (React.isValidElement(node)) {
+    const props = node.props as { children?: React.ReactNode };
+    if (props && props.children) {
+      return extractText(props.children);
+    }
+  }
+  return "";
+}
 
-const SelectScrollDownButton = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.ScrollDownButton>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.ScrollDownButton>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.ScrollDownButton
-    ref={ref}
-    className={cn("flex cursor-default items-center justify-center py-1", className)}
-    {...props}
-  >
-    <ChevronDown className="h-4 w-4" />
-  </SelectPrimitive.ScrollDownButton>
-));
-SelectScrollDownButton.displayName = SelectPrimitive.ScrollDownButton.displayName;
+export interface SelectProps {
+  value?: string;
+  defaultValue?: string;
+  onValueChange?: (value: string) => void;
+  disabled?: boolean;
+  name?: string;
+  children?: React.ReactNode;
+  className?: string;
+}
 
-const SelectContent = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = "popper", ...props }, ref) => (
-  <SelectPrimitive.Portal>
-    <SelectPrimitive.Content
-      ref={ref}
-      className={cn(
-        "relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] overflow-y-auto overflow-x-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-(--radix-select-content-transform-origin)",
-        position === "popper" &&
-          "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
-        className,
-      )}
-      position={position}
-      {...props}
-    >
-      <SelectScrollUpButton />
-      <SelectPrimitive.Viewport
+export function Select({
+  value: controlledValue,
+  defaultValue,
+  onValueChange,
+  disabled,
+  name,
+  children,
+  className,
+}: SelectProps) {
+  const [internalValue, setInternalValue] = React.useState(defaultValue || "");
+  const [dynamicPlaceholder, setDynamicPlaceholder] = React.useState<string>("");
+  const [dynamicTriggerClass, setDynamicTriggerClass] = React.useState<string>("");
+  const [dynamicOptions, setDynamicOptions] = React.useState<SelectOption[]>([]);
+
+  // Synchronously extract initial options and props from children tree
+  const { initialPlaceholder, initialTriggerClass, initialOptions } = React.useMemo(() => {
+    let initialPlaceholder = "";
+    let initialTriggerClass = "";
+    const initialOptions: SelectOption[] = [];
+
+    function walk(node: React.ReactNode) {
+      if (!node) return;
+      if (Array.isArray(node)) {
+        node.forEach(walk);
+        return;
+      }
+      if (React.isValidElement(node)) {
+        const props = node.props as Record<string, unknown>;
+        if (props) {
+          if ("value" in props && typeof props.value === "string" && !("onValueChange" in props)) {
+            initialOptions.push({
+              value: props.value,
+              label: extractText(props.children as React.ReactNode) || props.value,
+              disabled: Boolean(props.disabled),
+            });
+          }
+          if (props.placeholder && !initialPlaceholder) {
+            initialPlaceholder = String(props.placeholder);
+          }
+          if (
+            props.className &&
+            !initialTriggerClass &&
+            (node.type === SelectTrigger ||
+              (node.type as { displayName?: string })?.displayName === "SelectTrigger")
+          ) {
+            initialTriggerClass = String(props.className);
+          }
+          if (props.children) {
+            walk(props.children as React.ReactNode);
+          }
+        }
+      }
+    }
+
+    walk(children);
+    return { initialPlaceholder, initialTriggerClass, initialOptions };
+  }, [children]);
+
+  const value = controlledValue !== undefined ? controlledValue : internalValue;
+
+  const handleValueChange = React.useCallback(
+    (newVal: string) => {
+      if (controlledValue === undefined) {
+        setInternalValue(newVal);
+      }
+      onValueChange?.(newVal);
+    },
+    [controlledValue, onValueChange],
+  );
+
+  const registerOption = React.useCallback((opt: SelectOption) => {
+    setDynamicOptions((prev) => {
+      const idx = prev.findIndex((p) => p.value === opt.value);
+      if (idx >= 0) {
+        if (prev[idx].label === opt.label && prev[idx].disabled === opt.disabled) {
+          return prev;
+        }
+        const next = [...prev];
+        next[idx] = opt;
+        return next;
+      }
+      return [...prev, opt];
+    });
+  }, []);
+
+  const unregisterOption = React.useCallback((val: string) => {
+    setDynamicOptions((prev) => prev.filter((p) => p.value !== val));
+  }, []);
+
+  const contextValue = React.useMemo<SelectContextType>(
+    () => ({
+      value,
+      onValueChange: handleValueChange,
+      disabled,
+      setPlaceholder: setDynamicPlaceholder,
+      setTriggerClassName: setDynamicTriggerClass,
+      registerOption,
+      unregisterOption,
+    }),
+    [value, handleValueChange, disabled, registerOption, unregisterOption],
+  );
+
+  // Combine synchronous and dynamically registered options
+  const mergedOptions = React.useMemo(() => {
+    const map = new Map<string, SelectOption>();
+    for (const opt of initialOptions) {
+      map.set(opt.value, opt);
+    }
+    for (const opt of dynamicOptions) {
+      map.set(opt.value, opt);
+    }
+    return Array.from(map.values());
+  }, [initialOptions, dynamicOptions]);
+
+  const effectivePlaceholder = dynamicPlaceholder || initialPlaceholder;
+  const effectiveTriggerClass = dynamicTriggerClass || initialTriggerClass;
+
+  return (
+    <SelectContext.Provider value={contextValue}>
+      <div style={{ display: "none" }} aria-hidden="true">
+        {children}
+      </div>
+      <select
+        name={name}
+        value={value ?? ""}
+        onChange={(e) => handleValueChange(e.target.value)}
+        disabled={Boolean(disabled)}
         className={cn(
-          "p-1",
-          position === "popper" &&
-            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]",
+          "w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed",
+          effectiveTriggerClass,
+          className,
         )}
       >
-        {children}
-      </SelectPrimitive.Viewport>
-      <SelectScrollDownButton />
-    </SelectPrimitive.Content>
-  </SelectPrimitive.Portal>
-));
-SelectContent.displayName = SelectPrimitive.Content.displayName;
+        {effectivePlaceholder && (
+          <option value="" disabled hidden={Boolean(value)}>
+            {effectivePlaceholder}
+          </option>
+        )}
+        {mergedOptions.map((opt) => (
+          <option key={opt.value} value={opt.value} disabled={opt.disabled}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    </SelectContext.Provider>
+  );
+}
 
-const SelectLabel = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Label>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.Label
-    ref={ref}
-    className={cn("px-2 py-1.5 text-sm font-semibold", className)}
-    {...props}
-  />
-));
-SelectLabel.displayName = SelectPrimitive.Label.displayName;
+export const SelectTrigger = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, children }, _ref) => {
+    const ctx = useSelectContext();
+    React.useEffect(() => {
+      if (className && ctx?.setTriggerClassName) {
+        ctx.setTriggerClassName(className);
+      }
+    }, [className, ctx]);
 
-const SelectItem = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
->(({ className, children, ...props }, ref) => (
-  <SelectPrimitive.Item
-    ref={ref}
-    className={cn(
-      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-2 pr-8 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-      className,
-    )}
-    {...props}
-  >
-    <span className="absolute right-2 flex h-3.5 w-3.5 items-center justify-center">
-      <SelectPrimitive.ItemIndicator>
-        <Check className="h-4 w-4" />
-      </SelectPrimitive.ItemIndicator>
-    </span>
-    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-  </SelectPrimitive.Item>
-));
-SelectItem.displayName = SelectPrimitive.Item.displayName;
+    return <>{children}</>;
+  },
+);
+SelectTrigger.displayName = "SelectTrigger";
 
-const SelectSeparator = React.forwardRef<
-  React.ElementRef<typeof SelectPrimitive.Separator>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>
->(({ className, ...props }, ref) => (
-  <SelectPrimitive.Separator
-    ref={ref}
-    className={cn("-mx-1 my-1 h-px bg-muted", className)}
-    {...props}
-  />
-));
-SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
+export function SelectValue({ placeholder }: { placeholder?: string; className?: string }) {
+  const ctx = useSelectContext();
+  React.useEffect(() => {
+    if (placeholder && ctx?.setPlaceholder) {
+      ctx.setPlaceholder(placeholder);
+    }
+  }, [placeholder, ctx]);
 
-export {
-  Select,
-  SelectGroup,
-  SelectValue,
-  SelectTrigger,
-  SelectContent,
-  SelectLabel,
-  SelectItem,
-  SelectSeparator,
-  SelectScrollUpButton,
-  SelectScrollDownButton,
-};
+  return null;
+}
+SelectValue.displayName = "SelectValue";
+
+export function SelectContent({
+  children,
+}: {
+  children?: React.ReactNode;
+  className?: string;
+  position?: string;
+}) {
+  return <>{children}</>;
+}
+SelectContent.displayName = "SelectContent";
+
+export function SelectItem({
+  value,
+  disabled,
+  children,
+}: {
+  value: string;
+  disabled?: boolean;
+  className?: string;
+  children?: React.ReactNode;
+}) {
+  const ctx = useSelectContext();
+  const label = extractText(children) || value;
+
+  React.useEffect(() => {
+    ctx?.registerOption({ value, label, disabled });
+    return () => {
+      ctx?.unregisterOption(value);
+    };
+  }, [value, label, disabled, ctx]);
+
+  return null;
+}
+SelectItem.displayName = "SelectItem";
+
+export function SelectGroup({ children }: { children?: React.ReactNode }) {
+  return <>{children}</>;
+}
+SelectGroup.displayName = "SelectGroup";
+
+export function SelectLabel({ children: _ }: { children?: React.ReactNode; className?: string }) {
+  return null;
+}
+SelectLabel.displayName = "SelectLabel";
+
+export function SelectSeparator() {
+  return null;
+}
+SelectSeparator.displayName = "SelectSeparator";
+
+export function SelectScrollUpButton() {
+  return null;
+}
+SelectScrollUpButton.displayName = "SelectScrollUpButton";
+
+export function SelectScrollDownButton() {
+  return null;
+}
+SelectScrollDownButton.displayName = "SelectScrollDownButton";

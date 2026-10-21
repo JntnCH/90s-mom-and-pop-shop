@@ -73,6 +73,7 @@ import {
   type SubCategoryItem,
   type UnitItem,
 } from "@/lib/store";
+import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/receive")({
   head: () => ({
