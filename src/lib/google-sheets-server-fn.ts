@@ -32,7 +32,11 @@ const PERSISTENT_CONFIG_PATH = path.join(PERSISTENT_CONFIG_DIR, "google-service-
 
 function readPersistedConfig(): ServiceAccountCredentials | null {
   try {
-    if (fs.existsSync(PERSISTENT_CONFIG_PATH)) {
+    if (
+      typeof fs !== "undefined" &&
+      typeof fs.existsSync === "function" &&
+      fs.existsSync(PERSISTENT_CONFIG_PATH)
+    ) {
       const raw = fs.readFileSync(PERSISTENT_CONFIG_PATH, "utf8");
       const parsed = JSON.parse(raw) as Partial<ServiceAccountCredentials>;
       if (parsed.clientEmail && parsed.privateKey) {
@@ -52,6 +56,13 @@ function readPersistedConfig(): ServiceAccountCredentials | null {
 
 function writePersistedConfig(creds: ServiceAccountCredentials | null): void {
   try {
+    if (
+      typeof fs === "undefined" ||
+      typeof fs.existsSync !== "function" ||
+      typeof fs.writeFileSync !== "function"
+    ) {
+      return;
+    }
     if (!creds) {
       if (fs.existsSync(PERSISTENT_CONFIG_PATH)) {
         fs.unlinkSync(PERSISTENT_CONFIG_PATH);
@@ -73,6 +84,27 @@ function base64url(input: string | Buffer): string {
 }
 
 /**
+ * Read environment variable or Cloudflare Worker binding
+ */
+async function getBindingOrEnv(key: string): Promise<string> {
+  if (typeof process !== "undefined" && process.env && process.env[key]) {
+    const val = process.env[key];
+    if (typeof val === "string" && val.trim()) return val.trim();
+  }
+  try {
+    const mod = await import("cloudflare:workers");
+    const workerEnv = (mod as { env?: Record<string, unknown> }).env;
+    if (workerEnv && workerEnv[key]) {
+      const val = workerEnv[key];
+      if (typeof val === "string" && val.trim()) return val.trim();
+    }
+  } catch {
+    // Not running inside Cloudflare Workers or binding not found
+  }
+  return "";
+}
+
+/**
  * Extract Spreadsheet ID from raw ID or full Google Sheets URL
  */
 export function extractSpreadsheetId(input: string): string {
@@ -85,9 +117,9 @@ export function extractSpreadsheetId(input: string): string {
 }
 
 /**
- * Resolve Service Account credentials from Environment or Runtime config
+ * Resolve Service Account credentials from Environment (GitHub Secrets, Cloudflare Workers, Node) or Runtime config
  */
-function resolveServiceAccount(): ServiceAccountCredentials | null {
+async function resolveServiceAccount(): Promise<ServiceAccountCredentials | null> {
   if (runtimeServiceAccount?.clientEmail && runtimeServiceAccount?.privateKey) {
     return runtimeServiceAccount;
   }
@@ -99,13 +131,18 @@ function resolveServiceAccount(): ServiceAccountCredentials | null {
     return persisted;
   }
 
-  // 2. Check GOOGLE_SERVICE_ACCOUNT_JSON
+  // 2. Check GOOGLE_SERVICE_ACCOUNT_JSON (from process.env or Cloudflare Worker env)
   const rawJson = (
-    process.env["GOOGLE_SERVICE_ACCOUNT_JSON"] ||
-    process.env["GOOGLE_SERVICE_ACCOUNT"] ||
-    process.env["SERVICE_ACCOUNT_JSON"] ||
+    (await getBindingOrEnv("GOOGLE_SERVICE_ACCOUNT_JSON")) ||
+    (await getBindingOrEnv("GOOGLE_SERVICE_ACCOUNT")) ||
+    (await getBindingOrEnv("SERVICE_ACCOUNT_JSON")) ||
     ""
   ).trim();
+
+  const spreadsheetIdFromEnv =
+    (await getBindingOrEnv("GOOGLE_SPREADSHEET_ID")) ||
+    (await getBindingOrEnv("SPREADSHEET_ID")) ||
+    undefined;
 
   if (rawJson) {
     try {
@@ -126,9 +163,7 @@ function resolveServiceAccount(): ServiceAccountCredentials | null {
           clientEmail: clientEmail.trim(),
           privateKey: privateKey.trim(),
           projectId: projectId?.trim(),
-          spreadsheetId:
-            (process.env["GOOGLE_SPREADSHEET_ID"] || process.env["SPREADSHEET_ID"] || "").trim() ||
-            undefined,
+          spreadsheetId: spreadsheetIdFromEnv,
         };
       }
     } catch (err) {
@@ -136,17 +171,17 @@ function resolveServiceAccount(): ServiceAccountCredentials | null {
     }
   }
 
-  // 3. Check discrete env vars
+  // 3. Check discrete env vars (from process.env or Cloudflare Worker env)
   const email = (
-    process.env["GOOGLE_SERVICE_ACCOUNT_EMAIL"] ||
-    process.env["SERVICE_ACCOUNT_EMAIL"] ||
+    (await getBindingOrEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL")) ||
+    (await getBindingOrEnv("SERVICE_ACCOUNT_EMAIL")) ||
     ""
   ).trim();
 
   const key = (
-    process.env["GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY"] ||
-    process.env["SERVICE_ACCOUNT_PRIVATE_KEY"] ||
-    process.env["GOOGLE_PRIVATE_KEY"] ||
+    (await getBindingOrEnv("GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY")) ||
+    (await getBindingOrEnv("SERVICE_ACCOUNT_PRIVATE_KEY")) ||
+    (await getBindingOrEnv("GOOGLE_PRIVATE_KEY")) ||
     ""
   ).trim();
 
@@ -154,9 +189,7 @@ function resolveServiceAccount(): ServiceAccountCredentials | null {
     return {
       clientEmail: email,
       privateKey: key,
-      spreadsheetId:
-        (process.env["GOOGLE_SPREADSHEET_ID"] || process.env["SPREADSHEET_ID"] || "").trim() ||
-        undefined,
+      spreadsheetId: spreadsheetIdFromEnv,
     };
   }
 
@@ -232,17 +265,21 @@ export async function mintServiceAccountAccessToken(
  * Server Function: Get Google Sheets Configuration Status
  */
 export const getGoogleSheetsConfigFn = createServerFn({ method: "GET" }).handler(async () => {
-  const creds = resolveServiceAccount();
-  const envSpreadsheetId = (
-    process.env["GOOGLE_SPREADSHEET_ID"] ||
-    process.env["SPREADSHEET_ID"] ||
-    ""
-  ).trim();
+  const creds = await resolveServiceAccount();
+  const envSpreadsheetId =
+    (await getBindingOrEnv("GOOGLE_SPREADSHEET_ID")) ||
+    (await getBindingOrEnv("SPREADSHEET_ID")) ||
+    "";
 
-  const isFromEnv = Boolean(
-    process.env["GOOGLE_SERVICE_ACCOUNT_JSON"] || process.env["GOOGLE_SERVICE_ACCOUNT_EMAIL"],
-  );
-  const isFromFile = Boolean(!isFromEnv && fs.existsSync(PERSISTENT_CONFIG_PATH));
+  const rawEnvJson =
+    (await getBindingOrEnv("GOOGLE_SERVICE_ACCOUNT_JSON")) ||
+    (await getBindingOrEnv("GOOGLE_SERVICE_ACCOUNT_EMAIL"));
+  const isFromEnv = Boolean(rawEnvJson);
+  const isFromFile =
+    !isFromEnv &&
+    typeof fs !== "undefined" &&
+    typeof fs.existsSync === "function" &&
+    fs.existsSync(PERSISTENT_CONFIG_PATH);
 
   return {
     isConfigured: Boolean(creds?.clientEmail && creds?.privateKey),
@@ -349,7 +386,7 @@ export const disconnectGoogleSheetsConfigFn = createServerFn({ method: "POST" })
  * Server Function: Get Valid Access Token for Google Sheets API
  */
 export const getGoogleSheetsAccessTokenFn = createServerFn({ method: "GET" }).handler(async () => {
-  const creds = resolveServiceAccount();
+  const creds = await resolveServiceAccount();
   if (!creds) {
     return {
       success: false as const,
@@ -381,7 +418,7 @@ export const getGoogleSheetsAccessTokenFn = createServerFn({ method: "GET" }).ha
 export const testGoogleSheetsConnectionFn = createServerFn({ method: "POST" })
   .validator((data: { spreadsheetId?: string | undefined }) => data)
   .handler(async ({ data }) => {
-    const creds = resolveServiceAccount();
+    const creds = await resolveServiceAccount();
     if (!creds) {
       return {
         success: false,

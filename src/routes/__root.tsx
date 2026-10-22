@@ -147,13 +147,14 @@ function RootComponent() {
     // Eagerly pre-warm LINE LIFF SDK on app load so shareTargetPicker works with instant user gesture
     initLiff().catch(() => {});
 
-    // Initial background sync with central database (Cloud SQL)
+    // Initial background sync with central database (Cloud SQL / Server Store)
     const runInitialSync = async () => {
       try {
         const res = await syncMasterDatabaseFn({
           data: {
             products: MasterStore.getProducts(),
             categories: MasterStore.getCategories(),
+            subCategories: MasterStore.getSubCategories(),
             zones: MasterStore.getZones(),
             units: MasterStore.getUnits(),
             receives: MasterStore.getReceives(),
@@ -163,27 +164,9 @@ function RootComponent() {
           },
         });
         if (res?.success && res.data) {
-          if (Array.isArray(res.data.units) && res.data.units.length > 0) {
-            MasterStore.saveUnits(res.data.units as UnitItem[]);
-          }
-          if (Array.isArray(res.data.categories) && res.data.categories.length > 0) {
-            MasterStore.saveCategories(res.data.categories as CategoryItem[]);
-          }
-          if (Array.isArray(res.data.zones) && res.data.zones.length > 0) {
-            MasterStore.saveZones(res.data.zones as ZoneItem[]);
-          }
-          if (Array.isArray(res.data.products) && res.data.products.length > 0) {
-            MasterStore.saveProducts(res.data.products as ProductItem[]);
-          }
-          if (Array.isArray(res.data.followers) && res.data.followers.length > 0) {
-            MasterStore.saveFollowers(res.data.followers as LineUserFollower[]);
-          }
-          if (Array.isArray(res.data.movements) && res.data.movements.length > 0) {
-            MasterStore.saveMovements(res.data.movements as StockMovementLog[]);
-          }
-          if (Array.isArray(res.data.purchaseOrders) && res.data.purchaseOrders.length > 0) {
-            MasterStore.savePurchaseOrders(res.data.purchaseOrders as PurchaseOrderRecord[]);
-          }
+          MasterStore.syncDatabaseSnapshot(
+            res.data as Parameters<typeof MasterStore.syncDatabaseSnapshot>[0],
+          );
         }
       } catch (err) {
         console.warn("Central database background sync:", err);

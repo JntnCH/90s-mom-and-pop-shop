@@ -78,6 +78,7 @@ import { generateStoreBarcode, inspectBarcode } from "@/lib/barcode-engine";
 import { isScanSoundEnabled, playScanSuccessSound, setScanSoundEnabled } from "@/lib/scanner-audio";
 import {
   MasterStore,
+  triggerCentralServerSync,
   type CategoryItem,
   type ProductItem,
   type UnitItem,
@@ -444,6 +445,7 @@ function ProductsPage() {
       toast.success("เพิ่มสินค้าใหม่สำเร็จ");
     }
 
+    triggerCentralServerSync(true);
     stopScanner();
     setScannerActive(false);
     setModalOpen(false);
@@ -452,11 +454,13 @@ function ProductsPage() {
   const handleToggleStatus = (id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     MasterStore.toggleProductStatus(id);
+    triggerCentralServerSync(true);
   };
 
   const handleConfirmDelete = () => {
     if (productToDelete) {
       MasterStore.deleteProduct(productToDelete.id);
+      triggerCentralServerSync(true);
       setDeleteDialogOpen(false);
       setProductToDelete(null);
       toast.success("ลบสินค้าออกจากระบบแล้ว");

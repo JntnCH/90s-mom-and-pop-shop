@@ -285,6 +285,45 @@ if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
   }
 }
 
+let serverSyncTimer: ReturnType<typeof setTimeout> | null = null;
+let isApplyingServerSnapshot = false;
+
+export function triggerCentralServerSync(immediate = false) {
+  if (typeof window === "undefined" || isApplyingServerSnapshot) return;
+  if (serverSyncTimer) clearTimeout(serverSyncTimer);
+  const doSync = async () => {
+    try {
+      const { syncMasterDatabaseFn } = await import("./line-server-fn");
+      const res = await syncMasterDatabaseFn({
+        data: {
+          products: MasterStore.getProducts(),
+          categories: MasterStore.getCategories(),
+          subCategories: MasterStore.getSubCategories(),
+          zones: MasterStore.getZones(),
+          units: MasterStore.getUnits(),
+          receives: MasterStore.getReceives(),
+          followers: MasterStore.getFollowers(),
+          movements: MasterStore.getMovements(),
+          purchaseOrders: MasterStore.getPurchaseOrders(),
+        },
+      });
+      if (res?.success && res.data) {
+        MasterStore.syncDatabaseSnapshot(
+          res.data as Parameters<typeof MasterStore.syncDatabaseSnapshot>[0],
+        );
+      }
+    } catch (err) {
+      console.warn("[Store] Server sync notice:", err);
+    }
+  };
+
+  if (immediate) {
+    void doSync();
+  } else {
+    serverSyncTimer = setTimeout(doSync, 800);
+  }
+}
+
 function safeSet<T>(key: string, value: T): void {
   if (typeof window === "undefined") return;
   try {
@@ -292,6 +331,16 @@ function safeSet<T>(key: string, value: T): void {
     window.dispatchEvent(new Event("minimark_store_change"));
     if (syncChannel) {
       syncChannel.postMessage({ type: "STORE_UPDATED", key, timestamp: Date.now() });
+    }
+    if (
+      !isApplyingServerSnapshot &&
+      (key === STORAGE_KEYS.PRODUCTS ||
+        key === STORAGE_KEYS.CATEGORIES ||
+        key === STORAGE_KEYS.SUBCATEGORIES ||
+        key === STORAGE_KEYS.ZONES ||
+        key === STORAGE_KEYS.UNITS)
+    ) {
+      triggerCentralServerSync();
     }
   } catch {
     // ignore
@@ -1072,6 +1121,59 @@ export const MasterStore = {
     }
     window.dispatchEvent(new Event("minimark_store_change"));
     return updated;
+  },
+
+  /**
+   * Sync complete database snapshot received from server into local store
+   */
+  syncDatabaseSnapshot(data: {
+    products?: ProductItem[];
+    categories?: CategoryItem[];
+    subCategories?: SubCategoryItem[];
+    zones?: ZoneItem[];
+    units?: UnitItem[];
+    receives?: ReceiveItem[];
+    followers?: LineUserFollower[];
+    movements?: StockMovementLog[];
+    purchaseOrders?: PurchaseOrderRecord[];
+  }): void {
+    if (!data || typeof window === "undefined") return;
+    try {
+      isApplyingServerSnapshot = true;
+      if (Array.isArray(data.units) && data.units.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.UNITS, JSON.stringify(data.units));
+      }
+      if (Array.isArray(data.categories) && data.categories.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(data.categories));
+      }
+      if (Array.isArray(data.subCategories) && data.subCategories.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.SUBCATEGORIES, JSON.stringify(data.subCategories));
+      }
+      if (Array.isArray(data.zones) && data.zones.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.ZONES, JSON.stringify(data.zones));
+      }
+      if (Array.isArray(data.products) && data.products.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(data.products));
+      }
+      if (Array.isArray(data.receives) && data.receives.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.RECEIVES, JSON.stringify(data.receives));
+      }
+      if (Array.isArray(data.followers) && data.followers.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.FOLLOWERS, JSON.stringify(data.followers));
+      }
+      if (Array.isArray(data.movements) && data.movements.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(data.movements));
+      }
+      if (Array.isArray(data.purchaseOrders) && data.purchaseOrders.length > 0) {
+        localStorage.setItem(STORAGE_KEYS.PURCHASE_ORDERS, JSON.stringify(data.purchaseOrders));
+      }
+      window.dispatchEvent(new Event("minimark_store_change"));
+      if (syncChannel) {
+        syncChannel.postMessage({ type: "STORE_UPDATED", key: "ALL", timestamp: Date.now() });
+      }
+    } finally {
+      isApplyingServerSnapshot = false;
+    }
   },
 };
 

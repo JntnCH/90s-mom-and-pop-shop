@@ -1,4 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
+import fs from "node:fs";
+import path from "node:path";
 import {
   createMiniAppPortalFlexBubble,
   DEFAULT_STORE_NAME,
@@ -63,22 +65,74 @@ type SnapshotPurchaseOrder = Omit<DatabaseSnapshot["purchaseOrders"][number], "i
   items: JsonValue[];
 };
 
+const PERSISTED_DB_PATH = path.join(process.cwd(), ".data", "master-database-snapshot.json");
+
+function readPersistedDatabaseSnapshot(): Record<string, unknown> | null {
+  try {
+    if (
+      typeof fs !== "undefined" &&
+      typeof fs.existsSync === "function" &&
+      fs.existsSync(PERSISTED_DB_PATH)
+    ) {
+      const raw = fs.readFileSync(PERSISTED_DB_PATH, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return parsed as Record<string, unknown>;
+      }
+    }
+  } catch (err) {
+    console.warn("[ServerDB] Failed to read snapshot file:", err);
+  }
+  return null;
+}
+
+function writePersistedDatabaseSnapshot(data: unknown): void {
+  try {
+    if (
+      typeof fs === "undefined" ||
+      typeof fs.existsSync !== "function" ||
+      typeof fs.writeFileSync !== "function"
+    ) {
+      return;
+    }
+    const dir = path.dirname(PERSISTED_DB_PATH);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(PERSISTED_DB_PATH, JSON.stringify(data, null, 2), "utf8");
+  } catch (err) {
+    console.warn("[ServerDB] Failed to write snapshot file:", err);
+  }
+}
+
+const initialSavedSnapshot = readPersistedDatabaseSnapshot();
+
 // In-Memory Global Server Store (Single Source of Truth across all active clients)
 const globalServerDatabase: {
   lastUpdated: string;
-  products?: ProductItem[] | DatabaseSnapshot["products"] | undefined;
-  categories?: CategoryItem[] | DatabaseSnapshot["categories"] | undefined;
-  subCategories?: SubCategoryItem[] | DatabaseSnapshot["subCategories"] | undefined;
-  zones?: ZoneItem[] | DatabaseSnapshot["zones"] | undefined;
-  units?: UnitItem[] | DatabaseSnapshot["units"] | undefined;
-  receives?: ReceiveItem[] | DatabaseSnapshot["receives"] | undefined;
+  products: ProductItem[];
+  categories: CategoryItem[];
+  subCategories: SubCategoryItem[];
+  zones: ZoneItem[];
+  units: UnitItem[];
+  receives: ReceiveItem[];
   followers: (ServerLineFollower | DatabaseFollower)[];
-  movements?: StockMovementLog[] | DatabaseSnapshot["movements"] | undefined;
-  purchaseOrders?: PurchaseOrderRecord[] | SnapshotPurchaseOrder[] | undefined;
+  movements: StockMovementLog[];
+  purchaseOrders: (PurchaseOrderRecord | SnapshotPurchaseOrder)[];
 } = {
-  lastUpdated: new Date().toISOString(),
-  subCategories: [],
-  followers: [],
+  lastUpdated: (initialSavedSnapshot?.["lastUpdated"] as string) || new Date().toISOString(),
+  products: (initialSavedSnapshot?.["products"] as ProductItem[]) || [],
+  categories: (initialSavedSnapshot?.["categories"] as CategoryItem[]) || [],
+  subCategories: (initialSavedSnapshot?.["subCategories"] as SubCategoryItem[]) || [],
+  zones: (initialSavedSnapshot?.["zones"] as ZoneItem[]) || [],
+  units: (initialSavedSnapshot?.["units"] as UnitItem[]) || [],
+  receives: (initialSavedSnapshot?.["receives"] as ReceiveItem[]) || [],
+  followers:
+    (initialSavedSnapshot?.["followers"] as (ServerLineFollower | DatabaseFollower)[]) || [],
+  movements: (initialSavedSnapshot?.["movements"] as StockMovementLog[]) || [],
+  purchaseOrders:
+    (initialSavedSnapshot?.["purchaseOrders"] as (PurchaseOrderRecord | SnapshotPurchaseOrder)[]) ||
+    [],
 };
 
 function isJsonValue(value: unknown): value is JsonValue {
@@ -297,6 +351,7 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
         globalServerDatabase.movements = sqlSnapshot.movements;
         globalServerDatabase.purchaseOrders = serializedPurchaseOrders;
         globalServerDatabase.lastUpdated = new Date().toISOString();
+        writePersistedDatabaseSnapshot(globalServerDatabase);
 
         return {
           success: true,
@@ -309,12 +364,23 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
       }
     }
 
-    // 2. In-memory fallback
+    // 2. In-memory / file fallback
     if (data.products && Array.isArray(data.products) && data.products.length > 0) {
-      globalServerDatabase.products = data.products;
+      const productMap = new Map((globalServerDatabase.products || []).map((p) => [p.id, p]));
+      data.products.forEach((p) => {
+        const existing = productMap.get(p.id);
+        if (existing) {
+          productMap.set(p.id, { ...existing, ...p });
+        } else {
+          productMap.set(p.id, p);
+        }
+      });
+      globalServerDatabase.products = [...productMap.values()];
     }
-    if (data.categories && Array.isArray(data.categories)) {
-      globalServerDatabase.categories = data.categories;
+    if (data.categories && Array.isArray(data.categories) && data.categories.length > 0) {
+      const catMap = new Map((globalServerDatabase.categories || []).map((c) => [c.id, c]));
+      data.categories.forEach((c) => catMap.set(c.id, c));
+      globalServerDatabase.categories = [...catMap.values()];
     }
     if (data.subCategories && Array.isArray(data.subCategories) && data.subCategories.length > 0) {
       const merged = new Map(
@@ -329,11 +395,15 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
         (item) => !deletedIds.has(item.id),
       );
     }
-    if (data.zones && Array.isArray(data.zones)) {
-      globalServerDatabase.zones = data.zones;
+    if (data.zones && Array.isArray(data.zones) && data.zones.length > 0) {
+      const zoneMap = new Map((globalServerDatabase.zones || []).map((z) => [z.id, z]));
+      data.zones.forEach((z) => zoneMap.set(z.id, z));
+      globalServerDatabase.zones = [...zoneMap.values()];
     }
-    if (data.units && Array.isArray(data.units)) {
-      globalServerDatabase.units = data.units;
+    if (data.units && Array.isArray(data.units) && data.units.length > 0) {
+      const unitMap = new Map((globalServerDatabase.units || []).map((u) => [u.id, u]));
+      data.units.forEach((u) => unitMap.set(u.id, u));
+      globalServerDatabase.units = [...unitMap.values()];
     }
     if (data.receives && Array.isArray(data.receives)) {
       globalServerDatabase.receives = data.receives;
@@ -362,6 +432,7 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
     }
 
     globalServerDatabase.lastUpdated = new Date().toISOString();
+    writePersistedDatabaseSnapshot(globalServerDatabase);
 
     return {
       success: true,
