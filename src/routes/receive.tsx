@@ -694,7 +694,16 @@ function ReceiveCheckPage() {
                 </CardDescription>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0 flex-wrap">
+                {items.length > 0 && (
+                  <Button
+                    size="sm"
+                    className="h-9 text-xs rounded-xl gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold shadow-2xs"
+                    onClick={handleSaveToStock}
+                  >
+                    <PackageCheck className="size-3.5" /> บันทึก ({totalReceivedUnits} ชิ้น)
+                  </Button>
+                )}
                 <Button
                   size="sm"
                   variant="outline"
@@ -708,7 +717,7 @@ function ReceiveCheckPage() {
                     setAddModalOpen(true);
                   }}
                 >
-                  <Plus className="size-3.5" /> เพิ่มรายการตรวจรับเอง
+                  <Plus className="size-3.5" /> เพิ่มรายการเอง
                 </Button>
 
                 {items.length > 0 && (
@@ -1081,38 +1090,53 @@ function ReceiveCheckPage() {
 
               {/* Checklist Footer Actions */}
               {items.length > 0 && (
-                <div className="p-4 bg-muted/30 border-t flex flex-col sm:flex-row items-center justify-between gap-3 w-full min-w-0">
-                  <div className="text-xs text-muted-foreground text-center sm:text-left">
-                    ตรวจรับแล้ว{" "}
-                    <span className="font-bold text-emerald-600 font-mono">
-                      {receivedItemsCount} / {items.length}
-                    </span>{" "}
-                    รายการ • ยอดรับเข้าจริง{" "}
-                    <span className="font-bold text-primary font-mono">{totalReceivedUnits}</span>{" "}
-                    ชิ้น
+                <div className="p-3.5 sm:p-4 bg-muted/40 border-t space-y-3 w-full min-w-0">
+                  {/* Summary Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 text-xs bg-background/90 p-2.5 rounded-xl border border-border/70 shadow-2xs">
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-muted-foreground">ตรวจรับแล้ว:</span>
+                      <span className="font-bold text-foreground font-mono">
+                        {receivedItemsCount} / {items.length} รายการ
+                      </span>
+                      {receivedItemsCount === items.length && items.length > 0 ? (
+                        <span className="inline-flex items-center gap-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
+                          <Check className="size-3" /> ครบทุกรายการ
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <div className="flex items-center gap-1.5 font-mono text-xs">
+                      <span className="text-muted-foreground font-sans">ยอดรับเข้าจริง:</span>
+                      <span className="font-bold text-primary text-sm">{totalReceivedUnits}</span>
+                      <span className="text-muted-foreground font-sans text-[11px]">ชิ้น</span>
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 w-full sm:w-auto">
+                  {/* Action Buttons */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 w-full">
+                    {/* Helper Action: Check All */}
                     <Button
+                      type="button"
                       variant="outline"
-                      className="h-11 rounded-xl text-xs flex-1 sm:flex-initial"
+                      className="h-10 sm:h-11 rounded-xl text-xs font-medium border-border/80 text-foreground hover:bg-muted active:scale-[0.98] w-full sm:w-auto px-4 order-2 sm:order-1"
                       onClick={() => {
                         setItems((prev) => prev.map((i) => ({ ...i, isReceived: true })));
                         toast.success("ติ๊กได้รับครบทุกรายการแล้ว");
                       }}
                     >
-                      <Check className="size-4 mr-1 text-emerald-600" /> ติ๊กได้รับทั้งหมด
+                      <Check className="size-3.5 mr-1.5 text-emerald-600" /> ติ๊กได้รับครบทุกรายการ
+                      ({items.length})
                     </Button>
 
+                    {/* Primary Action: Save to Stock */}
                     <Button
+                      type="button"
                       size="lg"
-                      className="h-11 rounded-xl font-bold gap-2 flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white shadow-md active:scale-95"
+                      className="h-12 rounded-xl font-bold gap-2 bg-emerald-600 hover:bg-emerald-700 text-white shadow-md active:scale-[0.98] w-full sm:w-auto px-6 text-sm order-1 sm:order-2"
                       onClick={handleSaveToStock}
                     >
                       <PackageCheck className="size-5 shrink-0" />
-                      <span className="truncate">
-                        บันทึกตรวจรับเข้าสต็อก ({totalReceivedUnits} ชิ้น)
-                      </span>
+                      <span>บันทึกตรวจรับเข้าสต็อก ({totalReceivedUnits} ชิ้น)</span>
                     </Button>
                   </div>
                 </div>
