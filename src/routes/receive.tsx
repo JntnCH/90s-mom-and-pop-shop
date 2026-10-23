@@ -25,6 +25,7 @@ import {
   Trash2,
   XCircle,
   Zap,
+  History,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -121,6 +122,12 @@ function ReceiveCheckPage() {
   const [manualCode, setManualCode] = useState("");
   const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
   const [operatorName, setOperatorName] = useState("พนักงานตรวจรับสินค้า");
+  const [lastCompletedBatch, setLastCompletedBatch] = useState<{
+    count: number;
+    totalUnits: number;
+    time: string;
+    poNumber?: string;
+  } | null>(null);
 
   // Add Item Dialog
   const [addModalOpen, setAddModalOpen] = useState(false);
@@ -318,7 +325,21 @@ function ReceiveCheckPage() {
   // Update Item Fields
   const handleToggleReceived = (id: string) => {
     setItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, isReceived: !it.isReceived } : it)),
+      prev.map((it) => {
+        if (it.id !== id) return it;
+        const nextReceived = !it.isReceived;
+        return {
+          ...it,
+          isReceived: nextReceived,
+          receivedQuantity: nextReceived
+            ? it.receivedQuantity > 0
+              ? it.receivedQuantity
+              : it.expectedQuantity > 0
+                ? it.expectedQuantity
+                : 1
+            : 0,
+        };
+      }),
     );
   };
 
@@ -329,7 +350,7 @@ function ReceiveCheckPage() {
           ? {
               ...it,
               receivedQuantity: Math.max(0, qty),
-              isReceived: qty > 0 ? true : it.isReceived,
+              isReceived: qty > 0,
             }
           : it,
       ),
@@ -392,7 +413,7 @@ function ReceiveCheckPage() {
     ).length;
 
     verifiedItems.forEach((item) => {
-      // 1. Update stock
+      // 1. Update stock with fallback product name to ensure inventory is never dropped
       MasterStore.receiveStock(
         item.productId || item.barcode,
         item.receivedQuantity,
@@ -406,6 +427,7 @@ function ReceiveCheckPage() {
               })`
             : ""
         }`,
+        item.productName,
       );
 
       // 2. Add receive log
@@ -427,13 +449,24 @@ function ReceiveCheckPage() {
     }
 
     const totalQty = verifiedItems.reduce((acc, curr) => acc + curr.receivedQuantity, 0);
+    const completedPoNumber = selectedPoId
+      ? purchaseOrders.find((p) => p.id === selectedPoId)?.orderNumber
+      : undefined;
+
+    setLastCompletedBatch({
+      count: verifiedItems.length,
+      totalUnits: totalQty,
+      time: new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+      poNumber: completedPoNumber,
+    });
+
     setSaveSuccessMsg(
       `บันทึกตรวจรับสินค้าสำเร็จจำนวน ${verifiedItems.length} รายการ (รวม ${totalQty} ชิ้น) ปรับปรุงยอดสต็อกเรียลไทม์เรียบร้อยแล้ว`,
     );
-    toast.success("บันทึกรับเข้าสต็อกเรียบร้อยแล้ว!");
+    toast.success(`บันทึกรับเข้าสต็อกสำเร็จ ${totalQty} ชิ้น!`);
     setItems([]);
     setSelectedPoId("");
-    setTimeout(() => setSaveSuccessMsg(""), 6000);
+    setTimeout(() => setSaveSuccessMsg(""), 8000);
   };
 
   // Summary Metrics
@@ -456,6 +489,42 @@ function ReceiveCheckPage() {
         title="ตรวจรับสินค้าเข้าสต็อก (Goods Receipt - GRN)"
         description="ตรวจเช็คสินค้าเป็นรายการ ตรวจสอบการได้รับสินค้า จำนวนที่ได้มา ส่วนต่างขาด/เกิน และเลือกหน่วยนับ พร้อมตัดยอดสต็อกเรียลไทม์"
       />
+
+      {lastCompletedBatch && (
+        <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-3 sm:p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="size-5 text-emerald-600 shrink-0" />
+            <div>
+              <div className="font-bold text-foreground">
+                บันทึกเข้าสต็อกเรียบร้อยแล้ว ({lastCompletedBatch.time} น.)
+              </div>
+              <div className="text-muted-foreground mt-0.5">
+                รับเข้า {lastCompletedBatch.count} รายการ รวม{" "}
+                <span className="font-bold text-emerald-600 font-mono">
+                  {lastCompletedBatch.totalUnits}
+                </span>{" "}
+                ชิ้น
+                {lastCompletedBatch.poNumber ? ` [PO: ${lastCompletedBatch.poNumber}]` : ""} —
+                ยอดสต็อกในระบบปรับเพิ่มขึ้นแล้ว
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
+            <a
+              href="/stock"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-background border border-border text-foreground font-semibold hover:bg-muted text-xs transition-colors shadow-2xs"
+            >
+              <Package className="size-3.5 text-primary" /> เช็คสต็อกคงเหลือ
+            </a>
+            <a
+              href="/history"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-background border border-border text-foreground font-semibold hover:bg-muted text-xs transition-colors shadow-2xs"
+            >
+              <History className="size-3.5 text-primary" /> ดูประวัติรับเข้า
+            </a>
+          </div>
+        </div>
+      )}
 
       {saveSuccessMsg ? (
         <Alert className="bg-emerald-500/10 border-emerald-500/20 text-emerald-900 dark:text-emerald-200 rounded-2xl">
@@ -1120,8 +1189,21 @@ function ReceiveCheckPage() {
                       variant="outline"
                       className="h-10 sm:h-11 rounded-xl text-xs font-medium border-border/80 text-foreground hover:bg-muted active:scale-[0.98] w-full sm:w-auto px-4 order-2 sm:order-1"
                       onClick={() => {
-                        setItems((prev) => prev.map((i) => ({ ...i, isReceived: true })));
-                        toast.success("ติ๊กได้รับครบทุกรายการแล้ว");
+                        setItems((prev) =>
+                          prev.map((i) => ({
+                            ...i,
+                            isReceived: true,
+                            receivedQuantity:
+                              i.receivedQuantity > 0
+                                ? i.receivedQuantity
+                                : i.expectedQuantity > 0
+                                  ? i.expectedQuantity
+                                  : 1,
+                          })),
+                        );
+                        toast.success(
+                          "ติ๊กได้รับครบทุกรายการ และคำนวณยอดรับเข้าตามจำนวนที่สั่งให้อัตโนมัติแล้ว",
+                        );
                       }}
                     >
                       <Check className="size-3.5 mr-1.5 text-emerald-600" /> ติ๊กได้รับครบทุกรายการ

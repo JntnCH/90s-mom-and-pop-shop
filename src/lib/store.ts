@@ -752,15 +752,32 @@ export const MasterStore = {
     quantity: number,
     operator: string = "พนักงานสต็อก",
     note?: string,
+    productNameFallback?: string,
   ): { success: boolean; product?: ProductItem; movement?: StockMovementLog; error?: string } {
     if (quantity <= 0) return { success: false, error: "จำนวนรับเข้าต้องมากกว่า 0" };
 
     const products = this.getProducts();
-    const target = products.find(
+    let target = products.find(
       (p) => p.id === productIdentifier || p.barcode === productIdentifier,
     );
 
-    if (!target) return { success: false, error: "ไม่พบสินค้าในระบบ" };
+    if (!target) {
+      // Auto-register product if not yet in database so stock is preserved
+      const defaultUnit = this.getUnits()[0]?.id || "ชิ้น";
+      target = this.addProduct({
+        name:
+          productNameFallback ||
+          (note?.includes("[") ? note.split("]")[1]?.trim() : undefined) ||
+          `สินค้าใหม่ (${productIdentifier})`,
+        barcode: productIdentifier,
+        price: 0,
+        costPrice: 0,
+        stock: 0,
+        minStock: 5,
+        targetStock: 10,
+        unitId: defaultUnit,
+      });
+    }
 
     const prevStock = Number(target.stock) || 0;
     const newStock = prevStock + Number(quantity);
