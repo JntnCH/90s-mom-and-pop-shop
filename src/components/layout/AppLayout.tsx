@@ -160,7 +160,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </header>
 
         {/* Scrollable Page Body with Mobile-First padding & safe area */}
-        <main className="flex-1 px-3 py-3.5 sm:px-5 sm:py-5 lg:px-8 lg:py-6 pb-28 sm:pb-32 lg:pb-12 max-w-full overflow-x-hidden">
+        <main className="flex-1 px-3 py-3.5 sm:px-5 sm:py-5 lg:px-8 lg:py-6 pb-28 sm:pb-32 lg:pb-12 max-w-full min-w-0 w-full overflow-x-hidden">
           {children}
         </main>
 

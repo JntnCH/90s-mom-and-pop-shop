@@ -466,40 +466,42 @@ function ReceiveCheckPage() {
       ) : null}
 
       {/* KPI METRIC CARDS */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card className="rounded-2xl p-3 sm:p-4 border shadow-2xs">
-          <span className="text-xs text-muted-foreground font-medium block">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 w-full min-w-0">
+        <Card className="rounded-2xl p-3 sm:p-4 border shadow-2xs min-w-0">
+          <span className="text-xs text-muted-foreground font-medium block truncate">
             รายการตรวจรับทั้งหมด
           </span>
-          <div className="text-2xl font-bold font-mono text-foreground mt-1">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-foreground mt-1 truncate">
             {totalItemsCount}{" "}
             <span className="text-xs text-muted-foreground font-normal">รายการ</span>
           </div>
         </Card>
 
-        <Card className="rounded-2xl p-3 sm:p-4 border shadow-2xs bg-emerald-500/5 border-emerald-500/20">
-          <span className="text-xs text-emerald-700 dark:text-emerald-300 font-medium block">
+        <Card className="rounded-2xl p-3 sm:p-4 border shadow-2xs bg-emerald-500/5 border-emerald-500/20 min-w-0">
+          <span className="text-xs text-emerald-700 dark:text-emerald-300 font-medium block truncate">
             ได้รับสินค้าแล้ว (ติ๊กแล้ว)
           </span>
-          <div className="text-2xl font-bold font-mono text-emerald-600 mt-1">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-emerald-600 mt-1 truncate">
             {receivedItemsCount}{" "}
             <span className="text-xs text-emerald-600 font-normal">รายการ</span>
           </div>
         </Card>
 
-        <Card className="rounded-2xl p-3 sm:p-4 border shadow-2xs bg-destructive/5 border-destructive/20">
-          <span className="text-xs text-destructive font-medium block">
+        <Card className="rounded-2xl p-3 sm:p-4 border shadow-2xs bg-destructive/5 border-destructive/20 min-w-0">
+          <span className="text-xs text-destructive font-medium block truncate">
             สินค้าที่ขาด / ยังไม่ได้
           </span>
-          <div className="text-2xl font-bold font-mono text-destructive mt-1">
+          <div className="text-xl sm:text-2xl font-bold font-mono text-destructive mt-1 truncate">
             {missingItemsCount + shortItemsCount}{" "}
             <span className="text-xs text-destructive font-normal">รายการ</span>
           </div>
         </Card>
 
-        <Card className="rounded-2xl p-3 sm:p-4 border shadow-2xs bg-primary/5 border-primary/20">
-          <span className="text-xs text-primary font-medium block">จำนวนชิ้นที่ได้รับจริง</span>
-          <div className="text-2xl font-bold font-mono text-primary mt-1">
+        <Card className="rounded-2xl p-3 sm:p-4 border shadow-2xs bg-primary/5 border-primary/20 min-w-0">
+          <span className="text-xs text-primary font-medium block truncate">
+            จำนวนชิ้นที่ได้รับจริง
+          </span>
+          <div className="text-xl sm:text-2xl font-bold font-mono text-primary mt-1 truncate">
             {totalReceivedUnits}{" "}
             <span className="text-xs text-muted-foreground font-normal">ชิ้น/หน่วย</span>
           </div>
@@ -507,10 +509,10 @@ function ReceiveCheckPage() {
       </div>
 
       {/* RECEIVING CONTROLS & CAMERA */}
-      <div className="grid gap-4 sm:gap-6 lg:grid-cols-12">
+      <div className="grid gap-4 sm:gap-6 lg:grid-cols-12 w-full min-w-0">
         {/* LEFT COLUMN: SCANNER & PO SELECTION */}
-        <div className="lg:col-span-4 space-y-4">
-          <Card className="rounded-2xl border-border/80 shadow-sm">
+        <div className="lg:col-span-4 space-y-4 w-full min-w-0">
+          <Card className="rounded-2xl border-border/80 shadow-sm w-full min-w-0">
             <CardHeader className="p-4 pb-2">
               <CardTitle className="text-base flex items-center justify-between">
                 <span className="flex items-center gap-2">
@@ -561,23 +563,24 @@ function ReceiveCheckPage() {
               ) : null}
 
               {/* Camera Toggle */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 w-full">
                 {scanStatus === "scanning" || scanStatus === "starting" ? (
                   <>
                     <Button
                       size="default"
                       variant="destructive"
-                      className="flex-1 h-12 rounded-xl font-bold text-sm gap-2 active:scale-98"
+                      className="flex-1 h-12 rounded-xl font-bold text-xs sm:text-sm gap-2 active:scale-98 truncate px-2"
                       onClick={stopScanner}
                     >
-                      <CameraOff className="size-5" /> ปิดกล้องสแกนเนอร์
+                      <CameraOff className="size-5 shrink-0" />
+                      <span className="truncate">ปิดกล้องสแกนเนอร์</span>
                     </Button>
                     {hasTorch && (
                       <Button
                         size="default"
                         type="button"
                         variant={isTorchOn ? "default" : "outline"}
-                        className="h-12 px-4 rounded-xl font-semibold active:scale-98"
+                        className="h-12 px-4 rounded-xl font-semibold active:scale-98 shrink-0"
                         onClick={() => void toggleTorch()}
                       >
                         {isTorchOn ? (
@@ -591,10 +594,11 @@ function ReceiveCheckPage() {
                 ) : (
                   <Button
                     size="default"
-                    className="w-full h-12 rounded-xl font-bold text-sm gap-2 bg-primary text-primary-foreground shadow-sm active:scale-98"
+                    className="w-full h-12 rounded-xl font-bold text-xs sm:text-sm gap-2 bg-primary text-primary-foreground shadow-sm active:scale-98 truncate px-2"
                     onClick={() => void startScanner()}
                   >
-                    <Camera className="size-5" /> เปิดกล้องสแกนเนอร์รับสินค้า
+                    <Camera className="size-5 shrink-0" />
+                    <span className="truncate">เปิดกล้องสแกนเนอร์รับสินค้า</span>
                   </Button>
                 )}
               </div>
@@ -607,15 +611,20 @@ function ReceiveCheckPage() {
                   handleDetectedCode(manualCode.trim());
                   setManualCode("");
                 }}
-                className="flex gap-2 pt-1"
+                className="flex gap-2 pt-1 w-full min-w-0"
               >
                 <Input
                   value={manualCode}
                   onChange={(e) => setManualCode(e.target.value)}
                   placeholder="พิมพ์บาร์โค้ด / สแกนผ่านเครื่อง..."
-                  className="h-9 text-xs font-mono rounded-xl"
+                  className="h-9 text-xs font-mono rounded-xl min-w-0 flex-1"
                 />
-                <Button type="submit" size="sm" variant="secondary" className="h-9 px-3 rounded-xl">
+                <Button
+                  type="submit"
+                  size="sm"
+                  variant="secondary"
+                  className="h-9 px-3 rounded-xl shrink-0 font-medium"
+                >
                   เพิ่ม
                 </Button>
               </form>
@@ -623,10 +632,10 @@ function ReceiveCheckPage() {
           </Card>
 
           {/* PO Quick Select Card */}
-          <Card className="rounded-2xl border-border/80 shadow-sm p-4 space-y-3">
+          <Card className="rounded-2xl border-border/80 shadow-sm p-4 space-y-3 w-full min-w-0">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-                <FileText className="size-4 text-primary" /> ตรวจรับตามใบสั่งซื้อ (PO)
+                <FileText className="size-4 text-primary shrink-0" /> ตรวจรับตามใบสั่งซื้อ (PO)
               </span>
               <Button
                 variant="ghost"
@@ -643,7 +652,7 @@ function ReceiveCheckPage() {
                 เลือกใบสั่งซื้อที่ต้องการตรวจรับ
               </Label>
               <select
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-xs"
+                className="w-full max-w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-xs truncate"
                 value={selectedPoId}
                 onChange={(e) => handleSelectPO(e.target.value)}
               >
@@ -664,7 +673,7 @@ function ReceiveCheckPage() {
               <Input
                 value={operatorName}
                 onChange={(e) => setOperatorName(e.target.value)}
-                className="h-9 text-xs rounded-xl"
+                className="h-9 text-xs rounded-xl w-full min-w-0"
                 placeholder="ชื่อพนักงานผู้ตรวจรับ..."
               />
             </div>
@@ -672,24 +681,24 @@ function ReceiveCheckPage() {
         </div>
 
         {/* RIGHT COLUMN: RECEIVING CHECKLIST (เช็คเป็นรายการ) */}
-        <div className="lg:col-span-8 space-y-4">
-          <Card className="rounded-2xl border-border/80 shadow-sm overflow-hidden">
-            <CardHeader className="p-4 pb-3 border-b flex flex-row items-center justify-between gap-2 flex-wrap">
-              <div>
+        <div className="lg:col-span-8 space-y-4 w-full min-w-0">
+          <Card className="rounded-2xl border-border/80 shadow-sm overflow-hidden w-full max-w-full min-w-0">
+            <CardHeader className="p-4 pb-3 border-b flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+              <div className="min-w-0">
                 <CardTitle className="text-base flex items-center gap-2">
-                  <ClipboardCheck className="size-5 text-primary" /> รายการตรวจสอบสินค้าเข้า
-                  (Checklist)
+                  <ClipboardCheck className="size-5 text-primary shrink-0" />
+                  <span className="truncate">รายการตรวจสอบสินค้าเข้า (Checklist)</span>
                 </CardTitle>
-                <CardDescription className="text-xs">
+                <CardDescription className="text-xs line-clamp-1 sm:line-clamp-none">
                   เช็คการได้รับสินค้า, จำนวนที่ได้มา, คำนวณส่วนต่างขาด/เกิน และเลือกหน่วยนับ
                 </CardDescription>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 w-full sm:w-auto justify-end shrink-0">
                 <Button
                   size="sm"
                   variant="outline"
-                  className="h-9 text-xs rounded-xl gap-1.5"
+                  className="h-9 text-xs rounded-xl gap-1.5 flex-1 sm:flex-initial"
                   onClick={() => {
                     const firstProd = products[0];
                     if (firstProd) {
@@ -706,7 +715,7 @@ function ReceiveCheckPage() {
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-9 text-xs text-destructive hover:bg-destructive/10 rounded-xl"
+                    className="h-9 text-xs text-destructive hover:bg-destructive/10 rounded-xl shrink-0"
                     onClick={() => {
                       if (confirm("ต้องการล้างรายการตรวจรับทั้งหมดใช่หรือไม่?")) {
                         setItems([]);
@@ -719,9 +728,9 @@ function ReceiveCheckPage() {
               </div>
             </CardHeader>
 
-            <CardContent className="p-0">
+            <CardContent className="p-0 min-w-0">
               {items.length === 0 ? (
-                <div className="p-12 text-center text-muted-foreground space-y-3">
+                <div className="p-8 sm:p-12 text-center text-muted-foreground space-y-3">
                   <PackageCheck className="size-12 mx-auto opacity-30 text-primary" />
                   <div className="space-y-1">
                     <p className="font-semibold text-foreground text-sm">
@@ -748,61 +757,65 @@ function ReceiveCheckPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader className="bg-muted/50">
-                      <TableRow>
-                        <TableHead className="w-12 text-center">ได้รับไหม</TableHead>
-                        <TableHead>สินค้า / บาร์โค้ด</TableHead>
-                        <TableHead className="w-32 text-center">หน่วยนับ</TableHead>
-                        <TableHead className="w-24 text-right">จำนวนที่สั่ง</TableHead>
-                        <TableHead className="w-32 text-center">จำนวนที่ได้มา</TableHead>
-                        <TableHead className="w-28 text-center">ขาด/เกิน</TableHead>
-                        <TableHead className="w-12 text-center">ลบ</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {items.map((item, idx) => {
-                        const variance =
-                          item.expectedQuantity > 0
-                            ? item.receivedQuantity - item.expectedQuantity
-                            : 0;
-                        const isShort = item.expectedQuantity > 0 && variance < 0;
-                        const isOver = item.expectedQuantity > 0 && variance > 0;
-                        const isExact = item.expectedQuantity > 0 && variance === 0;
+                <>
+                  {/* MOBILE-FIRST CHECKLIST VIEW (< md): Card-based, zero horizontal scrolling cut-off */}
+                  <div className="md:hidden divide-y divide-border/60">
+                    {items.map((item, idx) => {
+                      const variance =
+                        item.expectedQuantity > 0
+                          ? item.receivedQuantity - item.expectedQuantity
+                          : 0;
+                      const isShort = item.expectedQuantity > 0 && variance < 0;
+                      const isOver = item.expectedQuantity > 0 && variance > 0;
+                      const isExact = item.expectedQuantity > 0 && variance === 0;
 
-                        return (
-                          <TableRow
-                            key={item.id}
-                            className={`transition-colors ${
-                              !item.isReceived ? "opacity-60 bg-muted/20" : ""
-                            }`}
-                          >
-                            {/* 1. เช็คว่าได้สินค้ามาไหม */}
-                            <TableCell className="text-center">
+                      return (
+                        <div
+                          key={item.id}
+                          className={cn(
+                            "p-3.5 space-y-3 transition-colors",
+                            !item.isReceived && "opacity-60 bg-muted/20",
+                          )}
+                        >
+                          {/* Top: Checkbox, Name, Code, Delete */}
+                          <div className="flex items-start justify-between gap-2.5">
+                            <div className="flex items-start gap-2.5 min-w-0 flex-1">
                               <Checkbox
                                 checked={item.isReceived}
                                 onCheckedChange={() => handleToggleReceived(item.id)}
                                 aria-label="สถานะได้รับสินค้า"
-                                className="size-5 rounded-md"
+                                className="size-5 rounded-md mt-0.5 shrink-0"
                               />
-                            </TableCell>
-
-                            {/* 2. ชื่อสินค้าและบาร์โค้ด */}
-                            <TableCell>
-                              <div className="font-semibold text-sm text-foreground">
-                                {idx + 1}. {item.productName}
+                              <div className="min-w-0 flex-1">
+                                <div className="font-semibold text-sm text-foreground leading-snug break-words">
+                                  {idx + 1}. {item.productName}
+                                </div>
+                                <div className="text-[11px] font-mono text-muted-foreground flex items-center gap-1.5 mt-1 flex-wrap">
+                                  <FormatBadge type={item.codeType} format={item.format} />
+                                  <span className="truncate">{item.barcode}</span>
+                                </div>
                               </div>
-                              <div className="text-[11px] font-mono text-muted-foreground flex items-center gap-1.5 mt-0.5">
-                                <FormatBadge type={item.codeType} format={item.format} />
-                                <span>{item.barcode}</span>
-                              </div>
-                            </TableCell>
+                            </div>
 
-                            {/* 3. เลือกหน่วยนับได้ */}
-                            <TableCell className="text-center">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="size-7 text-muted-foreground hover:text-destructive shrink-0 -mt-1 -mr-1"
+                              onClick={() => handleRemoveItem(item.id)}
+                              aria-label="ลบรายการ"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </div>
+
+                          {/* Middle: Unit selection and Expected Quantity */}
+                          <div className="grid grid-cols-2 gap-2 bg-muted/40 p-2.5 rounded-xl border border-border/50 text-xs">
+                            <div className="min-w-0">
+                              <label className="text-[11px] text-muted-foreground block mb-1 font-medium">
+                                หน่วยนับ
+                              </label>
                               <select
-                                className="h-9 px-2 text-sm sm:text-base rounded-lg border border-input bg-background font-medium truncate"
+                                className="h-8 w-full max-w-full px-2 text-xs rounded-lg border border-input bg-background font-medium truncate"
                                 value={item.unit}
                                 onChange={(e) => handleUpdateUnit(item.id, e.target.value)}
                               >
@@ -815,28 +828,37 @@ function ReceiveCheckPage() {
                                   <option value={item.unit}>{item.unit}</option>
                                 )}
                               </select>
-                            </TableCell>
+                            </div>
 
-                            {/* 4. จำนวนที่สั่ง / คาดหวัง */}
-                            <TableCell className="text-right">
-                              <Input
-                                type="number"
-                                min="0"
-                                value={item.expectedQuantity}
-                                onChange={(e) =>
-                                  handleUpdateExpectedQty(item.id, Number(e.target.value))
-                                }
-                                className="h-8 w-20 text-right font-mono text-xs rounded-lg inline-block"
-                              />
-                            </TableCell>
+                            <div className="min-w-0">
+                              <label className="text-[11px] text-muted-foreground block mb-1 font-medium text-right">
+                                สั่งไว้ (ตาม PO)
+                              </label>
+                              <div className="flex justify-end">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  value={item.expectedQuantity}
+                                  onChange={(e) =>
+                                    handleUpdateExpectedQty(item.id, Number(e.target.value))
+                                  }
+                                  className="h-8 w-20 text-right font-mono text-xs rounded-lg"
+                                />
+                              </div>
+                            </div>
+                          </div>
 
-                            {/* 5. จำนวนที่ได้มาจริง */}
-                            <TableCell>
-                              <div className="flex items-center justify-center gap-1">
+                          {/* Bottom: Actual Received Quantity Counter + Variance Status Badge */}
+                          <div className="flex items-center justify-between gap-2 pt-0.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs text-muted-foreground font-medium">
+                                ได้จริง:
+                              </span>
+                              <div className="flex items-center gap-1">
                                 <Button
                                   variant="outline"
                                   size="icon"
-                                  className="size-7 rounded-md"
+                                  className="size-7 rounded-md font-bold"
                                   onClick={() =>
                                     handleUpdateReceivedQty(item.id, item.receivedQuantity - 1)
                                   }
@@ -850,12 +872,12 @@ function ReceiveCheckPage() {
                                   onChange={(e) =>
                                     handleUpdateReceivedQty(item.id, Number(e.target.value))
                                   }
-                                  className="h-8 w-16 text-center font-mono font-bold text-sm rounded-lg"
+                                  className="h-8 w-14 text-center font-mono font-bold text-sm rounded-lg"
                                 />
                                 <Button
                                   variant="outline"
                                   size="icon"
-                                  className="size-7 rounded-md"
+                                  className="size-7 rounded-md font-bold"
                                   onClick={() =>
                                     handleUpdateReceivedQty(item.id, item.receivedQuantity + 1)
                                   }
@@ -863,56 +885,204 @@ function ReceiveCheckPage() {
                                   +
                                 </Button>
                               </div>
-                            </TableCell>
+                            </div>
 
-                            {/* 6. ขาดเท่าไหร่ / ส่วนต่าง */}
-                            <TableCell className="text-center font-mono text-xs">
+                            <div className="shrink-0">
                               {!item.isReceived ? (
-                                <Badge variant="secondary" className="text-[10px]">
+                                <Badge variant="secondary" className="text-[11px]">
                                   ยังไม่ได้รับ
                                 </Badge>
                               ) : item.expectedQuantity === 0 ? (
-                                <Badge variant="outline" className="text-[10px]">
+                                <Badge variant="outline" className="text-[11px]">
                                   {item.receivedQuantity} {item.unit}
                                 </Badge>
                               ) : isShort ? (
-                                <Badge variant="destructive" className="text-[10px] font-bold">
+                                <Badge variant="destructive" className="text-[11px] font-bold">
                                   ขาด {Math.abs(variance)} {item.unit}
                                 </Badge>
                               ) : isOver ? (
-                                <Badge className="bg-blue-600 text-white text-[10px] font-bold">
+                                <Badge className="bg-blue-600 text-white text-[11px] font-bold">
                                   เกิน +{variance} {item.unit}
                                 </Badge>
                               ) : (
-                                <Badge className="bg-emerald-600 text-white text-[10px] font-bold">
+                                <Badge className="bg-emerald-600 text-white text-[11px] font-bold">
                                   ครบถ้วน
                                 </Badge>
                               )}
-                            </TableCell>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
 
-                            {/* 7. ลบรายการ */}
-                            <TableCell className="text-center">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="size-7 text-muted-foreground hover:text-destructive"
-                                onClick={() => handleRemoveItem(item.id)}
-                              >
-                                <Trash2 className="size-3.5" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
+                  {/* DESKTOP/TABLET TABLE VIEW (>= md): Full spreadsheet-like view with horizontal scroll protection */}
+                  <div className="hidden md:block overflow-x-auto w-full max-w-full">
+                    <Table className="min-w-[650px] w-full">
+                      <TableHeader className="bg-muted/50">
+                        <TableRow>
+                          <TableHead className="w-12 text-center">ได้รับไหม</TableHead>
+                          <TableHead>สินค้า / บาร์โค้ด</TableHead>
+                          <TableHead className="w-32 text-center">หน่วยนับ</TableHead>
+                          <TableHead className="w-24 text-right">จำนวนที่สั่ง</TableHead>
+                          <TableHead className="w-32 text-center">จำนวนที่ได้มา</TableHead>
+                          <TableHead className="w-28 text-center">ขาด/เกิน</TableHead>
+                          <TableHead className="w-12 text-center">ลบ</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {items.map((item, idx) => {
+                          const variance =
+                            item.expectedQuantity > 0
+                              ? item.receivedQuantity - item.expectedQuantity
+                              : 0;
+                          const isShort = item.expectedQuantity > 0 && variance < 0;
+                          const isOver = item.expectedQuantity > 0 && variance > 0;
+                          const isExact = item.expectedQuantity > 0 && variance === 0;
+
+                          return (
+                            <TableRow
+                              key={item.id}
+                              className={`transition-colors ${
+                                !item.isReceived ? "opacity-60 bg-muted/20" : ""
+                              }`}
+                            >
+                              {/* 1. เช็คว่าได้สินค้ามาไหม */}
+                              <TableCell className="text-center">
+                                <Checkbox
+                                  checked={item.isReceived}
+                                  onCheckedChange={() => handleToggleReceived(item.id)}
+                                  aria-label="สถานะได้รับสินค้า"
+                                  className="size-5 rounded-md"
+                                />
+                              </TableCell>
+
+                              {/* 2. ชื่อสินค้าและบาร์โค้ด */}
+                              <TableCell>
+                                <div className="font-semibold text-sm text-foreground">
+                                  {idx + 1}. {item.productName}
+                                </div>
+                                <div className="text-[11px] font-mono text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                                  <FormatBadge type={item.codeType} format={item.format} />
+                                  <span>{item.barcode}</span>
+                                </div>
+                              </TableCell>
+
+                              {/* 3. เลือกหน่วยนับได้ */}
+                              <TableCell className="text-center">
+                                <select
+                                  className="h-9 px-2 text-sm rounded-lg border border-input bg-background font-medium truncate"
+                                  value={item.unit}
+                                  onChange={(e) => handleUpdateUnit(item.id, e.target.value)}
+                                >
+                                  {units.map((u) => (
+                                    <option key={u.id} value={u.name}>
+                                      {u.name} ({u.shortName})
+                                    </option>
+                                  ))}
+                                  {!units.some((u) => u.name === item.unit) && (
+                                    <option value={item.unit}>{item.unit}</option>
+                                  )}
+                                </select>
+                              </TableCell>
+
+                              {/* 4. จำนวนที่สั่ง / คาดหวัง */}
+                              <TableCell className="text-right">
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  value={item.expectedQuantity}
+                                  onChange={(e) =>
+                                    handleUpdateExpectedQty(item.id, Number(e.target.value))
+                                  }
+                                  className="h-8 w-20 text-right font-mono text-xs rounded-lg inline-block"
+                                />
+                              </TableCell>
+
+                              {/* 5. จำนวนที่ได้มาจริง */}
+                              <TableCell>
+                                <div className="flex items-center justify-center gap-1">
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="size-7 rounded-md"
+                                    onClick={() =>
+                                      handleUpdateReceivedQty(item.id, item.receivedQuantity - 1)
+                                    }
+                                  >
+                                    -
+                                  </Button>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    value={item.receivedQuantity}
+                                    onChange={(e) =>
+                                      handleUpdateReceivedQty(item.id, Number(e.target.value))
+                                    }
+                                    className="h-8 w-16 text-center font-mono font-bold text-sm rounded-lg"
+                                  />
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="size-7 rounded-md"
+                                    onClick={() =>
+                                      handleUpdateReceivedQty(item.id, item.receivedQuantity + 1)
+                                    }
+                                  >
+                                    +
+                                  </Button>
+                                </div>
+                              </TableCell>
+
+                              {/* 6. ขาดเท่าไหร่ / ส่วนต่าง */}
+                              <TableCell className="text-center font-mono text-xs">
+                                {!item.isReceived ? (
+                                  <Badge variant="secondary" className="text-[10px]">
+                                    ยังไม่ได้รับ
+                                  </Badge>
+                                ) : item.expectedQuantity === 0 ? (
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {item.receivedQuantity} {item.unit}
+                                  </Badge>
+                                ) : isShort ? (
+                                  <Badge variant="destructive" className="text-[10px] font-bold">
+                                    ขาด {Math.abs(variance)} {item.unit}
+                                  </Badge>
+                                ) : isOver ? (
+                                  <Badge className="bg-blue-600 text-white text-[10px] font-bold">
+                                    เกิน +{variance} {item.unit}
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-emerald-600 text-white text-[10px] font-bold">
+                                    ครบถ้วน
+                                  </Badge>
+                                )}
+                              </TableCell>
+
+                              {/* 7. ลบรายการ */}
+                              <TableCell className="text-center">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="size-7 text-muted-foreground hover:text-destructive"
+                                  onClick={() => handleRemoveItem(item.id)}
+                                >
+                                  <Trash2 className="size-3.5" />
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </>
               )}
 
               {/* Checklist Footer Actions */}
               {items.length > 0 && (
-                <div className="p-4 bg-muted/30 border-t flex flex-col sm:flex-row items-center justify-between gap-3">
-                  <div className="text-xs text-muted-foreground">
+                <div className="p-4 bg-muted/30 border-t flex flex-col sm:flex-row items-center justify-between gap-3 w-full min-w-0">
+                  <div className="text-xs text-muted-foreground text-center sm:text-left">
                     ตรวจรับแล้ว{" "}
                     <span className="font-bold text-emerald-600 font-mono">
                       {receivedItemsCount} / {items.length}
@@ -939,8 +1109,10 @@ function ReceiveCheckPage() {
                       className="h-11 rounded-xl font-bold gap-2 flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white shadow-md active:scale-95"
                       onClick={handleSaveToStock}
                     >
-                      <PackageCheck className="size-5" /> บันทึกตรวจรับเข้าสต็อก (
-                      {totalReceivedUnits} ชิ้น)
+                      <PackageCheck className="size-5 shrink-0" />
+                      <span className="truncate">
+                        บันทึกตรวจรับเข้าสต็อก ({totalReceivedUnits} ชิ้น)
+                      </span>
                     </Button>
                   </div>
                 </div>
