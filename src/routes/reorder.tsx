@@ -67,6 +67,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -269,6 +270,7 @@ function ReorderPage() {
   const [manualUnitId, setManualUnitId] = useState("");
   const [manualCostPrice, setManualCostPrice] = useState<number>(0);
   const [manualNote, setManualNote] = useState("");
+  const [selectedMultiProdIds, setSelectedMultiProdIds] = useState<string[]>([]);
 
   // Edit Item Modal State (Detailed Editing)
   const [editItemModalOpen, setEditItemModalOpen] = useState(false);
@@ -986,6 +988,7 @@ function ReorderPage() {
     setAddCatId("all");
     setAddSubCatId("all");
     setAddProductSearch("");
+    setSelectedMultiProdIds([]);
     const prods = products.length > 0 ? products : MasterStore.getProducts();
     if (products.length === 0) setProducts(prods);
     const firstActive = prods.find((p) => p.isActive !== false) || prods[0];
@@ -1144,7 +1147,7 @@ function ReorderPage() {
     setExportModalOpen(true);
   };
 
-  const handleAddManualItem = () => {
+  const handleAddManualItem = (shouldCloseModal = false) => {
     const currentProd =
       availableProductsForAdd.find((p) => p.id === selectedProdId) ||
       availableProductsForAdd[0] ||
@@ -1191,8 +1194,112 @@ function ReorderPage() {
       ];
     });
 
-    toast.success(`เพิ่ม "${prod.name}" (${qty} ${getUnitName(uId)}) ลงในใบสั่งซื้อแล้ว`);
-    setAddModalOpen(false);
+    toast.success(
+      `เพิ่ม "${prod.name}" (+${qty} ${getUnitName(uId)}) ลงในใบสั่งซื้อแล้ว` +
+        (!shouldCloseModal ? " (เลือกรายการอื่นต่อได้ทันที)" : ""),
+    );
+
+    if (shouldCloseModal) {
+      setAddModalOpen(false);
+    }
+  };
+
+  // Quick add single product or adjust quantity from item card directly
+  const handleQuickAddSingleProduct = (prod: ProductItem, deltaQty = 0) => {
+    const defaultQty = prod.reorderQuantity && prod.reorderQuantity > 0 ? prod.reorderQuantity : 10;
+    const addQty = deltaQty !== 0 ? deltaQty : defaultQty;
+    const uId = prod.unitId;
+    const cost = prod.costPrice;
+
+    setOrderList((prev) => {
+      const item = prev.find((i) => i.productId === prod.id);
+      if (item) {
+        const nextQty = item.quantity + addQty;
+        if (nextQty <= 0) {
+          return prev.filter((i) => i.productId !== prod.id);
+        }
+        return prev.map((i) => (i.productId === prod.id ? { ...i, quantity: nextQty } : i));
+      }
+      return [
+        ...prev,
+        {
+          productId: prod.id,
+          quantity: Math.max(1, addQty),
+          unitId: uId,
+          costPrice: cost,
+        },
+      ];
+    });
+
+    const currentItem = orderList.find((i) => i.productId === prod.id);
+    if (currentItem && currentItem.quantity + addQty <= 0) {
+      toast.info(`ลบ "${prod.name}" ออกจากใบสั่งซื้อ`);
+    } else {
+      toast.success(
+        `เพิ่ม "${prod.name}" (+${Math.max(1, addQty)} ${getUnitName(uId)}) ในใบสั่งซื้อแล้ว`,
+      );
+    }
+  };
+
+  // Batch add multiple checked items (เช่น แมวเขียว, แมวแดง, สมอ)
+  const handleAddBatchItems = () => {
+    if (selectedMultiProdIds.length === 0) {
+      toast.error("กรุณาติ๊กเลือกสินค้าอย่างน้อย 1 รายการ");
+      return;
+    }
+    const prodsToAdd = products.filter((p) => selectedMultiProdIds.includes(p.id));
+    if (prodsToAdd.length === 0) return;
+
+    setOrderList((prev) => {
+      const updated = [...prev];
+      for (const prod of prodsToAdd) {
+        const qty = prod.reorderQuantity && prod.reorderQuantity > 0 ? prod.reorderQuantity : 10;
+        const uId = prod.unitId;
+        const cost = prod.costPrice;
+        const existingIdx = updated.findIndex((i) => i.productId === prod.id);
+        if (existingIdx >= 0) {
+          updated[existingIdx] = {
+            ...updated[existingIdx],
+            quantity: updated[existingIdx].quantity + qty,
+          };
+        } else {
+          updated.push({
+            productId: prod.id,
+            quantity: qty,
+            unitId: uId,
+            costPrice: cost,
+          });
+        }
+      }
+      return updated;
+    });
+
+    const sample = prodsToAdd
+      .slice(0, 3)
+      .map((p) => p.name)
+      .join(", ");
+    const moreText = prodsToAdd.length > 3 ? ` และอื่นๆ รวม ${prodsToAdd.length} รายการ` : "";
+    toast.success(
+      `เพิ่มสินค้า ${prodsToAdd.length} รายการ (${sample}${moreText}) ลงในใบสั่งซื้อแล้ว`,
+    );
+    setSelectedMultiProdIds([]);
+  };
+
+  const toggleSelectMultiProduct = (prodId: string) => {
+    setSelectedMultiProdIds((prev) =>
+      prev.includes(prodId) ? prev.filter((id) => id !== prodId) : [...prev, prodId],
+    );
+  };
+
+  const toggleSelectAllVisible = () => {
+    const visibleIds = availableProductsForAdd.map((p) => p.id);
+    const allSelected =
+      visibleIds.length > 0 && visibleIds.every((id) => selectedMultiProdIds.includes(id));
+    if (allSelected) {
+      setSelectedMultiProdIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      setSelectedMultiProdIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
   };
 
   const handleApplyForecastToCart = () => {
@@ -4460,208 +4567,248 @@ function ReorderPage() {
       </Dialog>
       {/* ADD ITEM DIALOG (CASCADING: ZONE -> CATEGORY -> PRODUCT + DETAILED CUSTOMIZATION) */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
-        <DialogContent className="w-[96vw] max-w-lg rounded-2xl p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[96vw] max-w-2xl rounded-2xl p-4 sm:p-6 max-h-[92vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
-              <PackagePlus className="size-5 text-primary" />
-              เพิ่มรายการสินค้าในใบสั่งซื้อ
-            </DialogTitle>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
+                <PackagePlus className="size-5 text-emerald-600" />
+                เพิ่มรายการสินค้าในใบสั่งซื้อ
+              </DialogTitle>
+              {orderList.length > 0 && (
+                <Badge className="bg-emerald-600 text-white font-mono text-xs">
+                  ในใบสั่งซื้อแล้ว: {orderList.length} รายการ
+                </Badge>
+              )}
+            </div>
             <DialogDescription className="text-xs">
-              เลือกสินค้า ปรับเปลี่ยนจำนวน หน่วยนับ ราคาทุนต่อหน่วย และหมายเหตุตามต้องการ
+              เลือกสินค้าได้หลายรายการพร้อมกัน ไม่เด้งออก เพิ่มสินค้าได้ต่อเนื่อง สะดวก รวดเร็ว
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-2">
-            {/* STEP 1: SELECT ZONE */}
-            <div className="space-y-1.5 p-3 rounded-xl bg-muted/40 border">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
-                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
-                    1
+          {/* Persistent Order Summary Bar inside Modal */}
+          {orderList.length > 0 && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <PackageCheck className="size-4 text-emerald-600 shrink-0" />
+                <div>
+                  <span className="font-bold text-emerald-900 dark:text-emerald-200">
+                    บรรจุลงในใบสั่งซื้อแล้ว {orderList.length} รายการ
                   </span>
-                  เลือกโซนจัดเก็บ (Zone)
-                </Label>
-                <Badge variant="outline" className="text-[10px]">
-                  {addZoneId === "all"
-                    ? "ทุกโซน"
-                    : zones.find((z) => z.id === addZoneId)?.name || "โซน"}
-                </Badge>
+                  <span className="text-muted-foreground ml-1.5">
+                    (รวม {orderList.reduce((acc, i) => acc + i.quantity, 0)} ชิ้น • รวม ฿
+                    {orderList
+                      .reduce((acc, i) => acc + i.quantity * (i.costPrice || 0), 0)
+                      .toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                    )
+                  </span>
+                </div>
               </div>
-              <select
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-md shadow-xs font-medium truncate"
-                value={addZoneId}
-                onChange={(e) => {
-                  const newZoneId = e.target.value;
-                  setAddZoneId(newZoneId);
-                  let nextCat = addCatId;
-                  if (addCatId !== "all") {
-                    const catExistsInZone = products.some(
-                      (p) =>
-                        p.isActive !== false &&
-                        (newZoneId === "all" || p.zoneId === newZoneId) &&
-                        p.categoryId === addCatId,
-                    );
-                    if (!catExistsInZone) {
-                      nextCat = "all";
-                      setAddCatId("all");
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 text-[11px] font-semibold rounded-lg border-emerald-600/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-950 self-end sm:self-auto"
+                onClick={() => setAddModalOpen(false)}
+              >
+                เสร็จสิ้น / ดูใบสั่งซื้อ
+              </Button>
+            </div>
+          )}
+
+          <div className="space-y-3.5 py-1">
+            {/* COMPACT CASCADING FILTERS: ZONE -> CATEGORY -> SUBCATEGORY */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              {/* STEP 1: SELECT ZONE */}
+              <div className="space-y-1 p-2.5 rounded-xl bg-muted/40 border">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px] font-bold flex items-center gap-1 text-foreground">
+                    <span className="size-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[9px] font-bold">
+                      1
+                    </span>
+                    โซนจัดเก็บ
+                  </Label>
+                  <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">
+                    {addZoneId === "all"
+                      ? "ทุกโซน"
+                      : zones.find((z) => z.id === addZoneId)?.name || "โซน"}
+                  </span>
+                </div>
+                <select
+                  className="w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs shadow-2xs font-medium truncate cursor-pointer"
+                  value={addZoneId}
+                  onChange={(e) => {
+                    const newZoneId = e.target.value;
+                    setAddZoneId(newZoneId);
+                    let nextCat = addCatId;
+                    if (addCatId !== "all") {
+                      const catExistsInZone = products.some(
+                        (p) =>
+                          p.isActive !== false &&
+                          (newZoneId === "all" || p.zoneId === newZoneId) &&
+                          p.categoryId === addCatId,
+                      );
+                      if (!catExistsInZone) {
+                        nextCat = "all";
+                        setAddCatId("all");
+                      }
                     }
-                  }
-                  syncAddProductFilters(newZoneId, nextCat, addSubCatId, addProductSearch);
-                }}
-              >
-                <option value="all">
-                  🌐 ทุกโซนจัดเก็บ ({products.filter((p) => p.isActive !== false).length} สินค้า)
-                </option>
-                {zones.map((z) => {
-                  const count = products.filter(
-                    (p) => p.isActive !== false && p.zoneId === z.id,
-                  ).length;
-                  return (
-                    <option key={z.id} value={z.id}>
-                      📍 {z.code} - {z.name} ({count} สินค้า)
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {/* STEP 2: SELECT CATEGORY */}
-            <div className="space-y-1.5 p-3 rounded-xl bg-muted/40 border">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
-                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
-                    2
-                  </span>
-                  เลือกหมวดหมู่หลัก (Category)
-                </Label>
-                <Badge variant="outline" className="text-[10px]">
-                  {addCatId === "all"
-                    ? "ทุกหมวดหมู่หลัก"
-                    : categories.find((c) => c.id === addCatId)?.name || "หมวดหมู่หลัก"}
-                </Badge>
-              </div>
-              <select
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate"
-                value={addCatId}
-                onChange={(e) => {
-                  const newCat = e.target.value;
-                  setAddCatId(newCat);
-                  setAddSubCatId("all");
-                  syncAddProductFilters(addZoneId, newCat, "all", addProductSearch);
-                }}
-              >
-                <option value="all">
-                  📁 ทุกหมวดหมู่หลักในโซนนี้ (
-                  {
-                    products.filter(
-                      (p) =>
-                        p.isActive !== false && (addZoneId === "all" || p.zoneId === addZoneId),
-                    ).length
-                  }{" "}
-                  สินค้า)
-                </option>
-                {categories
-                  .filter((c) => {
-                    if (addZoneId === "all") return true;
-                    return products.some(
-                      (p) =>
-                        p.isActive !== false && p.zoneId === addZoneId && p.categoryId === c.id,
-                    );
-                  })
-                  .map((c) => {
+                    syncAddProductFilters(newZoneId, nextCat, addSubCatId, addProductSearch);
+                  }}
+                >
+                  <option value="all">
+                    🌐 ทุกโซน ({products.filter((p) => p.isActive !== false).length})
+                  </option>
+                  {zones.map((z) => {
                     const count = products.filter(
-                      (p) =>
-                        p.isActive !== false &&
-                        (addZoneId === "all" || p.zoneId === addZoneId) &&
-                        p.categoryId === c.id,
+                      (p) => p.isActive !== false && p.zoneId === z.id,
                     ).length;
                     return (
-                      <option key={c.id} value={c.id}>
-                        🏷️ {c.name} ({count} สินค้า)
+                      <option key={z.id} value={z.id}>
+                        📍 {z.code} - {z.name} ({count})
                       </option>
                     );
                   })}
-              </select>
-            </div>
-
-            {/* STEP 3: SELECT SUBCATEGORY (หมวดหมู่ย่อย) */}
-            <div className="space-y-1.5 p-3 rounded-xl bg-muted/40 border">
-              <div className="flex items-center justify-between">
-                <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
-                  <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
-                    3
-                  </span>
-                  เลือกหมวดหมู่ย่อย (Sub Category)
-                </Label>
-                <Badge variant="outline" className="text-[10px]">
-                  {addSubCatId === "all"
-                    ? "ทุกหมวดหมู่ย่อย"
-                    : subCategories.find((s) => s.id === addSubCatId)?.name || "หมวดหมู่ย่อย"}
-                </Badge>
+                </select>
               </div>
-              <select
-                className="w-full rounded-xl border border-input bg-background px-3 py-2 text-base shadow-xs font-medium truncate"
-                value={addSubCatId}
-                onChange={(e) => {
-                  const newSub = e.target.value;
-                  setAddSubCatId(newSub);
-                  syncAddProductFilters(addZoneId, addCatId, newSub, addProductSearch);
-                }}
-              >
-                <option value="all">
-                  🌐 ทุกหมวดหมู่ย่อย (
-                  {
-                    products.filter(
-                      (p) =>
-                        p.isActive !== false &&
-                        (addZoneId === "all" || p.zoneId === addZoneId) &&
-                        (addCatId === "all" || p.categoryId === addCatId),
-                    ).length
-                  }{" "}
-                  สินค้า)
-                </option>
-                {subCategories
-                  .filter((s) => {
-                    if (addCatId === "all") return true;
-                    return !s.categoryId || s.categoryId === addCatId;
-                  })
-                  .map((s) => {
-                    const count = products.filter(
-                      (p) =>
-                        p.isActive !== false &&
-                        (addZoneId === "all" || p.zoneId === addZoneId) &&
-                        (addCatId === "all" || p.categoryId === addCatId) &&
-                        p.subCategoryId === s.id,
-                    ).length;
-                    return (
-                      <option key={s.id} value={s.id}>
-                        › {s.name} ({count} สินค้า)
-                      </option>
-                    );
-                  })}
-              </select>
+
+              {/* STEP 2: SELECT CATEGORY */}
+              <div className="space-y-1 p-2.5 rounded-xl bg-muted/40 border">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px] font-bold flex items-center gap-1 text-foreground">
+                    <span className="size-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[9px] font-bold">
+                      2
+                    </span>
+                    หมวดหมู่หลัก
+                  </Label>
+                  <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">
+                    {addCatId === "all"
+                      ? "ทุกหมวด"
+                      : categories.find((c) => c.id === addCatId)?.name || "หมวด"}
+                  </span>
+                </div>
+                <select
+                  className="w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs shadow-2xs font-medium truncate cursor-pointer"
+                  value={addCatId}
+                  onChange={(e) => {
+                    const newCat = e.target.value;
+                    setAddCatId(newCat);
+                    setAddSubCatId("all");
+                    syncAddProductFilters(addZoneId, newCat, "all", addProductSearch);
+                  }}
+                >
+                  <option value="all">
+                    📁 ทุกหมวดหมู่ (
+                    {
+                      products.filter(
+                        (p) =>
+                          p.isActive !== false && (addZoneId === "all" || p.zoneId === addZoneId),
+                      ).length
+                    }
+                    )
+                  </option>
+                  {categories
+                    .filter((c) => {
+                      if (addZoneId === "all") return true;
+                      return products.some(
+                        (p) =>
+                          p.isActive !== false && p.zoneId === addZoneId && p.categoryId === c.id,
+                      );
+                    })
+                    .map((c) => {
+                      const count = products.filter(
+                        (p) =>
+                          p.isActive !== false &&
+                          (addZoneId === "all" || p.zoneId === addZoneId) &&
+                          p.categoryId === c.id,
+                      ).length;
+                      return (
+                        <option key={c.id} value={c.id}>
+                          🏷️ {c.name} ({count})
+                        </option>
+                      );
+                    })}
+                </select>
+              </div>
+
+              {/* STEP 3: SELECT SUBCATEGORY */}
+              <div className="space-y-1 p-2.5 rounded-xl bg-muted/40 border">
+                <div className="flex items-center justify-between">
+                  <Label className="text-[11px] font-bold flex items-center gap-1 text-foreground">
+                    <span className="size-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[9px] font-bold">
+                      3
+                    </span>
+                    หมวดหมู่ย่อย
+                  </Label>
+                  <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">
+                    {addSubCatId === "all"
+                      ? "ทุกหมวดย่อย"
+                      : subCategories.find((s) => s.id === addSubCatId)?.name || "ย่อย"}
+                  </span>
+                </div>
+                <select
+                  className="w-full rounded-lg border border-input bg-background px-2.5 py-1.5 text-xs shadow-2xs font-medium truncate cursor-pointer"
+                  value={addSubCatId}
+                  onChange={(e) => {
+                    const newSub = e.target.value;
+                    setAddSubCatId(newSub);
+                    syncAddProductFilters(addZoneId, addCatId, newSub, addProductSearch);
+                  }}
+                >
+                  <option value="all">
+                    🌐 ทุกหมวดย่อย (
+                    {
+                      products.filter(
+                        (p) =>
+                          p.isActive !== false &&
+                          (addZoneId === "all" || p.zoneId === addZoneId) &&
+                          (addCatId === "all" || p.categoryId === addCatId),
+                      ).length
+                    }
+                    )
+                  </option>
+                  {subCategories
+                    .filter((s) => {
+                      if (addCatId === "all") return true;
+                      return !s.categoryId || s.categoryId === addCatId;
+                    })
+                    .map((s) => {
+                      const count = products.filter(
+                        (p) =>
+                          p.isActive !== false &&
+                          (addZoneId === "all" || p.zoneId === addZoneId) &&
+                          (addCatId === "all" || p.categoryId === addCatId) &&
+                          p.subCategoryId === s.id,
+                      ).length;
+                      return (
+                        <option key={s.id} value={s.id}>
+                          › {s.name} ({count})
+                        </option>
+                      );
+                    })}
+                </select>
+              </div>
             </div>
 
-            {/* STEP 4: SELECT PRODUCT */}
-            <div className="space-y-2.5 p-3 rounded-xl bg-muted/40 border">
+            {/* STEP 4: SELECT PRODUCT (MULTI-SELECT & QUICK-ADD CAPABLE) */}
+            <div className="space-y-2 p-3 rounded-xl bg-muted/40 border">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-bold flex items-center gap-1.5 text-foreground">
                   <span className="size-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold">
                     4
                   </span>
-                  เลือกสินค้าที่ต้องการสั่งซื้อ *
+                  เลือกสินค้าที่ต้องการสั่งซื้อ (แตะเลือก หรือติ๊กหลายรายการพร้อมกัน) *
                 </Label>
                 <span className="text-[11px] text-muted-foreground font-medium">
                   พบ {availableProductsForAdd.length} รายการ
                 </span>
               </div>
 
-              {/* Quick Search */}
+              {/* Quick Search with Clear Button */}
               <div className="relative">
                 <Search className="size-3.5 absolute left-3 top-2.5 text-muted-foreground" />
                 <Input
-                  placeholder="พิมพ์ค้นหาชื่อสินค้า เช่น เดนมาร์ก, บาร์โค้ด หรือ SKU..."
-                  className="pl-8 h-9 text-xs rounded-xl"
+                  placeholder="พิมพ์ค้นหาชื่อสินค้า เช่น แมวเขียว, แมวแดง, สมอ, บาร์โค้ด หรือ SKU..."
+                  className="pl-8 pr-8 h-9 text-xs rounded-xl"
                   value={addProductSearch}
                   onChange={(e) => {
                     const newQ = e.target.value;
@@ -4669,9 +4816,67 @@ function ReorderPage() {
                     syncAddProductFilters(addZoneId, addCatId, addSubCatId, newQ);
                   }}
                 />
+                {addProductSearch && (
+                  <button
+                    type="button"
+                    aria-label="ล้างการค้นหา"
+                    className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground p-0.5 rounded-full hover:bg-muted"
+                    onClick={() => {
+                      setAddProductSearch("");
+                      syncAddProductFilters(addZoneId, addCatId, addSubCatId, "");
+                    }}
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
               </div>
 
-              {/* Product Select Box */}
+              {/* Multi-Select Action Toolbar */}
+              <div className="flex items-center justify-between gap-2 p-2 rounded-xl bg-background border text-xs flex-wrap">
+                <label className="flex items-center gap-2 cursor-pointer font-medium select-none">
+                  <Checkbox
+                    checked={
+                      availableProductsForAdd.length > 0 &&
+                      availableProductsForAdd.every((p) => selectedMultiProdIds.includes(p.id))
+                    }
+                    onCheckedChange={toggleSelectAllVisible}
+                  />
+                  <span className="text-[11px]">
+                    {availableProductsForAdd.length > 0 &&
+                    availableProductsForAdd.every((p) => selectedMultiProdIds.includes(p.id))
+                      ? "ยกเลิกเลือกทั้งหมด"
+                      : `เลือกทั้งหมดที่แสดง (${availableProductsForAdd.length} รายการ)`}
+                  </span>
+                </label>
+
+                {selectedMultiProdIds.length > 0 && (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <Badge className="bg-emerald-600 text-white text-[11px] font-bold">
+                      เลือก {selectedMultiProdIds.length} รายการ
+                    </Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="h-7 text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg gap-1 shadow-xs"
+                      onClick={handleAddBatchItems}
+                    >
+                      <Plus className="size-3.5" /> เพิ่มที่เลือก ({selectedMultiProdIds.length})
+                      ลงใบสั่งซื้อ
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 text-xs text-muted-foreground hover:text-foreground"
+                      onClick={() => setSelectedMultiProdIds([])}
+                    >
+                      ล้าง
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {/* Product Select Box & Cards */}
               {availableProductsForAdd.length === 0 ? (
                 <div className="p-4 text-center text-xs text-muted-foreground border rounded-xl bg-card space-y-2">
                   <p>ไม่พบสินค้าตามเงื่อนไขที่เลือก</p>
@@ -4703,6 +4908,7 @@ function ReorderPage() {
 
                   return (
                     <div className="space-y-2">
+                      {/* Dropdown for quick keyboard/accessible selection */}
                       <select
                         className="w-full rounded-xl border border-input bg-background px-3 py-2 text-xs sm:text-sm shadow-xs font-medium cursor-pointer"
                         value={currentProd?.id || ""}
@@ -4713,7 +4919,8 @@ function ReorderPage() {
                         }}
                       >
                         <option value="">
-                          -- กรุณาเลือกสินค้า ({availableProductsForAdd.length} รายการ) --
+                          -- สินค้าที่เลือกสำหรับปรับแต่งรายละเอียด (
+                          {availableProductsForAdd.length} รายการ) --
                         </option>
                         {availableProductsForAdd.map((p) => (
                           <option key={p.id} value={p.id}>
@@ -4723,38 +4930,122 @@ function ReorderPage() {
                         ))}
                       </select>
 
-                      {/* Interactive Quick-Pick Product Cards (แตะเลือกสินค้าได้ทันที) */}
+                      {/* Interactive Quick-Pick Product Cards Grid (Scrollable, Multi-Select & Quick-Add) */}
                       <div className="space-y-1">
-                        <span className="text-[11px] font-semibold text-muted-foreground block">
-                          หรือแตะเลือกสินค้าโดยตรงด้านล่าง:
-                        </span>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-48 overflow-y-auto pr-1">
-                          {availableProductsForAdd.slice(0, 10).map((p) => {
+                        <div className="flex items-center justify-between text-[11px] text-muted-foreground font-semibold">
+                          <span>
+                            แตะที่แถวเพื่อแก้ไขรายละเอียด หรือกดปุ่ม &quot;+ เพิ่ม&quot;
+                            เพื่อใส่ใบสั่งซื้อทันที:
+                          </span>
+                          <span>
+                            แสดง {Math.min(availableProductsForAdd.length, 100)} จาก{" "}
+                            {availableProductsForAdd.length}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 sm:max-h-64 overflow-y-auto pr-1">
+                          {availableProductsForAdd.slice(0, 100).map((p) => {
                             const isSelected = currentProd?.id === p.id;
+                            const isChecked = selectedMultiProdIds.includes(p.id);
+                            const cartItem = orderList.find((i) => i.productId === p.id);
+
                             return (
-                              <button
+                              <div
                                 key={p.id}
-                                type="button"
                                 onClick={() => handleSelectProductInAddModal(p.id)}
                                 className={cn(
-                                  "text-left p-2.5 rounded-xl border text-xs transition-all active:scale-[0.98] flex items-center justify-between gap-2",
+                                  "text-left p-2.5 rounded-xl border text-xs transition-all flex items-center justify-between gap-2 cursor-pointer",
                                   isSelected
-                                    ? "bg-emerald-500/15 border-emerald-500 shadow-sm ring-2 ring-emerald-500/40 text-foreground font-semibold"
-                                    : "bg-card hover:bg-muted/60 text-muted-foreground",
+                                    ? "bg-emerald-500/10 border-emerald-500 shadow-sm ring-2 ring-emerald-500/40 text-foreground"
+                                    : isChecked
+                                      ? "bg-primary/5 border-primary/40 text-foreground"
+                                      : "bg-card hover:bg-muted/60 text-muted-foreground",
                                 )}
                               >
-                                <div className="min-w-0 flex-1">
-                                  <div className="truncate font-medium text-foreground">
-                                    {p.name}
+                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                  <div
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleSelectMultiProduct(p.id);
+                                    }}
+                                    className="shrink-0 p-0.5"
+                                  >
+                                    <Checkbox
+                                      checked={isChecked}
+                                      onCheckedChange={() => toggleSelectMultiProduct(p.id)}
+                                    />
                                   </div>
-                                  <div className="text-[10px] text-muted-foreground font-mono truncate">
-                                    {p.barcode} • สต็อก: {p.stock} {getUnitName(p.unitId)}
+                                  <div className="min-w-0 flex-1">
+                                    <div className="truncate font-semibold text-foreground flex items-center gap-1.5">
+                                      <span>{p.name}</span>
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground font-mono truncate mt-0.5 flex items-center gap-1 flex-wrap">
+                                      <span>{p.barcode}</span>
+                                      <span>•</span>
+                                      <span>
+                                        สต็อก: {p.stock} {getUnitName(p.unitId)}
+                                      </span>
+                                      <span>•</span>
+                                      <span>ทุน ฿{p.costPrice.toFixed(2)}</span>
+                                    </div>
+                                    {cartItem && (
+                                      <div className="mt-1">
+                                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-1.5 py-0.5 rounded-md">
+                                          ✓ ในใบสั่งซื้อ: {cartItem.quantity}{" "}
+                                          {getUnitName(cartItem.unitId)}
+                                        </span>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
-                                {isSelected && (
-                                  <CheckCircle2 className="size-4 text-emerald-600 shrink-0" />
-                                )}
-                              </button>
+
+                                {/* Direct Quick Add / Stepper on Card */}
+                                <div
+                                  className="shrink-0 flex items-center gap-1"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  {cartItem ? (
+                                    <div className="flex items-center gap-1 bg-background border rounded-lg p-0.5 shadow-2xs">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-6 text-xs font-bold rounded"
+                                        onClick={() => handleQuickAddSingleProduct(p, -1)}
+                                        title="ลด 1 ชิ้น"
+                                      >
+                                        -
+                                      </Button>
+                                      <span className="font-mono font-bold text-xs px-1 text-emerald-700 dark:text-emerald-300">
+                                        {cartItem.quantity}
+                                      </span>
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="icon"
+                                        className="size-6 text-xs font-bold rounded text-emerald-600"
+                                        onClick={() => handleQuickAddSingleProduct(p, 1)}
+                                        title="เพิ่ม 1 ชิ้น"
+                                      >
+                                        +
+                                      </Button>
+                                    </div>
+                                  ) : (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-7 text-[11px] gap-1 text-emerald-700 border-emerald-600/30 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 font-semibold rounded-lg"
+                                      onClick={() =>
+                                        handleQuickAddSingleProduct(p, p.reorderQuantity || 10)
+                                      }
+                                      title={`เพิ่มลงในใบสั่งซื้อ (${p.reorderQuantity || 10} ชิ้น)`}
+                                    >
+                                      <Plus className="size-3 text-emerald-600" />
+                                      เพิ่ม ({p.reorderQuantity || 10})
+                                    </Button>
+                                  )}
+                                </div>
+                              </div>
                             );
                           })}
                         </div>
@@ -4785,7 +5076,7 @@ function ReorderPage() {
                 })()
               )}
 
-              {/* Selected Product Card Preview & Detailed Form */}
+              {/* Selected Product Detailed Form for Custom Quantities / Prices / Notes */}
               {(() => {
                 const currentProd =
                   availableProductsForAdd.find((p) => p.id === selectedProdId) ||
@@ -4800,6 +5091,9 @@ function ReorderPage() {
                   <div className="mt-2 p-3.5 rounded-xl border bg-card space-y-3 shadow-xs">
                     <div className="flex items-start justify-between gap-2">
                       <div>
+                        <div className="text-xs font-semibold text-muted-foreground">
+                          ปรับแต่งรายการที่กำลังเลือก:
+                        </div>
                         <div className="text-xs sm:text-sm font-bold text-foreground">
                           {currentProd.name}
                         </div>
@@ -4962,21 +5256,33 @@ function ReorderPage() {
             </div>
           </div>
 
-          <DialogFooter className="gap-2 pt-2 border-t">
+          <DialogFooter className="flex-col sm:flex-row gap-2 pt-3 border-t">
             <Button
               variant="outline"
-              className="h-11 rounded-xl w-full sm:w-auto"
+              className="h-11 rounded-xl w-full sm:w-auto text-xs"
               onClick={() => setAddModalOpen(false)}
             >
-              ยกเลิก
+              {orderList.length > 0
+                ? `เสร็จสิ้น / ปิดหน้าต่าง (${orderList.length} รายการ)`
+                : "ยกเลิก / ปิด"}
             </Button>
-            <Button
-              className="h-11 rounded-xl w-full sm:w-auto font-semibold gap-1.5 bg-primary text-primary-foreground shadow-xs"
-              onClick={handleAddManualItem}
-              disabled={availableProductsForAdd.length === 0}
-            >
-              <Plus className="size-4" /> เพิ่มสินค้าในใบสั่งซื้อ
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <Button
+                className="h-11 rounded-xl w-full sm:w-auto font-semibold gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                onClick={() => handleAddManualItem(false)}
+                disabled={availableProductsForAdd.length === 0}
+              >
+                <Plus className="size-4" /> เพิ่มสินค้าในใบสั่งซื้อ (เลือกต่อ)
+              </Button>
+              <Button
+                variant="secondary"
+                className="h-11 rounded-xl w-full sm:w-auto font-medium text-xs"
+                onClick={() => handleAddManualItem(true)}
+                disabled={availableProductsForAdd.length === 0}
+              >
+                เพิ่มแล้วปิดหน้าต่าง
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
