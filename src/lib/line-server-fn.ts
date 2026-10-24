@@ -7,7 +7,12 @@ import {
   getSystemStoreName,
 } from "./flex-templates";
 import { getDatabaseSnapshot, syncDatabasePayload } from "../db/db-service.ts";
-import { getD1Snapshot } from "../db/d1-snapshot.ts";
+import {
+  getD1Snapshot,
+  isD1Available,
+  syncD1Payload,
+  type D1SyncPayload,
+} from "../db/d1-snapshot.ts";
 import { removeLegacySampleLineFollowers } from "./line-follower-data";
 import type {
   CategoryItem,
@@ -51,6 +56,8 @@ export interface ServerSyncPayload {
   subCategories?: SubCategoryItem[] | undefined;
   deletedSubCategoryIds?: string[] | undefined;
   zones?: ZoneItem[] | undefined;
+  replaceZones?: boolean | undefined;
+  deletedZoneIds?: string[] | undefined;
   units?: UnitItem[] | undefined;
   receives?: ReceiveItem[] | undefined;
   followers?: LineUserFollower[] | undefined;
@@ -66,6 +73,23 @@ type SnapshotPurchaseOrder = Omit<DatabaseSnapshot["purchaseOrders"][number], "i
 };
 
 const PERSISTED_DB_PATH = path.join(process.cwd(), ".data", "master-database-snapshot.json");
+
+function isPostgresConfigured(): boolean {
+  const hasHost = Boolean(process.env["SQL_HOST"] || process.env["INSTANCE_CONNECTION_NAME"]);
+  const hasUser = Boolean(
+    process.env["SQL_USER"] ||
+    process.env["SQL_ADMIN_USER"] ||
+    process.env["DB_USER"] ||
+    process.env["PGUSER"],
+  );
+  const hasPass = Boolean(
+    process.env["SQL_PASSWORD"] ||
+    process.env["SQL_ADMIN_PASSWORD"] ||
+    process.env["DB_PASSWORD"] ||
+    process.env["PGPASSWORD"],
+  );
+  return hasHost && hasUser && hasPass;
+}
 
 function readPersistedDatabaseSnapshot(): Record<string, unknown> | null {
   try {
@@ -198,57 +222,76 @@ export const getLineServerConfigFn = createServerFn({ method: "GET" }).handler(a
 export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
   .validator((payload: ServerSyncPayload) => payload)
   .handler(async ({ data }) => {
-    // 0. Prefer Cloudflare D1 when binding is available (LINE / Workers path)
+    // 0. Primary Database: Cloudflare D1 (Deploy to Cloudflare / Workers path)
+    let d1Result: Awaited<ReturnType<typeof syncD1Payload>> = null;
+    let d1Success = false;
     try {
-      const d1Snapshot = await getD1Snapshot();
-      if (d1Snapshot && Array.isArray(d1Snapshot.products) && d1Snapshot.products.length > 0) {
-        const clientProducts = data.products;
-        const useClientProducts =
-          Array.isArray(clientProducts) &&
-          clientProducts.length > 0 &&
-          clientProducts.length >= d1Snapshot.products.length;
-        const products = useClientProducts ? clientProducts : d1Snapshot.products;
-        const categories =
-          data.categories && data.categories.length > 0 ? data.categories : d1Snapshot.categories;
-        const units = data.units && data.units.length > 0 ? data.units : d1Snapshot.units;
-        const zones = data.zones && data.zones.length > 0 ? data.zones : d1Snapshot.zones;
-        const subCategories =
-          data.subCategories && data.subCategories.length > 0
-            ? data.subCategories
-            : d1Snapshot.subCategories;
+      const d1Available = await isD1Available();
+      if (d1Available) {
+        d1Result = await syncD1Payload({
+          products: data.products,
+          categories: data.categories,
+          subCategories: data.subCategories,
+          deletedSubCategoryIds: data.deletedSubCategoryIds,
+          zones: data.zones,
+          deletedZoneIds: data.deletedZoneIds,
+          units: data.units,
+          purchaseOrders: data.purchaseOrders as unknown as D1SyncPayload["purchaseOrders"],
+          movements: data.movements as unknown as D1SyncPayload["movements"],
+          receives: data.receives as unknown as D1SyncPayload["receives"],
+          followers: removeLegacySampleLineFollowers(data.followers),
+        });
+        if (d1Result) {
+          d1Success = true;
+          // Prefer incoming or refreshed products
+          const clientProducts = data.products;
+          const useClientProducts =
+            Array.isArray(clientProducts) &&
+            clientProducts.length > 0 &&
+            clientProducts.length >= (d1Result.products?.length || 0);
+          const products = useClientProducts ? clientProducts : d1Result.products;
+          const categories =
+            data.categories && data.categories.length > 0 ? data.categories : d1Result.categories;
+          const units = data.units && data.units.length > 0 ? data.units : d1Result.units;
+          const zones = data.zones && data.zones.length > 0 ? data.zones : d1Result.zones;
+          const subCategories =
+            data.subCategories && data.subCategories.length > 0
+              ? data.subCategories
+              : d1Result.subCategories;
 
-        globalServerDatabase.products = products;
-        globalServerDatabase.categories = categories;
-        globalServerDatabase.units = units;
-        globalServerDatabase.zones = zones;
-        globalServerDatabase.subCategories = subCategories;
-        globalServerDatabase.lastUpdated = new Date().toISOString();
-
-        return {
-          success: true,
-          data: {
-            products,
-            categories,
-            units,
-            zones,
-            subCategories,
-            purchaseOrders: globalServerDatabase.purchaseOrders || [],
-            movements: globalServerDatabase.movements || [],
-            receives: globalServerDatabase.receives || [],
-            followers: globalServerDatabase.followers || [],
-          },
-          lastUpdated: globalServerDatabase.lastUpdated,
-          source: "d1",
-        };
+          globalServerDatabase.products = products;
+          globalServerDatabase.categories = categories;
+          globalServerDatabase.units = units;
+          globalServerDatabase.zones = zones;
+          globalServerDatabase.subCategories = subCategories;
+          if (d1Result.purchaseOrders && d1Result.purchaseOrders.length > 0) {
+            globalServerDatabase.purchaseOrders = d1Result.purchaseOrders as unknown as (
+              PurchaseOrderRecord | SnapshotPurchaseOrder
+            )[];
+          }
+          if (d1Result.movements && d1Result.movements.length > 0) {
+            globalServerDatabase.movements = d1Result.movements as unknown as StockMovementLog[];
+          }
+          if (d1Result.receives && d1Result.receives.length > 0) {
+            globalServerDatabase.receives = d1Result.receives as unknown as ReceiveItem[];
+          }
+          if (d1Result.followers && d1Result.followers.length > 0) {
+            globalServerDatabase.followers = d1Result.followers as unknown as (
+              ServerLineFollower | DatabaseFollower
+            )[];
+          }
+          globalServerDatabase.lastUpdated = new Date().toISOString();
+        }
       }
     } catch (d1Err) {
-      console.warn("D1 snapshot unavailable, trying other backends:", d1Err);
+      console.warn("[Database Sync] D1 sync notice:", d1Err);
     }
 
-    // 1. If Cloud SQL credentials are set, sync with PostgreSQL
-    if (process.env["SQL_HOST"] && process.env["SQL_USER"] && process.env["SQL_PASSWORD"]) {
+    // 1. Mirroring to Cloud SQL / PostgreSQL — "ทุกฐานข้อมูลต้องมีข้อมูลเหมือนกัน"
+    let sqlSnapshot: SnapshotDatabase | null = null;
+    if (isPostgresConfigured()) {
       try {
-        const sqlSnapshot = await syncDatabasePayload({
+        sqlSnapshot = await syncDatabasePayload({
           ...(data.units === undefined
             ? {}
             : { units: data.units.map(({ id, name, shortName }) => ({ id, name, shortName })) }),
@@ -280,6 +323,7 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
                   ...(description === undefined ? {} : { description }),
                 })),
               }),
+          ...(data.deletedZoneIds === undefined ? {} : { deletedZoneIds: data.deletedZoneIds }),
           ...(data.products === undefined ? {} : { products: data.products }),
           ...(data.purchaseOrders === undefined ? {} : { purchaseOrders: data.purchaseOrders }),
           ...(data.movements === undefined
@@ -328,40 +372,74 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
           })),
         });
 
-        const syncedFollowers = removeLegacySampleLineFollowers(sqlSnapshot.followers);
-        const serializedPurchaseOrders: SnapshotPurchaseOrder[] = sqlSnapshot.purchaseOrders.map(
-          (purchaseOrder) => ({
-            ...purchaseOrder,
-            items: purchaseOrder.items.filter(isJsonValue),
-          }),
-        );
-        const sanitizedSnapshot = {
+        // If D1 was not available, populate globalServerDatabase from Cloud SQL
+        if (!d1Success && sqlSnapshot) {
+          const syncedFollowers = removeLegacySampleLineFollowers(sqlSnapshot.followers);
+          const serializedPurchaseOrders: SnapshotPurchaseOrder[] = sqlSnapshot.purchaseOrders.map(
+            (purchaseOrder) => ({
+              ...purchaseOrder,
+              items: purchaseOrder.items.filter(isJsonValue),
+            }),
+          );
+
+          globalServerDatabase.products = sqlSnapshot.products;
+          globalServerDatabase.categories = sqlSnapshot.categories;
+          globalServerDatabase.subCategories = sqlSnapshot.subCategories;
+          globalServerDatabase.zones = sqlSnapshot.zones;
+          globalServerDatabase.units = sqlSnapshot.units;
+          globalServerDatabase.receives = sqlSnapshot.receives;
+          globalServerDatabase.followers = syncedFollowers;
+          globalServerDatabase.movements = sqlSnapshot.movements;
+          globalServerDatabase.purchaseOrders = serializedPurchaseOrders;
+          globalServerDatabase.lastUpdated = new Date().toISOString();
+        }
+      } catch (sqlErr) {
+        console.warn("Could not sync directly to Cloud SQL:", sqlErr);
+      }
+    }
+
+    // Always persist to local cache/disk snapshot
+    writePersistedDatabaseSnapshot(globalServerDatabase);
+
+    // If D1 succeeded as Primary
+    if (d1Success && d1Result) {
+      return {
+        success: true,
+        data: {
+          products: globalServerDatabase.products,
+          categories: globalServerDatabase.categories,
+          units: globalServerDatabase.units,
+          zones: globalServerDatabase.zones,
+          subCategories: globalServerDatabase.subCategories,
+          purchaseOrders: globalServerDatabase.purchaseOrders || [],
+          movements: globalServerDatabase.movements || [],
+          receives: globalServerDatabase.receives || [],
+          followers: globalServerDatabase.followers || [],
+        },
+        lastUpdated: globalServerDatabase.lastUpdated,
+        source: "d1",
+      };
+    }
+
+    // If Cloud SQL succeeded
+    if (sqlSnapshot) {
+      const syncedFollowers = removeLegacySampleLineFollowers(sqlSnapshot.followers);
+      const serializedPurchaseOrders: SnapshotPurchaseOrder[] = sqlSnapshot.purchaseOrders.map(
+        (purchaseOrder) => ({
+          ...purchaseOrder,
+          items: purchaseOrder.items.filter(isJsonValue),
+        }),
+      );
+      return {
+        success: true,
+        data: {
           ...sqlSnapshot,
           followers: syncedFollowers,
           purchaseOrders: serializedPurchaseOrders,
-        };
-
-        globalServerDatabase.products = sqlSnapshot.products;
-        globalServerDatabase.categories = sqlSnapshot.categories;
-        globalServerDatabase.subCategories = sqlSnapshot.subCategories;
-        globalServerDatabase.zones = sqlSnapshot.zones;
-        globalServerDatabase.units = sqlSnapshot.units;
-        globalServerDatabase.receives = sqlSnapshot.receives;
-        globalServerDatabase.followers = syncedFollowers;
-        globalServerDatabase.movements = sqlSnapshot.movements;
-        globalServerDatabase.purchaseOrders = serializedPurchaseOrders;
-        globalServerDatabase.lastUpdated = new Date().toISOString();
-        writePersistedDatabaseSnapshot(globalServerDatabase);
-
-        return {
-          success: true,
-          data: sanitizedSnapshot,
-          lastUpdated: globalServerDatabase.lastUpdated,
-          source: "cloudsql",
-        };
-      } catch (sqlErr) {
-        console.warn("Could not sync directly to Cloud SQL, falling back to memory store:", sqlErr);
-      }
+        },
+        lastUpdated: globalServerDatabase.lastUpdated,
+        source: "cloudsql",
+      };
     }
 
     // 2. In-memory / file fallback
@@ -395,9 +473,23 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
         (item) => !deletedIds.has(item.id),
       );
     }
-    if (data.zones && Array.isArray(data.zones) && data.zones.length > 0) {
+    if (data.deletedZoneIds && data.deletedZoneIds.length > 0) {
+      const deletedIds = new Set(data.deletedZoneIds);
+      globalServerDatabase.zones = (globalServerDatabase.zones || []).filter(
+        (item) => !deletedIds.has(item.id),
+      );
+    }
+    if (data.replaceZones && data.zones && Array.isArray(data.zones)) {
+      const deletedSet = new Set(data.deletedZoneIds || []);
+      globalServerDatabase.zones = data.zones.filter((z) => !deletedSet.has(z.id));
+    } else if (data.zones && Array.isArray(data.zones) && data.zones.length > 0) {
       const zoneMap = new Map((globalServerDatabase.zones || []).map((z) => [z.id, z]));
-      data.zones.forEach((z) => zoneMap.set(z.id, z));
+      const deletedSet = new Set(data.deletedZoneIds || []);
+      data.zones.forEach((z) => {
+        if (!deletedSet.has(z.id)) {
+          zoneMap.set(z.id, z);
+        }
+      });
       globalServerDatabase.zones = [...zoneMap.values()];
     }
     if (data.units && Array.isArray(data.units) && data.units.length > 0) {
@@ -484,6 +576,213 @@ export const fetchCloudSqlSnapshotFn = createServerFn({ method: "GET" }).handler
     };
   }
 });
+
+export interface DatabaseInspectionResult {
+  success: boolean;
+  activeBackend: "cloudsql" | "d1" | "memory";
+  backendLabel: string;
+  isPostgresReady: boolean;
+  databaseHost: string;
+  databaseName: string;
+  lastSyncAt: string;
+  error: string | null;
+  counts: {
+    zones: number;
+    categories: number;
+    subCategories: number;
+    units: number;
+    products: number;
+    followers: number;
+  };
+  records: {
+    zones: ZoneItem[];
+    categories: CategoryItem[];
+    subCategories: SubCategoryItem[];
+    units: UnitItem[];
+    productsSample: { id: string; name: string; barcode: string; stock: number }[];
+  };
+}
+
+/**
+ * Inspection endpoint: fetches actual database rows from Cloud SQL / D1 / Server Store
+ * to verify that zones, categories, subcategories, and units have been recorded in the database.
+ */
+export const getDatabaseInspectionFn = createServerFn({ method: "GET" }).handler(
+  async (): Promise<DatabaseInspectionResult> => {
+    const postgresReady = isPostgresConfigured();
+    const host =
+      process.env["SQL_HOST"] ||
+      (process.env["INSTANCE_CONNECTION_NAME"]
+        ? `/cloudsql/${process.env["INSTANCE_CONNECTION_NAME"]}`
+        : "None");
+    const dbName =
+      process.env["SQL_DB_NAME"] ||
+      process.env["DB_NAME"] ||
+      process.env["PGDATABASE"] ||
+      "postgres";
+
+    // 0. Primary Database: Check D1 first (Cloudflare Workers / Deploy to Cloudflare)
+    try {
+      const d1Ready = await isD1Available();
+      if (d1Ready) {
+        const d1Snapshot = await getD1Snapshot();
+        if (d1Snapshot) {
+          return {
+            success: true,
+            activeBackend: "d1",
+            backendLabel: "Cloudflare D1 Database (ฐานข้อมูลหลัก Primary)",
+            isPostgresReady: postgresReady,
+            databaseHost: "Cloudflare Workers (env.DB binding)",
+            databaseName: "mom-and-pop-shop-db",
+            lastSyncAt: globalServerDatabase.lastUpdated,
+            error: null,
+            counts: {
+              zones: d1Snapshot.zones?.length || 0,
+              categories: d1Snapshot.categories?.length || 0,
+              subCategories: d1Snapshot.subCategories?.length || 0,
+              units: d1Snapshot.units?.length || 0,
+              products: d1Snapshot.products?.length || 0,
+              followers:
+                d1Snapshot.followers?.length || globalServerDatabase.followers?.length || 0,
+            },
+            records: {
+              zones: d1Snapshot.zones || [],
+              categories: d1Snapshot.categories || [],
+              subCategories: d1Snapshot.subCategories || [],
+              units: d1Snapshot.units || [],
+              productsSample: (d1Snapshot.products || []).slice(0, 10).map((p) => ({
+                id: p.id,
+                name: p.name,
+                barcode: p.barcode,
+                stock: p.stock,
+              })),
+            },
+          };
+        }
+      }
+    } catch (d1Err) {
+      console.warn("D1 inspection notice:", d1Err);
+    }
+
+    // 1. Check Cloud SQL / PostgreSQL
+    if (postgresReady) {
+      try {
+        const snapshot = await getDatabaseSnapshot();
+        return {
+          success: true,
+          activeBackend: "cloudsql",
+          backendLabel: "Google Cloud SQL (PostgreSQL)",
+          isPostgresReady: true,
+          databaseHost: host,
+          databaseName: dbName,
+          lastSyncAt: globalServerDatabase.lastUpdated,
+          error: null,
+          counts: {
+            zones: snapshot.zones?.length || 0,
+            categories: snapshot.categories?.length || 0,
+            subCategories: snapshot.subCategories?.length || 0,
+            units: snapshot.units?.length || 0,
+            products: snapshot.products?.length || 0,
+            followers: snapshot.followers?.length || 0,
+          },
+          records: {
+            zones: (snapshot.zones || []).map((z) => ({
+              id: z.id,
+              code: z.code,
+              name: z.name,
+              description: z.description ?? undefined,
+            })),
+            categories: (snapshot.categories || []).map((c) => ({
+              id: c.id,
+              code: c.code,
+              name: c.name,
+            })),
+            subCategories: (snapshot.subCategories || []).map((sc) => ({
+              id: sc.id,
+              categoryId: sc.categoryId,
+              code: sc.code,
+              name: sc.name,
+            })),
+            units: (snapshot.units || []).map((u) => ({
+              id: u.id,
+              name: u.name,
+              shortName: u.shortName,
+            })),
+            productsSample: (snapshot.products || []).slice(0, 10).map((p) => ({
+              id: p.id,
+              name: p.name,
+              barcode: p.barcode,
+              stock: p.stock,
+            })),
+          },
+        };
+      } catch (sqlErr) {
+        return {
+          success: false,
+          activeBackend: "memory",
+          backendLabel: "Server Memory Fallback (Cloud SQL มีข้อผิดพลาดในการเชื่อมต่อ)",
+          isPostgresReady: true,
+          databaseHost: host,
+          databaseName: dbName,
+          lastSyncAt: globalServerDatabase.lastUpdated,
+          error: sqlErr instanceof Error ? sqlErr.message : String(sqlErr),
+          counts: {
+            zones: globalServerDatabase.zones?.length || 0,
+            categories: globalServerDatabase.categories?.length || 0,
+            subCategories: globalServerDatabase.subCategories?.length || 0,
+            units: globalServerDatabase.units?.length || 0,
+            products: globalServerDatabase.products?.length || 0,
+            followers: globalServerDatabase.followers?.length || 0,
+          },
+          records: {
+            zones: globalServerDatabase.zones || [],
+            categories: globalServerDatabase.categories || [],
+            subCategories: globalServerDatabase.subCategories || [],
+            units: globalServerDatabase.units || [],
+            productsSample: (globalServerDatabase.products || []).slice(0, 10).map((p) => ({
+              id: p.id,
+              name: p.name,
+              barcode: p.barcode,
+              stock: p.stock,
+            })),
+          },
+        };
+      }
+    }
+
+    // 2. Fallback to persisted server snapshot / in-memory store
+    return {
+      success: true,
+      activeBackend: "memory",
+      backendLabel: "ฐานข้อมูลเซิร์ฟเวอร์ (Persisted Memory Snapshot)",
+      isPostgresReady: false,
+      databaseHost: "In-memory file (.data/master-database-snapshot.json)",
+      databaseName: "local-snapshot",
+      lastSyncAt: globalServerDatabase.lastUpdated,
+      error: null,
+      counts: {
+        zones: globalServerDatabase.zones?.length || 0,
+        categories: globalServerDatabase.categories?.length || 0,
+        subCategories: globalServerDatabase.subCategories?.length || 0,
+        units: globalServerDatabase.units?.length || 0,
+        products: globalServerDatabase.products?.length || 0,
+        followers: globalServerDatabase.followers?.length || 0,
+      },
+      records: {
+        zones: globalServerDatabase.zones || [],
+        categories: globalServerDatabase.categories || [],
+        subCategories: globalServerDatabase.subCategories || [],
+        units: globalServerDatabase.units || [],
+        productsSample: (globalServerDatabase.products || []).slice(0, 10).map((p) => ({
+          id: p.id,
+          name: p.name,
+          barcode: p.barcode,
+          stock: p.stock,
+        })),
+      },
+    };
+  },
+);
 
 export const getLineFollowersHistoryFn = createServerFn({ method: "GET" }).handler(async () => {
   globalServerDatabase.followers = removeLegacySampleLineFollowers(globalServerDatabase.followers);

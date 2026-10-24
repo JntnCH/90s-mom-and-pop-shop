@@ -536,7 +536,12 @@ export function GoogleSheetsSyncTab() {
 
     setIsFullBackingUp(true);
     try {
-      const targetId = forceNew ? undefined : backupMeta?.spreadsheetId;
+      const targetId = forceNew
+        ? undefined
+        : backupMeta?.spreadsheetId ||
+          serviceAccountConfig?.spreadsheetId ||
+          saSpreadsheetInput ||
+          undefined;
       const resMeta = await backupFullDatabaseToGoogleSheets({
         spreadsheetId: targetId,
       });
@@ -918,15 +923,91 @@ export function GoogleSheetsSyncTab() {
                 </div>
               </div>
 
-              {/* Instructions Reminder */}
-              <div className="text-[11px] text-muted-foreground flex items-start gap-1.5 px-1">
-                <Info className="size-3.5 text-muted-foreground shrink-0 mt-0.5" />
-                <span>
-                  <strong>สำคัญ:</strong> เพื่อให้ Service Account สามารถอ่านและบันทึกข้อมูลได้
-                  กรุณากดปุ่ม <strong>แชร์ (Share)</strong> ใน Google Sheet
-                  แล้วเพิ่มอีเมลด้านบนพร้อมเลือกสิทธิ์{" "}
-                  <strong>&quot;ผู้แก้ไข (Editor)&quot;</strong>
-                </span>
+              {/* Direct Sync Action & Sheet Test */}
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-1">
+                <Button
+                  type="button"
+                  className="h-10 text-xs sm:text-sm font-semibold gap-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm active:scale-95 flex-1"
+                  onClick={() => {
+                    if (serviceAccountConfig.spreadsheetId) {
+                      saveActiveBackupSheetMeta({
+                        spreadsheetId: serviceAccountConfig.spreadsheetId,
+                        spreadsheetTitle: "Google Sheet (จาก Service Account / GitHub Secret)",
+                        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${serviceAccountConfig.spreadsheetId}`,
+                        lastBackupAt: new Date().toISOString(),
+                        stats: {
+                          products: MasterStore.getProducts().length,
+                          movements: MasterStore.getMovements().length,
+                          orders: MasterStore.getPurchaseOrders().length,
+                          categories: MasterStore.getCategories().length,
+                        },
+                      });
+                    }
+                    void handleExecuteFullBackup(false);
+                  }}
+                  disabled={isFullBackingUp}
+                >
+                  {isFullBackingUp ? (
+                    <>
+                      <Loader2 className="size-4 animate-spin" />
+                      กำลังส่งข้อมูลลง Google Sheets...
+                    </>
+                  ) : (
+                    <>
+                      <CloudUpload className="size-4" />
+                      🚀 ซิงค์และบันทึกข้อมูลล่าสุดลง Google Sheets ทันที
+                    </>
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-10 text-xs gap-1.5 rounded-xl border-emerald-500/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-500/10 shrink-0"
+                  onClick={() =>
+                    handleTestServiceAccountConnection(
+                      serviceAccountConfig.spreadsheetId || undefined,
+                    )
+                  }
+                  disabled={isTestingSa}
+                >
+                  <RefreshCw className={`size-3.5 ${isTestingSa ? "animate-spin" : ""}`} />
+                  ทดสอบการเชื่อมต่อชีต
+                </Button>
+              </div>
+
+              {/* Instructions Reminder & GitHub Secrets Explanation */}
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs space-y-1.5 text-amber-900 dark:text-amber-200">
+                <div className="font-bold flex items-center gap-1.5">
+                  <Info className="size-4 text-amber-600 shrink-0" />
+                  คำแนะนำ: ใส่ KEY ใน GitHub Secrets แล้ว ทำไมข้อมูลในชีตยังไม่เปลี่ยน?
+                </div>
+                <ul className="list-disc pl-4 space-y-1 text-[11px] leading-relaxed text-muted-foreground">
+                  <li>
+                    <strong className="text-foreground">
+                      GitHub Secrets เป็นเพียงการเก็บ Environment Variables:
+                    </strong>{" "}
+                    ไม่ได้ส่งข้อมูลออกเองอัตโนมัติ
+                    ข้อมูลจะถูกบันทึกขึ้นชีตก็ต่อเมื่อมีการสั่งซิงค์จากระบบ
+                  </li>
+                  <li>
+                    <strong className="text-foreground">
+                      ต้องแชร์สิทธิ์ (Share) ให้กับอีเมล Service Account:
+                    </strong>{" "}
+                    โปรดกดคัดลอกอีเมล{" "}
+                    <code className="px-1 py-0.5 rounded bg-background border font-mono text-[10px] text-foreground">
+                      {serviceAccountConfig.clientEmail}
+                    </code>{" "}
+                    ด้านบน แล้วเปิดไฟล์ Google Sheet จากนั้นกดปุ่ม <strong>แชร์ (Share)</strong>{" "}
+                    แล้วเพิ่มอีเมลนี้โดยให้สิทธิ์เป็น <strong>&quot;ผู้แก้ไข (Editor)&quot;</strong>
+                  </li>
+                  <li>
+                    <strong className="text-foreground">กดปุ่มเริ่มซิงค์:</strong> กดปุ่มสีเขียว{" "}
+                    <em>&quot;🚀 ซิงค์และบันทึกข้อมูลล่าสุดลง Google Sheets ทันที&quot;</em>{" "}
+                    ด้านบนนี้ เพื่อบันทึกข้อมูลทั้งหมด (สินค้า, หมวดหมู่, สต็อก, โซน, หน่วยนับ)
+                    ลงสู่ชีตทันที
+                  </li>
+                </ul>
               </div>
             </div>
           )}

@@ -16,6 +16,7 @@ import { initLiff } from "@/lib/line-service";
 import { syncMasterDatabaseFn } from "@/lib/line-server-fn";
 import {
   MasterStore,
+  STORAGE_KEYS,
   type CategoryItem,
   type LineUserFollower,
   type ProductItem,
@@ -150,13 +151,24 @@ function RootComponent() {
     // Initial background sync with central database (Cloud SQL / Server Store)
     const runInitialSync = async () => {
       try {
+        const hasSavedZones = MasterStore.hasSavedZones();
+        const hasSavedCategories =
+          typeof window !== "undefined" && localStorage.getItem(STORAGE_KEYS.CATEGORIES) !== null;
+        const hasSavedSubCategories =
+          typeof window !== "undefined" &&
+          localStorage.getItem(STORAGE_KEYS.SUBCATEGORIES) !== null;
+        const hasSavedUnits =
+          typeof window !== "undefined" && localStorage.getItem(STORAGE_KEYS.UNITS) !== null;
+        const hasSavedProducts =
+          typeof window !== "undefined" && localStorage.getItem(STORAGE_KEYS.PRODUCTS) !== null;
+
         const res = await syncMasterDatabaseFn({
           data: {
-            products: MasterStore.getProducts(),
-            categories: MasterStore.getCategories(),
-            subCategories: MasterStore.getSubCategories(),
-            zones: MasterStore.getZones(),
-            units: MasterStore.getUnits(),
+            ...(hasSavedProducts ? { products: MasterStore.getProducts() } : {}),
+            ...(hasSavedCategories ? { categories: MasterStore.getCategories() } : {}),
+            ...(hasSavedSubCategories ? { subCategories: MasterStore.getSubCategories() } : {}),
+            ...(hasSavedZones ? { zones: MasterStore.getZones() } : {}),
+            ...(hasSavedUnits ? { units: MasterStore.getUnits() } : {}),
             receives: MasterStore.getReceives(),
             followers: MasterStore.getFollowers(),
             movements: MasterStore.getMovements(),

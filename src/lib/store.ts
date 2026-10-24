@@ -285,6 +285,45 @@ if (typeof window !== "undefined" && typeof BroadcastChannel !== "undefined") {
   }
 }
 
+const PENDING_DELETED_ZONES_KEY = "minimark_pending_deleted_zones";
+
+export function getPendingDeletedZones(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(PENDING_DELETED_ZONES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function addPendingDeletedZone(id: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const current = getPendingDeletedZones();
+    if (!current.includes(id)) {
+      localStorage.setItem(PENDING_DELETED_ZONES_KEY, JSON.stringify([...current, id]));
+    }
+  } catch {
+    // ignore
+  }
+}
+
+export function clearPendingDeletedZones(idsToClear: string[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const current = getPendingDeletedZones();
+    const remaining = current.filter((id) => !idsToClear.includes(id));
+    if (remaining.length > 0) {
+      localStorage.setItem(PENDING_DELETED_ZONES_KEY, JSON.stringify(remaining));
+    } else {
+      localStorage.removeItem(PENDING_DELETED_ZONES_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 let serverSyncTimer: ReturnType<typeof setTimeout> | null = null;
 let isApplyingServerSnapshot = false;
 
@@ -294,12 +333,15 @@ export function triggerCentralServerSync(immediate = false) {
   const doSync = async () => {
     try {
       const { syncMasterDatabaseFn } = await import("./line-server-fn");
+      const deletedZoneIds = getPendingDeletedZones();
       const res = await syncMasterDatabaseFn({
         data: {
           products: MasterStore.getProducts(),
           categories: MasterStore.getCategories(),
           subCategories: MasterStore.getSubCategories(),
           zones: MasterStore.getZones(),
+          replaceZones: true,
+          ...(deletedZoneIds.length > 0 ? { deletedZoneIds } : {}),
           units: MasterStore.getUnits(),
           receives: MasterStore.getReceives(),
           followers: MasterStore.getFollowers(),
@@ -308,6 +350,9 @@ export function triggerCentralServerSync(immediate = false) {
         },
       });
       if (res?.success && res.data) {
+        if (deletedZoneIds.length > 0) {
+          clearPendingDeletedZones(deletedZoneIds);
+        }
         MasterStore.syncDatabaseSnapshot(
           res.data as Parameters<typeof MasterStore.syncDatabaseSnapshot>[0],
         );
@@ -349,6 +394,10 @@ function safeSet<T>(key: string, value: T): void {
 
 export const MasterStore = {
   // Zones
+  hasSavedZones(): boolean {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(STORAGE_KEYS.ZONES) !== null;
+  },
   getZones(): ZoneItem[] {
     return safeGet<ZoneItem[]>(STORAGE_KEYS.ZONES, DEFAULT_ZONES);
   },
@@ -366,6 +415,7 @@ export const MasterStore = {
     this.saveZones(list);
   },
   deleteZone(id: string) {
+    addPendingDeletedZone(id);
     const list = this.getZones().filter((z) => z.id !== id);
     this.saveZones(list);
   },

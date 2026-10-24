@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   MasterStore,
+  STORAGE_KEYS,
   type ProductItem,
   type ZoneItem,
   type CategoryItem,
+  type SubCategoryItem,
   type UnitItem,
   type PurchaseOrderRecord,
   type StockMovementLog,
@@ -25,12 +27,23 @@ export function useRealtimeStore() {
 
   const syncWithDatabase = useCallback(async () => {
     try {
+      const hasSavedZones = MasterStore.hasSavedZones();
+      const hasSavedCategories =
+        typeof window !== "undefined" && localStorage.getItem(STORAGE_KEYS.CATEGORIES) !== null;
+      const hasSavedSubCategories =
+        typeof window !== "undefined" && localStorage.getItem(STORAGE_KEYS.SUBCATEGORIES) !== null;
+      const hasSavedUnits =
+        typeof window !== "undefined" && localStorage.getItem(STORAGE_KEYS.UNITS) !== null;
+      const hasSavedProducts =
+        typeof window !== "undefined" && localStorage.getItem(STORAGE_KEYS.PRODUCTS) !== null;
+
       const res = await syncMasterDatabaseFn({
         data: {
-          products: MasterStore.getProducts(),
-          categories: MasterStore.getCategories(),
-          zones: MasterStore.getZones(),
-          units: MasterStore.getUnits(),
+          ...(hasSavedProducts ? { products: MasterStore.getProducts() } : {}),
+          ...(hasSavedCategories ? { categories: MasterStore.getCategories() } : {}),
+          ...(hasSavedSubCategories ? { subCategories: MasterStore.getSubCategories() } : {}),
+          ...(hasSavedZones ? { zones: MasterStore.getZones() } : {}),
+          ...(hasSavedUnits ? { units: MasterStore.getUnits() } : {}),
           receives: MasterStore.getReceives(),
           followers: MasterStore.getFollowers(),
           movements: MasterStore.getMovements(),
@@ -43,6 +56,9 @@ export function useRealtimeStore() {
         }
         if (Array.isArray(res.data.categories) && res.data.categories.length > 0) {
           MasterStore.saveCategories(res.data.categories as CategoryItem[]);
+        }
+        if (Array.isArray(res.data.subCategories) && res.data.subCategories.length > 0) {
+          MasterStore.saveSubCategories(res.data.subCategories as SubCategoryItem[]);
         }
         if (Array.isArray(res.data.zones) && res.data.zones.length > 0) {
           MasterStore.saveZones(res.data.zones as ZoneItem[]);

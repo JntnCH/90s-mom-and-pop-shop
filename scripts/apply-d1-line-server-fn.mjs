@@ -20,7 +20,7 @@ import { getD1Snapshot } from "../db/d1-snapshot.ts";`;
   src = src.replace(oldImport, newImport);
 }
 
-if (!src.includes("Prefer Cloudflare D1")) {
+if (!src.includes("Prefer Cloudflare D1") && !src.includes("Primary Database: Cloudflare D1")) {
   const marker = `  .handler(async ({ data }) => {
     // 1. If Cloud SQL credentials are set, sync with PostgreSQL
     if (process.env["SQL_HOST"] && process.env["SQL_USER"] && process.env["SQL_PASSWORD"]) {`;

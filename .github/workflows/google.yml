@@ -160,6 +160,12 @@ jobs:
             LINE_CHANNEL_SECRET=${{ secrets.LINE_CHANNEL_SECRET }}
             LINE_CHANNEL_ID=${{ secrets.LINE_CHANNEL_ID }}
             LINE_TO_ID=${{ secrets.LINE_TO_ID }}
+            SQL_HOST=/cloudsql/openclaw-gcp-272026:asia-southeast1:minimark-2026
+            SQL_USER=${{ secrets.SQL_ADMIN_USER }}
+            SQL_PASSWORD=${{ secrets.SQL_ADMIN_PASSWORD }}
+            SQL_DB_NAME=postgres
+            SQL_ADMIN_USER=${{ secrets.SQL_ADMIN_USER }}
+            SQL_ADMIN_PASSWORD=${{ secrets.SQL_ADMIN_PASSWORD }}
             DB_USER=${{ secrets.SQL_ADMIN_USER }}
             DB_PASSWORD=${{ secrets.SQL_ADMIN_PASSWORD }}
             DB_NAME=postgres

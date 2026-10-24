@@ -128,6 +128,7 @@ export async function syncDatabasePayload(payload: {
   subCategories?: { id: string; categoryId: string; code: string; name: string }[];
   deletedSubCategoryIds?: string[];
   zones?: { id: string; code: string; name: string; description?: string }[];
+  deletedZoneIds?: string[];
   products?: DBProductItem[];
   purchaseOrders?: DBPurchaseOrder[];
   movements?: {
@@ -251,6 +252,9 @@ export async function syncDatabasePayload(payload: {
             },
           });
       }
+    }
+    if (payload.deletedZoneIds && payload.deletedZoneIds.length > 0) {
+      await db.delete(zones).where(inArray(zones.id, payload.deletedZoneIds));
     }
 
     // 4. Sync Products
