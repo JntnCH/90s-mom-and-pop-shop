@@ -4,8 +4,12 @@ import {
   DEFAULT_STORE_NAME,
   getSystemStoreName,
 } from "./flex-templates";
-import { getDatabaseSnapshot, syncDatabasePayload } from "../db/db-service.ts";
-import { getD1Snapshot, isD1Available, syncD1Payload, type D1SyncPayload } from "../db/d1-snapshot.ts";
+import {
+  getD1Snapshot,
+  isD1Available,
+  syncD1Payload,
+  type D1SyncPayload,
+} from "../db/d1-snapshot.ts";
 import { removeLegacySampleLineFollowers } from "./line-follower-data";
 import type {
   CategoryItem,
@@ -60,25 +64,23 @@ export interface ServerSyncPayload {
 }
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
-type DatabaseSnapshot = Awaited<ReturnType<typeof getDatabaseSnapshot>>;
-type DatabaseFollower = DatabaseSnapshot["followers"][number];
-type SnapshotPurchaseOrder = Omit<DatabaseSnapshot["purchaseOrders"][number], "items"> & {
-  items: JsonValue[];
-};
 
-/** Safe process.env read — never throws in browser / Workers client */
+/**
+ * Safe env read for Cloudflare Workers + browser.
+ * Never reference free variable `process` (Safari throws ReferenceError).
+ */
 function envGet(key: string): string {
   try {
-    if (typeof process !== "undefined" && process?.env && typeof process.env[key] === "string") {
-      return process.env[key] as string;
-    }
+    const g = globalThis as unknown as { process?: { env?: Record<string, string | undefined> } };
+    const val = g.process?.env?.[key];
+    return typeof val === "string" ? val : "";
   } catch {
-    // client bundle has no process
+    return "";
   }
-  return "";
 }
 
 function isPostgresConfigured(): boolean {
+  // Informational only on CF — Postgres is not used in Workers path
   const hasHost = Boolean(envGet("SQL_HOST") || envGet("INSTANCE_CONNECTION_NAME"));
   const hasUser = Boolean(
     envGet("SQL_USER") || envGet("SQL_ADMIN_USER") || envGet("DB_USER") || envGet("PGUSER"),
@@ -92,7 +94,7 @@ function isPostgresConfigured(): boolean {
   return hasHost && hasUser && hasPass;
 }
 
-// In-Memory Global Server Store (no disk I/O at module load — safe for client bundles)
+// In-memory fallback store (server handlers only; empty on cold start)
 const globalServerDatabase: {
   lastUpdated: string;
   products: ProductItem[];
@@ -101,9 +103,9 @@ const globalServerDatabase: {
   zones: ZoneItem[];
   units: UnitItem[];
   receives: ReceiveItem[];
-  followers: (ServerLineFollower | DatabaseFollower)[];
+  followers: (ServerLineFollower | LineUserFollower)[];
   movements: StockMovementLog[];
-  purchaseOrders: (PurchaseOrderRecord | SnapshotPurchaseOrder)[];
+  purchaseOrders: PurchaseOrderRecord[];
 } = {
   lastUpdated: new Date().toISOString(),
   products: [],
@@ -116,14 +118,6 @@ const globalServerDatabase: {
   movements: [],
   purchaseOrders: [],
 };
-
-function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (Array.isArray(value)) return value.every(isJsonValue);
-  if (typeof value === "object") return Object.values(value).every(isJsonValue);
-  return false;
-}
 
 export const DEFAULT_LINE_LIFF_ID = "2011710264-gaZ7oEcK";
 
@@ -169,6 +163,7 @@ export const getLineServerConfigFn = createServerFn({ method: "GET" }).handler(a
   };
 });
 
+/** Primary path: Cloudflare D1 only (no Postgres / pg import). */
 export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
   .validator((payload: ServerSyncPayload) => payload)
   .handler(async ({ data }) => {
@@ -209,20 +204,22 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
             data.subCategories && data.subCategories.length > 0
               ? data.subCategories
               : d1Result.subCategories;
-          if (d1Result.purchaseOrders?.length)
-            globalServerDatabase.purchaseOrders = d1Result.purchaseOrders as unknown as (
-              | PurchaseOrderRecord
-              | SnapshotPurchaseOrder
-            )[];
-          if (d1Result.movements?.length)
+          if (d1Result.purchaseOrders?.length) {
+            globalServerDatabase.purchaseOrders =
+              d1Result.purchaseOrders as unknown as PurchaseOrderRecord[];
+          }
+          if (d1Result.movements?.length) {
             globalServerDatabase.movements = d1Result.movements as unknown as StockMovementLog[];
-          if (d1Result.receives?.length)
+          }
+          if (d1Result.receives?.length) {
             globalServerDatabase.receives = d1Result.receives as unknown as ReceiveItem[];
-          if (d1Result.followers?.length)
+          }
+          if (d1Result.followers?.length) {
             globalServerDatabase.followers = d1Result.followers as unknown as (
               | ServerLineFollower
-              | DatabaseFollower
+              | LineUserFollower
             )[];
+          }
           globalServerDatabase.lastUpdated = new Date().toISOString();
         }
       }
@@ -245,10 +242,11 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
           followers: globalServerDatabase.followers || [],
         },
         lastUpdated: globalServerDatabase.lastUpdated,
-        source: "d1",
+        source: "d1" as const,
       };
     }
 
+    // Memory merge fallback
     if (data.products?.length) {
       const productMap = new Map((globalServerDatabase.products || []).map((p) => [p.id, p]));
       data.products.forEach((p) => {
@@ -261,16 +259,13 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
     if (data.units?.length) globalServerDatabase.units = data.units;
     if (data.zones?.length) globalServerDatabase.zones = data.zones;
     if (data.subCategories?.length) globalServerDatabase.subCategories = data.subCategories;
-    if (data.purchaseOrders?.length)
-      globalServerDatabase.purchaseOrders = data.purchaseOrders as unknown as (
-        | PurchaseOrderRecord
-        | SnapshotPurchaseOrder
-      )[];
-    if (data.followers?.length)
+    if (data.purchaseOrders?.length) globalServerDatabase.purchaseOrders = data.purchaseOrders;
+    if (data.followers?.length) {
       globalServerDatabase.followers = removeLegacySampleLineFollowers(data.followers) as (
         | ServerLineFollower
-        | DatabaseFollower
+        | LineUserFollower
       )[];
+    }
     globalServerDatabase.lastUpdated = new Date().toISOString();
 
     return {
@@ -287,7 +282,7 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
         followers: globalServerDatabase.followers || [],
       },
       lastUpdated: globalServerDatabase.lastUpdated,
-      source: "memory",
+      source: "memory" as const,
     };
   });
 
@@ -295,14 +290,14 @@ export const fetchCloudSqlSnapshotFn = createServerFn({ method: "GET" }).handler
   try {
     const d1 = await getD1Snapshot();
     if (d1) {
-      return { success: true, source: "d1", data: d1 };
+      return { success: true, source: "d1" as const, data: d1 };
     }
   } catch (e) {
     console.warn("[fetchCloudSqlSnapshotFn] D1:", e);
   }
   return {
     success: true,
-    source: "memory",
+    source: "memory" as const,
     data: {
       products: globalServerDatabase.products,
       categories: globalServerDatabase.categories,
