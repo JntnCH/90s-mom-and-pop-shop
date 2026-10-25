@@ -55,6 +55,7 @@ jobs:
           GOOGLE_SPREADSHEET_ID: ${{ secrets.GOOGLE_SPREADSHEET_ID || secrets.SPREADSHEET_ID || secrets.GOOGLE_SHEET_ID || secrets.SHEET_ID }}
         run: |
           npm run build
+          node scripts/patch-cloudflare-worker.mjs || true
           find .output/public -type f -size +20M -delete || true
 
       - name: Upload build output
