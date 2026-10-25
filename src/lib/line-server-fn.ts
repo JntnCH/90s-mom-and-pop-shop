@@ -63,7 +63,32 @@ export interface ServerSyncPayload {
   deletedPurchaseOrderIds?: string[] | undefined;
 }
 
-type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+/** Shape expected by settings.tsx Database Status card */
+export interface DatabaseInspectionResult {
+  success: boolean;
+  activeBackend: "d1" | "cloudsql" | "memory";
+  backendLabel: string;
+  databaseHost: string;
+  lastSyncAt: string;
+  postgresConfigured: boolean;
+  d1Available: boolean;
+  counts: {
+    zones: number;
+    categories: number;
+    subCategories: number;
+    units: number;
+    products: number;
+    followers: number;
+    purchaseOrders: number;
+  };
+  records: {
+    zones: ZoneItem[];
+    categories: CategoryItem[];
+    subCategories: SubCategoryItem[];
+    units: UnitItem[];
+    productsSample: ProductItem[];
+  };
+}
 
 /**
  * Safe env read for Cloudflare Workers + browser.
@@ -80,7 +105,6 @@ function envGet(key: string): string {
 }
 
 function isPostgresConfigured(): boolean {
-  // Informational only on CF — Postgres is not used in Workers path
   const hasHost = Boolean(envGet("SQL_HOST") || envGet("INSTANCE_CONNECTION_NAME"));
   const hasUser = Boolean(
     envGet("SQL_USER") || envGet("SQL_ADMIN_USER") || envGet("DB_USER") || envGet("PGUSER"),
@@ -94,7 +118,6 @@ function isPostgresConfigured(): boolean {
   return hasHost && hasUser && hasPass;
 }
 
-// In-memory fallback store (server handlers only; empty on cold start)
 const globalServerDatabase: {
   lastUpdated: string;
   products: ProductItem[];
@@ -163,7 +186,6 @@ export const getLineServerConfigFn = createServerFn({ method: "GET" }).handler(a
   };
 });
 
-/** Primary path: Cloudflare D1 only (no Postgres / pg import). */
 export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
   .validator((payload: ServerSyncPayload) => payload)
   .handler(async ({ data }) => {
@@ -246,7 +268,6 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
       };
     }
 
-    // Memory merge fallback
     if (data.products?.length) {
       const productMap = new Map((globalServerDatabase.products || []).map((p) => [p.id, p]));
       data.products.forEach((p) => {
@@ -312,41 +333,79 @@ export const fetchCloudSqlSnapshotFn = createServerFn({ method: "GET" }).handler
   };
 });
 
-export const getDatabaseInspectionFn = createServerFn({ method: "GET" }).handler(async () => {
-  let d1Available = false;
-  let d1ProductCount = 0;
-  try {
-    d1Available = await isD1Available();
-    if (d1Available) {
-      const snap = await getD1Snapshot();
-      d1ProductCount = snap?.products?.length ?? 0;
+export const getDatabaseInspectionFn = createServerFn({ method: "GET" }).handler(
+  async (): Promise<DatabaseInspectionResult> => {
+    let zones: ZoneItem[] = globalServerDatabase.zones || [];
+    let categories: CategoryItem[] = globalServerDatabase.categories || [];
+    let subCategories: SubCategoryItem[] = globalServerDatabase.subCategories || [];
+    let units: UnitItem[] = globalServerDatabase.units || [];
+    let products: ProductItem[] = globalServerDatabase.products || [];
+    let activeBackend: DatabaseInspectionResult["activeBackend"] = "memory";
+    let backendLabel = "Memory Snapshot";
+    let databaseHost = "in-memory";
+    let lastSyncAt = globalServerDatabase.lastUpdated || new Date().toISOString();
+    let d1Available = false;
+
+    try {
+      d1Available = await isD1Available();
+      if (d1Available) {
+        const snap = await getD1Snapshot();
+        if (snap) {
+          activeBackend = "d1";
+          backendLabel = "Cloudflare D1 (Primary)";
+          databaseHost = "mom-and-pop-shop-db";
+          zones = (snap.zones as ZoneItem[]) || [];
+          categories = (snap.categories as CategoryItem[]) || [];
+          subCategories = (snap.subCategories as SubCategoryItem[]) || [];
+          units = (snap.units as UnitItem[]) || [];
+          products = (snap.products as ProductItem[]) || [];
+          lastSyncAt = new Date().toISOString();
+        }
+      }
+    } catch (e) {
+      console.warn("[getDatabaseInspectionFn]", e);
     }
-  } catch {
-    // ignore
-  }
-  return {
-    success: true,
-    postgresConfigured: isPostgresConfigured(),
-    d1Available,
-    d1ProductCount,
-    memory: {
-      lastUpdated: globalServerDatabase.lastUpdated,
-      products: globalServerDatabase.products.length,
-      categories: globalServerDatabase.categories.length,
-      units: globalServerDatabase.units.length,
-      zones: globalServerDatabase.zones.length,
-      purchaseOrders: globalServerDatabase.purchaseOrders.length,
-      followers: globalServerDatabase.followers.length,
-    },
-  };
-});
+
+    return {
+      success: true,
+      activeBackend,
+      backendLabel,
+      databaseHost,
+      lastSyncAt,
+      postgresConfigured: isPostgresConfigured(),
+      d1Available,
+      counts: {
+        zones: zones.length,
+        categories: categories.length,
+        subCategories: subCategories.length,
+        units: units.length,
+        products: products.length,
+        followers: globalServerDatabase.followers.length,
+        purchaseOrders: globalServerDatabase.purchaseOrders.length,
+      },
+      records: {
+        zones,
+        categories,
+        subCategories,
+        units,
+        productsSample: products.slice(0, 50),
+      },
+    };
+  },
+);
 
 export const getLineFollowersHistoryFn = createServerFn({ method: "GET" }).handler(async () => {
   return { success: true, followers: globalServerDatabase.followers || [] };
 });
 
 export const syncLineFollowersFn = createServerFn({ method: "POST" }).handler(async () => {
-  return { success: true, followers: globalServerDatabase.followers || [] };
+  const followers = globalServerDatabase.followers || [];
+  return {
+    success: true,
+    followers,
+    count: followers.length,
+    message: "OK",
+  };
 });
 
 export const registerLineFollowerFn = createServerFn({ method: "POST" })
