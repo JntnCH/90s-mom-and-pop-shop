@@ -21,6 +21,12 @@ export default defineConfig({
   nitro: {
     preset: process.env["NITRO_PRESET"] || (isCloudflare ? "cloudflare-module" : "node-server"),
     renderer: false,
+    inlineDynamicImports: isCloudflare,
+    rolldownConfig: {
+      output: {
+        codeSplitting: false,
+      },
+    },
   },
   vite: {
     plugins: [],
