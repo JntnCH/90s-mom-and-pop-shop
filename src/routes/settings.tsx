@@ -872,7 +872,7 @@ function SettingsPage() {
 
   // Local LIFF ID state for editing in Settings
   const [editingLiffId, setEditingLiffId] = useState<string>(
-    () => clientLiffId || "2011710264-gaZ7oEcK",
+    () => clientLiffId || "2012055857-2hI1T2K2",
   );
   const [, setClientLiffIdState] = useState(() => clientLiffId);
 
