@@ -48,6 +48,34 @@ jobs:
           fi
           node scripts/apply-d1-line-server-fn.mjs
 
+      - name: Apply primary supplier default (บจก ไทรงามช้อบ)
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          p = Path("src/routes/reorder.tsx")
+          if not p.exists():
+              raise SystemExit(0)
+          src = p.read_text()
+          primary = "บจก ไทรงามช้อบ"
+          # Fix known misspelling / set default useState
+          src = src.replace('useState("บจก ไทรงามช้อป")', f'useState("{primary}")')
+          src = src.replace('useState("บจก ไทรงามช้อบ")', f'useState("{primary}")')
+          src = src.replace("บจก ไทรงามช้อป", primary)
+          # Prefer primary when PO has no supplier
+          src = src.replace(
+              'setSupplierNameInput(activePO.supplierName || "")',
+              f'setSupplierNameInput(activePO.supplierName || "{primary}")',
+          )
+          src = src.replace(
+              'setSupplierNameInput(po.supplierName || "")',
+              f'setSupplierNameInput(po.supplierName || "{primary}")',
+          )
+          # After save/reset keep primary as default for next PO
+          src = src.replace('setSupplierNameInput("")', f'setSupplierNameInput("{primary}")')
+          p.write_text(src)
+          print("primary supplier applied:", primary)
+          PY
+
       - name: Prune oversized assets (> 20MB) to satisfy Cloudflare limit
         run: |
           rm -rf public/assets/aistudio .output/public/assets/aistudio || true
