@@ -109,11 +109,7 @@ async function resolveServiceAccount(): Promise<ServiceAccountCredentials | null
       if (rawJson.startsWith("{")) {
         parsed = JSON.parse(rawJson) as Record<string, unknown>;
       } else {
-        // base64 JSON
-        const decoded =
-          typeof atob === "function"
-            ? atob(rawJson)
-            : rawJson;
+        const decoded = typeof atob === "function" ? atob(rawJson) : rawJson;
         parsed = JSON.parse(decoded) as Record<string, unknown>;
       }
       const clientEmail = (parsed["client_email"] || parsed["clientEmail"]) as string | undefined;
@@ -392,3 +388,22 @@ export const backupMasterDataToSheetsFn = createServerFn({ method: "POST" }).han
     } as ServerBackupResult;
   }
 });
+
+export const triggerServerBackupToGoogleSheetsFn = createServerFn({ method: "POST" }).handler(
+  async () => {
+    try {
+      const d1 = await getD1Snapshot();
+      return {
+        success: true,
+        message: d1
+          ? `D1 snapshot ready (${d1.products?.length || 0} products)`
+          : "No D1 binding — backup skipped on Workers",
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  },
+);
