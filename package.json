@@ -8,12 +8,15 @@
     "start": "node .output/server/index.mjs",
     "build": "NODE_ENV=production vite build",
     "build:dev": "vite build --mode development",
+    "build:cloudflare": "rm -rf public/assets/aistudio .output/public/assets/aistudio && NITRO_PRESET=cloudflare-module vite build",
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint .",
     "format": "prettier --write .",
-    "deploy": "rm -rf public/assets/aistudio .output/public/assets/aistudio && NITRO_PRESET=cloudflare-module npm run build && npx wrangler deploy",
+    "deploy": "npm run deploy:cloudflare",
+    "deploy:cloudflare": "npm run build:cloudflare && npx wrangler deploy",
+    "deploy:dry-run": "npm run build:cloudflare && npx wrangler deploy --dry-run",
     "deploy:incremental": "node scripts/incremental-deploy.mjs"
   },
   "overrides": {

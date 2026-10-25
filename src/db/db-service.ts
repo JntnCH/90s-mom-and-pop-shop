@@ -417,6 +417,15 @@ export async function syncDatabasePayload(payload: {
       }
     }
 
+    // Trigger background debounced backup to Google Sheets if configured
+    try {
+      const { scheduleAutoBackupToServerSheets } =
+        await import("../lib/google-sheets-server-fn.ts");
+      scheduleAutoBackupToServerSheets();
+    } catch {
+      // ignore
+    }
+
     return await getDatabaseSnapshot();
   } catch (error) {
     console.error("Failed to sync database payload:", error);

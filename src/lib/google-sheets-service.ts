@@ -24,7 +24,9 @@ import {
   disconnectGoogleSheetsConfigFn,
   testGoogleSheetsConnectionFn,
   extractSpreadsheetId,
+  triggerServerBackupToGoogleSheetsFn,
   type GoogleSheetsConfigStatus,
+  type ServerBackupResult,
 } from "./google-sheets-server-fn";
 
 export {
@@ -34,7 +36,9 @@ export {
   disconnectGoogleSheetsConfigFn,
   testGoogleSheetsConnectionFn,
   extractSpreadsheetId,
+  triggerServerBackupToGoogleSheetsFn,
   type GoogleSheetsConfigStatus,
+  type ServerBackupResult,
 };
 
 /**
@@ -931,7 +935,45 @@ export async function backupFullDatabaseToGoogleSheets(options?: {
     { title: BACKUP_SHEET_TABS.RAW_JSON, rows: rawRows },
   ];
 
-  const targetId = options?.spreadsheetId || getActiveBackupSheetMeta()?.spreadsheetId;
+  // 1. If using server credentials (no personal OAuth token passed), attempt server-side backup first
+  if (!options?.token) {
+    try {
+      const serverRes = await triggerServerBackupToGoogleSheetsFn({
+        data: { spreadsheetId: options?.spreadsheetId },
+      });
+      if (serverRes.success && serverRes.spreadsheetId && serverRes.spreadsheetUrl) {
+        const resultMeta: GoogleSheetBackupMeta = {
+          spreadsheetId: serverRes.spreadsheetId,
+          spreadsheetTitle: serverRes.spreadsheetTitle || "Google Sheet",
+          spreadsheetUrl: serverRes.spreadsheetUrl,
+          lastBackupAt: serverRes.backedUpAt || new Date().toISOString(),
+          stats: {
+            products: serverRes.stats?.products ?? backupPackage.data.products.length,
+            movements: serverRes.stats?.movements ?? backupPackage.data.movements.length,
+            orders: serverRes.stats?.orders ?? backupPackage.data.purchaseOrders.length,
+            categories: serverRes.stats?.categories ?? backupPackage.data.categories.length,
+          },
+        };
+        saveActiveBackupSheetMeta(resultMeta);
+        return resultMeta;
+      }
+    } catch (serverErr) {
+      console.warn("[GoogleSheets] Server backup notice, continuing with direct sync:", serverErr);
+    }
+  }
+
+  // 2. Resolve target spreadsheet ID (from options, local meta, or server env)
+  let targetId = options?.spreadsheetId || getActiveBackupSheetMeta()?.spreadsheetId;
+  if (!targetId) {
+    try {
+      const saCfg = await checkGoogleSheetsConfig();
+      if (saCfg?.spreadsheetId) {
+        targetId = saCfg.spreadsheetId;
+      }
+    } catch {
+      // ignore
+    }
+  }
 
   let finalId = "";
   let finalUrl = "";

@@ -96,6 +96,7 @@ import {
   extractSpreadsheetId,
   type GoogleSheetsConfigStatus,
   disconnectServiceAccount,
+  triggerServerBackupToGoogleSheetsFn,
 } from "@/lib/google-sheets-service";
 import { MasterStore, type ProductItem } from "@/lib/store";
 import { fetchCloudSqlSnapshotFn } from "@/lib/line-server-fn";
@@ -519,21 +520,6 @@ export function GoogleSheetsSyncTab() {
 
   // FULL DATABASE BACKUP HANDLER
   const handleExecuteFullBackup = async (forceNew: boolean = false) => {
-    let activeToken = token || getGoogleAccessToken();
-    if (!activeToken) {
-      try {
-        activeToken = await resolveAccessToken();
-        setToken(activeToken);
-      } catch {
-        toast.error("กรุณาตั้งค่า Service Account หรือเข้าสู่ระบบ Google ก่อนสำรองข้อมูล");
-        return;
-      }
-    }
-
-    const products = MasterStore.getProducts();
-    const movements = MasterStore.getMovements();
-    const orders = MasterStore.getPurchaseOrders();
-
     setIsFullBackingUp(true);
     try {
       const targetId = forceNew
@@ -542,6 +528,51 @@ export function GoogleSheetsSyncTab() {
           serviceAccountConfig?.spreadsheetId ||
           saSpreadsheetInput ||
           undefined;
+
+      // 1. If Service Account is configured (e.g. from GitHub Secret or config), trigger direct server-side backup
+      if (serviceAccountConfig?.isConfigured) {
+        const serverRes = await triggerServerBackupToGoogleSheetsFn({
+          data: { spreadsheetId: targetId },
+        });
+
+        if (!serverRes.success) {
+          throw new Error(serverRes.message || serverRes.error || "Server backup failed");
+        }
+
+        const newMeta: GoogleSheetBackupMeta = {
+          spreadsheetId: serverRes.spreadsheetId || targetId || "",
+          spreadsheetTitle: serverRes.spreadsheetTitle || "Google Sheet",
+          spreadsheetUrl:
+            serverRes.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${targetId}`,
+          lastBackupAt: serverRes.backedUpAt || new Date().toISOString(),
+          stats: {
+            products: serverRes.stats?.products ?? MasterStore.getProducts().length,
+            movements: serverRes.stats?.movements ?? MasterStore.getMovements().length,
+            orders: serverRes.stats?.orders ?? MasterStore.getPurchaseOrders().length,
+            categories: serverRes.stats?.categories ?? MasterStore.getCategories().length,
+          },
+        };
+
+        setBackupMeta(newMeta);
+        saveActiveBackupSheetMeta(newMeta);
+        setLastExportUrl(newMeta.spreadsheetUrl);
+        toast.success(serverRes.message);
+        loadSpreadsheets();
+        return;
+      }
+
+      // 2. Otherwise run client-side backup
+      let activeToken = token || getGoogleAccessToken();
+      if (!activeToken) {
+        try {
+          activeToken = await resolveAccessToken();
+          setToken(activeToken);
+        } catch {
+          toast.error("กรุณาตั้งค่า Service Account หรือเข้าสู่ระบบ Google ก่อนสำรองข้อมูล");
+          return;
+        }
+      }
+
       const resMeta = await backupFullDatabaseToGoogleSheets({
         spreadsheetId: targetId,
       });
@@ -549,7 +580,7 @@ export function GoogleSheetsSyncTab() {
       setBackupMeta(resMeta);
       setLastExportUrl(resMeta.spreadsheetUrl);
       toast.success(
-        `สำรองข้อมูลทุกอย่างลง Google Sheets สำเร็จ! (${products.length} สินค้า, ${movements.length} ประวัติสต็อก, ${orders.length} ใบสั่งซื้อ)`,
+        `สำรองข้อมูลทุกอย่างลง Google Sheets สำเร็จ! (${MasterStore.getProducts().length} สินค้า, ${MasterStore.getMovements().length} ประวัติสต็อก, ${MasterStore.getPurchaseOrders().length} ใบสั่งซื้อ)`,
       );
       loadSpreadsheets();
     } catch (err: unknown) {

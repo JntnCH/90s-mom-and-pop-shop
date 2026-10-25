@@ -76,8 +76,9 @@ type D1DatabaseLike = {
 async function getD1Binding(): Promise<D1DatabaseLike | null> {
   // 1. Check cloudflare:workers standard module env
   try {
-    const mod = await import("cloudflare:workers");
-    const env = (mod as { env?: { DB?: D1DatabaseLike } }).env;
+    const cfName = "cloudflare" + ":workers";
+    const mod = (await import(/* @vite-ignore */ cfName)) as { env?: { DB?: D1DatabaseLike } };
+    const env = mod?.env;
     if (env?.DB) return env.DB;
   } catch {
     // ignore
@@ -87,10 +88,12 @@ async function getD1Binding(): Promise<D1DatabaseLike | null> {
   try {
     const g = globalThis as unknown as {
       DB?: D1DatabaseLike;
+      __worker_env__?: { DB?: D1DatabaseLike };
       __env__?: { DB?: D1DatabaseLike };
       process?: { env?: { DB?: D1DatabaseLike } };
     };
     if (g.DB) return g.DB;
+    if (g.__worker_env__?.DB) return g.__worker_env__.DB;
     if (g.__env__?.DB) return g.__env__.DB;
     if (g.process?.env?.DB && typeof g.process.env.DB === "object") return g.process.env.DB;
   } catch {

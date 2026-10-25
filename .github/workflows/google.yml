@@ -170,10 +170,10 @@ jobs:
             DB_PASSWORD=${{ secrets.SQL_ADMIN_PASSWORD }}
             DB_NAME=postgres
             INSTANCE_CONNECTION_NAME=openclaw-gcp-272026:asia-southeast1:minimark-2026
-            GOOGLE_SERVICE_ACCOUNT_JSON=${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-            GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL }}
-            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY=${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY }}
-            GOOGLE_SPREADSHEET_ID=${{ secrets.GOOGLE_SPREADSHEET_ID }}
+            GOOGLE_SERVICE_ACCOUNT_JSON=${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON || secrets.GCP_SA_KEY || secrets.GCP_CREDENTIALS || secrets.SERVICE_ACCOUNT_JSON || secrets.GOOGLE_CREDENTIALS }}
+            GOOGLE_SERVICE_ACCOUNT_EMAIL=${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL || secrets.SERVICE_ACCOUNT_EMAIL || secrets.GCP_SERVICE_ACCOUNT }}
+            GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY=${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || secrets.SERVICE_ACCOUNT_PRIVATE_KEY || secrets.GOOGLE_PRIVATE_KEY }}
+            GOOGLE_SPREADSHEET_ID=${{ secrets.GOOGLE_SPREADSHEET_ID || secrets.SPREADSHEET_ID || secrets.GOOGLE_SHEET_ID || secrets.SHEET_ID }}
 
 
       # Explicitly grant public unauthenticated access (allUsers)

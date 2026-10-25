@@ -46,6 +46,9 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    if (env && typeof env === "object") {
+      (globalThis as unknown as { __worker_env__?: unknown }).__worker_env__ = env;
+    }
     const url = new URL(request.url);
     if (url.pathname === "/api/health" || url.pathname === "/healthz") {
       return new Response(
@@ -63,6 +66,77 @@ export default {
           },
         },
       );
+    }
+
+    // Direct Google Sheets Backup Trigger & Status Endpoints
+    if (url.pathname === "/api/backup-sheets" || url.pathname === "/api/sheets/backup") {
+      try {
+        const { backupDatabaseToGoogleSheetsServer } =
+          await import("./lib/google-sheets-server-fn");
+        let customSpreadsheetId: string | undefined =
+          url.searchParams.get("spreadsheetId") || undefined;
+        if (request.method === "POST") {
+          try {
+            const body = (await request.json().catch(() => ({}))) as { spreadsheetId?: string };
+            if (body.spreadsheetId) customSpreadsheetId = body.spreadsheetId;
+          } catch {
+            // ignore
+          }
+        }
+        const result = await backupDatabaseToGoogleSheetsServer({
+          spreadsheetId: customSpreadsheetId,
+        });
+        return new Response(JSON.stringify(result, null, 2), {
+          status: result.success ? 200 : 400,
+          headers: {
+            "content-type": "application/json; charset=utf-8",
+            "access-control-allow-origin": "*",
+            "cache-control": "no-cache, no-store, must-revalidate",
+          },
+        });
+      } catch (err) {
+        return new Response(
+          JSON.stringify({
+            success: false,
+            message: "Backup execution failed",
+            error: err instanceof Error ? err.message : String(err),
+          }),
+          { status: 500, headers: { "content-type": "application/json" } },
+        );
+      }
+    }
+
+    if (url.pathname === "/api/sheets-status") {
+      try {
+        const { getGoogleSheetsConfigStatus, getLastServerBackupStatus } =
+          await import("./lib/google-sheets-server-fn");
+        const config = await getGoogleSheetsConfigStatus();
+        const lastBackup = getLastServerBackupStatus();
+        return new Response(
+          JSON.stringify(
+            {
+              status: "ok",
+              config,
+              lastBackup,
+            },
+            null,
+            2,
+          ),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "access-control-allow-origin": "*",
+              "cache-control": "no-cache, no-store, must-revalidate",
+            },
+          },
+        );
+      } catch (err) {
+        return new Response(JSON.stringify({ status: "error", error: String(err) }), {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        });
+      }
     }
 
     // Serve LINE PNG Image Messages for Messaging API & LIFF Target Picker
