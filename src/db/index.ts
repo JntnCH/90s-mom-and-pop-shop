@@ -3,33 +3,45 @@ import { Pool } from "pg";
 import * as schema from "./schema.ts";
 
 declare global {
+  // eslint-disable-next-line no-var
   var _postgresPool: Pool | undefined;
 }
 
+function readEnv(key: string): string | undefined {
+  try {
+    if (typeof process !== "undefined" && process.env && typeof process.env[key] === "string") {
+      return process.env[key];
+    }
+  } catch {
+    // ignore (browser / Workers client)
+  }
+  return undefined;
+}
+
 export const createPool = () => {
-  if (!global._postgresPool) {
+  if (!globalThis._postgresPool) {
     const host =
-      process.env["SQL_HOST"] ||
-      (process.env["INSTANCE_CONNECTION_NAME"]
-        ? `/cloudsql/${process.env["INSTANCE_CONNECTION_NAME"]}`
+      readEnv("SQL_HOST") ||
+      (readEnv("INSTANCE_CONNECTION_NAME")
+        ? `/cloudsql/${readEnv("INSTANCE_CONNECTION_NAME")}`
         : undefined);
     const user =
-      process.env["SQL_USER"] ||
-      process.env["SQL_ADMIN_USER"] ||
-      process.env["DB_USER"] ||
-      process.env["PGUSER"];
+      readEnv("SQL_USER") ||
+      readEnv("SQL_ADMIN_USER") ||
+      readEnv("DB_USER") ||
+      readEnv("PGUSER");
     const password =
-      process.env["SQL_PASSWORD"] ||
-      process.env["SQL_ADMIN_PASSWORD"] ||
-      process.env["DB_PASSWORD"] ||
-      process.env["PGPASSWORD"];
+      readEnv("SQL_PASSWORD") ||
+      readEnv("SQL_ADMIN_PASSWORD") ||
+      readEnv("DB_PASSWORD") ||
+      readEnv("PGPASSWORD");
     const database =
-      process.env["SQL_DB_NAME"] ||
-      process.env["DB_NAME"] ||
-      process.env["PGDATABASE"] ||
+      readEnv("SQL_DB_NAME") ||
+      readEnv("DB_NAME") ||
+      readEnv("PGDATABASE") ||
       "postgres";
 
-    global._postgresPool = new Pool({
+    globalThis._postgresPool = new Pool({
       host,
       user,
       password,
@@ -38,13 +50,28 @@ export const createPool = () => {
       connectionTimeoutMillis: 15000,
     });
 
-    global._postgresPool.on("error", (err) => {
+    globalThis._postgresPool.on("error", (err) => {
       console.error("Unexpected error on idle SQL pool client:", err);
     });
   }
-  return global._postgresPool;
+  return globalThis._postgresPool;
 };
 
-const pool = createPool();
-export const db = drizzle(pool, { schema });
+/** Lazy accessor — avoids top-level process.env on client bundles */
+let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
+function getDb() {
+  if (!_db) {
+    _db = drizzle(createPool(), { schema });
+  }
+  return _db;
+}
+
+export const db = new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
+  get(_target, prop, receiver) {
+    const real = getDb() as unknown as Record<string | symbol, unknown>;
+    const value = Reflect.get(real, prop, receiver);
+    return typeof value === "function" ? value.bind(real) : value;
+  },
+});
+
 export { schema };
