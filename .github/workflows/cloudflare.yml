@@ -32,9 +32,19 @@ jobs:
       - name: Ensure line-server-fn is complete + D1 patches
         run: |
           LINES=$(wc -l < src/lib/line-server-fn.ts || echo 0)
-          if [ "$LINES" -lt 500 ]; then
+          SAFE=0
+          if grep -q "isD1Available" src/lib/line-server-fn.ts \
+            && grep -q "getDatabaseInspectionFn" src/lib/line-server-fn.ts \
+            && ! grep -q 'from "node:fs"' src/lib/line-server-fn.ts \
+            && ! grep -q 'from "node:path"' src/lib/line-server-fn.ts \
+            && ! grep -q 'db-service' src/lib/line-server-fn.ts; then
+            SAFE=1
+          fi
+          if [ "$LINES" -lt 500 ] && [ "$SAFE" -eq 0 ]; then
             echo "line-server-fn.ts looks truncated ($LINES lines) — restoring baseline"
             curl --fail -sL "https://raw.githubusercontent.com/JntnCH/90s-mom-and-pop-shop/efc4e9a3dccae330752988309818da07951c7c37/src/lib/line-server-fn.ts" -o src/lib/line-server-fn.ts.bak && mv src/lib/line-server-fn.ts.bak src/lib/line-server-fn.ts || true
+          else
+            echo "line-server-fn.ts kept as-is (lines=$LINES safe=$SAFE)"
           fi
           node scripts/apply-d1-line-server-fn.mjs
 
