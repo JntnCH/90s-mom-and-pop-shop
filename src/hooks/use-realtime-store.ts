@@ -48,33 +48,15 @@ export function useRealtimeStore() {
           followers: MasterStore.getFollowers(),
           movements: MasterStore.getMovements(),
           purchaseOrders: MasterStore.getPurchaseOrders(),
+          ...(MasterStore.getDeletedPurchaseOrderIds().length > 0
+            ? { deletedPurchaseOrderIds: MasterStore.getDeletedPurchaseOrderIds() }
+            : {}),
         },
       });
       if (res?.success && res.data) {
-        if (Array.isArray(res.data.units) && res.data.units.length > 0) {
-          MasterStore.saveUnits(res.data.units as UnitItem[]);
-        }
-        if (Array.isArray(res.data.categories) && res.data.categories.length > 0) {
-          MasterStore.saveCategories(res.data.categories as CategoryItem[]);
-        }
-        if (Array.isArray(res.data.subCategories) && res.data.subCategories.length > 0) {
-          MasterStore.saveSubCategories(res.data.subCategories as SubCategoryItem[]);
-        }
-        if (Array.isArray(res.data.zones) && res.data.zones.length > 0) {
-          MasterStore.saveZones(res.data.zones as ZoneItem[]);
-        }
-        if (Array.isArray(res.data.products) && res.data.products.length > 0) {
-          MasterStore.saveProducts(res.data.products as ProductItem[]);
-        }
-        if (Array.isArray(res.data.followers) && res.data.followers.length > 0) {
-          MasterStore.saveFollowers(res.data.followers as LineUserFollower[]);
-        }
-        if (Array.isArray(res.data.movements) && res.data.movements.length > 0) {
-          MasterStore.saveMovements(res.data.movements as StockMovementLog[]);
-        }
-        if (Array.isArray(res.data.purchaseOrders) && res.data.purchaseOrders.length > 0) {
-          MasterStore.savePurchaseOrders(res.data.purchaseOrders as PurchaseOrderRecord[]);
-        }
+        MasterStore.syncDatabaseSnapshot(
+          res.data as Parameters<typeof MasterStore.syncDatabaseSnapshot>[0],
+        );
         refresh();
       }
       return res;

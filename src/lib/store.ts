@@ -230,6 +230,7 @@ export const STORAGE_KEYS = {
   FOLLOWERS: "minimark_followers",
   MOVEMENTS: "minimark_movements",
   PURCHASE_ORDERS: "minimark_purchase_orders",
+  DELETED_PO_IDS: "minimark_deleted_po_ids",
   PO_DRAFT: "minimark_po_draft",
   STORE_CONFIG: "minimark_store_config",
   STORE_NAME: "minimark_store_name",
@@ -324,6 +325,21 @@ export function clearPendingDeletedZones(idsToClear: string[]): void {
   }
 }
 
+export function clearPendingDeletedPOs(idsToClear: string[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const current = safeGet<string[]>(STORAGE_KEYS.DELETED_PO_IDS, []);
+    const remaining = current.filter((id) => !idsToClear.includes(id));
+    if (remaining.length > 0) {
+      localStorage.setItem(STORAGE_KEYS.DELETED_PO_IDS, JSON.stringify(remaining));
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.DELETED_PO_IDS);
+    }
+  } catch {
+    // ignore
+  }
+}
+
 let serverSyncTimer: ReturnType<typeof setTimeout> | null = null;
 let isApplyingServerSnapshot = false;
 
@@ -334,6 +350,7 @@ export function triggerCentralServerSync(immediate = false) {
     try {
       const { syncMasterDatabaseFn } = await import("./line-server-fn");
       const deletedZoneIds = getPendingDeletedZones();
+      const deletedPOIds = safeGet<string[]>(STORAGE_KEYS.DELETED_PO_IDS, []);
       const res = await syncMasterDatabaseFn({
         data: {
           products: MasterStore.getProducts(),
@@ -342,6 +359,7 @@ export function triggerCentralServerSync(immediate = false) {
           zones: MasterStore.getZones(),
           replaceZones: true,
           ...(deletedZoneIds.length > 0 ? { deletedZoneIds } : {}),
+          ...(deletedPOIds.length > 0 ? { deletedPurchaseOrderIds: deletedPOIds } : {}),
           units: MasterStore.getUnits(),
           receives: MasterStore.getReceives(),
           followers: MasterStore.getFollowers(),
@@ -352,6 +370,9 @@ export function triggerCentralServerSync(immediate = false) {
       if (res?.success && res.data) {
         if (deletedZoneIds.length > 0) {
           clearPendingDeletedZones(deletedZoneIds);
+        }
+        if (deletedPOIds.length > 0) {
+          clearPendingDeletedPOs(deletedPOIds);
         }
         MasterStore.syncDatabaseSnapshot(
           res.data as Parameters<typeof MasterStore.syncDatabaseSnapshot>[0],
@@ -383,7 +404,9 @@ function safeSet<T>(key: string, value: T): void {
         key === STORAGE_KEYS.CATEGORIES ||
         key === STORAGE_KEYS.SUBCATEGORIES ||
         key === STORAGE_KEYS.ZONES ||
-        key === STORAGE_KEYS.UNITS)
+        key === STORAGE_KEYS.UNITS ||
+        key === STORAGE_KEYS.PURCHASE_ORDERS ||
+        key === STORAGE_KEYS.DELETED_PO_IDS)
     ) {
       triggerCentralServerSync();
     }
@@ -1038,10 +1061,19 @@ export const MasterStore = {
     safeSet(STORAGE_KEYS.PURCHASE_ORDERS, nextList);
     return updated;
   },
+  getDeletedPurchaseOrderIds(): string[] {
+    return safeGet<string[]>(STORAGE_KEYS.DELETED_PO_IDS, []);
+  },
   deletePurchaseOrder(id: string): boolean {
     const list = this.getPurchaseOrders();
     const nextList = list.filter((p) => p.id !== id);
     safeSet(STORAGE_KEYS.PURCHASE_ORDERS, nextList);
+
+    // Track deleted PO ID so DB sync deletes it and snapshot doesn't resurrect it
+    const deleted = this.getDeletedPurchaseOrderIds();
+    if (!deleted.includes(id)) {
+      safeSet(STORAGE_KEYS.DELETED_PO_IDS, [...deleted, id]);
+    }
     return true;
   },
   receivePurchaseOrderIntoStock(
@@ -1231,8 +1263,23 @@ export const MasterStore = {
       if (Array.isArray(data.movements) && data.movements.length > 0) {
         localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(data.movements));
       }
-      if (Array.isArray(data.purchaseOrders) && data.purchaseOrders.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.PURCHASE_ORDERS, JSON.stringify(data.purchaseOrders));
+      if (Array.isArray(data.purchaseOrders)) {
+        const deletedIds = this.getDeletedPurchaseOrderIds();
+        const serverPOs = data.purchaseOrders.filter((po) => !deletedIds.includes(po.id));
+        const localPOs = safeGet<PurchaseOrderRecord[]>(STORAGE_KEYS.PURCHASE_ORDERS, []).filter(
+          (po) => !deletedIds.includes(po.id),
+        );
+        const poMap = new Map<string, PurchaseOrderRecord>();
+        for (const po of serverPOs) {
+          poMap.set(po.id, po);
+        }
+        for (const po of localPOs) {
+          poMap.set(po.id, po); // local modifications / newly created POs preserved
+        }
+        localStorage.setItem(
+          STORAGE_KEYS.PURCHASE_ORDERS,
+          JSON.stringify(Array.from(poMap.values())),
+        );
       }
       window.dispatchEvent(new Event("minimark_store_change"));
       if (syncChannel) {

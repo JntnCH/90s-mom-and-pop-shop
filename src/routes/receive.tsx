@@ -118,6 +118,11 @@ function ReceiveCheckPage() {
   const [units, setUnits] = useState<UnitItem[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderRecord[]>([]);
   const [selectedPoId, setSelectedPoId] = useState<string>("");
+  const [poFilterStatus, setPoFilterStatus] = useState<"ALL" | "ORDERED" | "RECEIVED" | "DRAFT">(
+    "ALL",
+  );
+  const [poSearchQuery, setPoSearchQuery] = useState("");
+  const [poListModalOpen, setPoListModalOpen] = useState(false);
 
   const [manualCode, setManualCode] = useState("");
   const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
@@ -226,30 +231,62 @@ function ReceiveCheckPage() {
   }, [reloadData]);
 
   // Load items from PO into checklist
-  const handleSelectPO = (poId: string) => {
-    setSelectedPoId(poId);
-    if (!poId) {
-      setItems([]);
-      return;
+  const handleSelectPO = useCallback(
+    (poId: string) => {
+      setSelectedPoId(poId);
+      if (!poId) {
+        setItems([]);
+        return;
+      }
+      const allPOs = MasterStore.getPurchaseOrders();
+      const po = allPOs.find((p) => p.id === poId) || purchaseOrders.find((p) => p.id === poId);
+      if (!po) {
+        toast.error("ไม่พบข้อมูลใบสั่งซื้อนี้ในระบบ");
+        return;
+      }
+
+      const checklist: ReceiveCheckItem[] = po.items.map((it, idx) => ({
+        id: `po-item-${idx}-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
+        productId: it.productId,
+        barcode: it.barcode,
+        productName: it.productName,
+        unit: it.unitName || "ชิ้น",
+        expectedQuantity: it.quantity,
+        receivedQuantity: it.quantity, // default to expected, can be edited
+        isReceived: true, // checked by default or toggled
+        note: it.note || "",
+      }));
+
+      setItems(checklist);
+      toast.success(
+        `ดึงข้อมูลจริงจากใบสั่งซื้อ ${po.orderNumber} สำเร็จ (${checklist.length} รายการ, รวม ${po.totalQuantity} ชิ้น)`,
+      );
+    },
+    [purchaseOrders],
+  );
+
+  // Automatically load PO from URL parameter (?poId=xxx) if present
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const urlPoId = params.get("poId");
+      if (urlPoId && urlPoId !== selectedPoId) {
+        handleSelectPO(urlPoId);
+      }
     }
-    const po = purchaseOrders.find((p) => p.id === poId);
-    if (!po) return;
+  }, [handleSelectPO, selectedPoId]);
 
-    const checklist: ReceiveCheckItem[] = po.items.map((it, idx) => ({
-      id: `po-item-${idx}-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
-      productId: it.productId,
-      barcode: it.barcode,
-      productName: it.productName,
-      unit: it.unitName || "ชิ้น",
-      expectedQuantity: it.quantity,
-      receivedQuantity: it.quantity, // default to expected, can be edited
-      isReceived: true, // checked by default or toggled
-      note: "",
-    }));
+  const selectedPO = purchaseOrders.find((p) => p.id === selectedPoId);
 
-    setItems(checklist);
-    toast.success(`โหลดรายการจากใบสั่งซื้อ ${po.orderNumber} สำเร็จ (${checklist.length} รายการ)`);
-  };
+  const filteredPurchaseOrders = purchaseOrders.filter((po) => {
+    const matchStatus = poFilterStatus === "ALL" ? true : po.status === poFilterStatus;
+    const q = poSearchQuery.trim().toLowerCase();
+    const matchSearch =
+      !q ||
+      po.orderNumber.toLowerCase().includes(q) ||
+      (po.supplierName && po.supplierName.toLowerCase().includes(q));
+    return matchStatus && matchSearch;
+  });
 
   // Barcode Detected Handler (Camera or Manual)
   const handleDetectedCode = useCallback(
@@ -706,35 +743,126 @@ function ReceiveCheckPage() {
               <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
                 <FileText className="size-4 text-primary shrink-0" /> ตรวจรับตามใบสั่งซื้อ (PO)
               </span>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-[10px] text-primary"
-                onClick={reloadData}
-              >
-                <RefreshCw className="size-3 mr-1" /> รีเฟรช
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-6 text-[11px] px-2 rounded-lg font-medium text-primary border-primary/30 hover:bg-primary/10"
+                  onClick={() => setPoListModalOpen(true)}
+                >
+                  ดูทั้งหมด ({purchaseOrders.length})
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-6 text-muted-foreground hover:text-primary"
+                  onClick={reloadData}
+                  title="รีเฟรชข้อมูลใบสั่งซื้อ"
+                >
+                  <RefreshCw className="size-3" />
+                </Button>
+              </div>
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">
-                เลือกใบสั่งซื้อที่ต้องการตรวจรับ
-              </Label>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-1">
+                <Label className="text-xs text-muted-foreground">
+                  เลือกใบสั่งซื้อ ({purchaseOrders.length} ใบในระบบ)
+                </Label>
+              </div>
+
+              {/* Status Filter Buttons */}
+              <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
+                <button
+                  type="button"
+                  onClick={() => setPoFilterStatus("ALL")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors shrink-0",
+                    poFilterStatus === "ALL"
+                      ? "bg-primary text-primary-foreground"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80",
+                  )}
+                >
+                  ทั้งหมด ({purchaseOrders.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPoFilterStatus("ORDERED")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors shrink-0",
+                    poFilterStatus === "ORDERED"
+                      ? "bg-blue-600 text-white"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80",
+                  )}
+                >
+                  รอรับ ({purchaseOrders.filter((p) => p.status === "ORDERED").length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPoFilterStatus("RECEIVED")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors shrink-0",
+                    poFilterStatus === "RECEIVED"
+                      ? "bg-emerald-600 text-white"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80",
+                  )}
+                >
+                  รับแล้ว ({purchaseOrders.filter((p) => p.status === "RECEIVED").length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPoFilterStatus("DRAFT")}
+                  className={cn(
+                    "px-2 py-0.5 rounded-lg text-[10px] font-semibold transition-colors shrink-0",
+                    poFilterStatus === "DRAFT"
+                      ? "bg-slate-700 text-white dark:bg-slate-300 dark:text-slate-900"
+                      : "bg-muted text-muted-foreground hover:bg-muted/80",
+                  )}
+                >
+                  ฉบับร่าง ({purchaseOrders.filter((p) => p.status === "DRAFT").length})
+                </button>
+              </div>
+
+              {/* Quick Search */}
+              <div className="relative">
+                <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={poSearchQuery}
+                  onChange={(e) => setPoSearchQuery(e.target.value)}
+                  placeholder="ค้นหาเลข PO / ซัพพลายเออร์..."
+                  className="h-8 pl-8 text-xs rounded-xl"
+                />
+              </div>
+
               <select
                 className="w-full max-w-full rounded-xl border border-input bg-background px-3 py-2 text-xs shadow-xs truncate"
                 value={selectedPoId}
                 onChange={(e) => handleSelectPO(e.target.value)}
               >
                 <option value="">-- ตรวจรับอิสระ (ไม่ผูกใบสั่งซื้อ) --</option>
-                {purchaseOrders
-                  .filter((p) => p.status === "ORDERED" || p.status === "DRAFT")
-                  .map((po) => (
+                {filteredPurchaseOrders.map((po) => {
+                  const statusLabel =
+                    po.status === "ORDERED"
+                      ? "สั่งซื้อแล้ว"
+                      : po.status === "RECEIVED"
+                        ? "รับเข้าแล้ว"
+                        : po.status === "DRAFT"
+                          ? "ฉบับร่าง"
+                          : "ยกเลิก";
+                  return (
                     <option key={po.id} value={po.id}>
-                      {po.orderNumber} ({po.supplierName || "ซัพพลายเออร์"}) • {po.items.length}{" "}
-                      รายการ
+                      {po.orderNumber} [{statusLabel}] ({po.supplierName || "ซัพพลายเออร์"}) •{" "}
+                      {po.items.length} รายการ
                     </option>
-                  ))}
+                  );
+                })}
               </select>
+
+              {filteredPurchaseOrders.length === 0 && purchaseOrders.length > 0 && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  ไม่พบใบสั่งซื้อตามตัวกรอง (คลิก "ทั้งหมด" เพื่อดูครบทุกใบ)
+                </p>
+              )}
             </div>
 
             <div className="space-y-1.5 pt-1 border-t">
@@ -751,6 +879,143 @@ function ReceiveCheckPage() {
 
         {/* RIGHT COLUMN: RECEIVING CHECKLIST (เช็คเป็นรายการ) */}
         <div className="lg:col-span-8 space-y-4 w-full min-w-0">
+          {/* ACTIVE PURCHASE ORDER VERIFICATION BANNER */}
+          {selectedPO && (
+            <div className="bg-primary/5 border border-primary/20 rounded-2xl p-4 space-y-3 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="space-y-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono font-bold text-sm text-primary">
+                      {selectedPO.orderNumber}
+                    </span>
+                    {selectedPO.status === "ORDERED" && (
+                      <Badge className="bg-blue-600 text-white text-[10px]">
+                        สั่งซื้อแล้ว (รอรับเข้า)
+                      </Badge>
+                    )}
+                    {selectedPO.status === "RECEIVED" && (
+                      <Badge className="bg-emerald-600 text-white text-[10px]">
+                        รับเข้าสต็อกแล้ว
+                      </Badge>
+                    )}
+                    {selectedPO.status === "DRAFT" && (
+                      <Badge variant="outline" className="text-muted-foreground text-[10px]">
+                        ฉบับร่าง
+                      </Badge>
+                    )}
+                    {selectedPO.status === "CANCELLED" && (
+                      <Badge variant="destructive" className="text-[10px]">
+                        ยกเลิกแล้ว
+                      </Badge>
+                    )}
+                    <Badge
+                      variant="outline"
+                      className="bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-500/30 text-[10px] gap-1"
+                    >
+                      <CheckCircle2 className="size-3 text-emerald-600" />{" "}
+                      ดึงข้อมูลจริงจากใบสั่งซื้อ
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1 pt-0.5">
+                    <span>
+                      ซัพพลายเออร์:{" "}
+                      <strong className="text-foreground">
+                        {selectedPO.supplierName || "ซัพพลายเออร์ทั่วไป"}
+                      </strong>
+                    </span>
+                    <span>
+                      วันที่สร้าง:{" "}
+                      <strong className="text-foreground">{selectedPO.createdAt}</strong>
+                    </span>
+                    <span>
+                      ยอดสั่งซื้อรวม:{" "}
+                      <strong className="text-emerald-600 font-mono">
+                        ฿{selectedPO.totalCost.toLocaleString("th-TH")}
+                      </strong>
+                    </span>
+                    <span>
+                      จำนวนตาม PO:{" "}
+                      <strong className="text-primary font-mono">
+                        {selectedPO.items.length} รายการ ({selectedPO.totalQuantity} ชิ้น)
+                      </strong>
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs rounded-xl text-emerald-700 border-emerald-300 dark:border-emerald-800 hover:bg-emerald-50 dark:hover:bg-emerald-950 font-medium"
+                    onClick={() => {
+                      setItems((prev) =>
+                        prev.map((it) => ({
+                          ...it,
+                          isReceived: true,
+                          receivedQuantity: it.expectedQuantity > 0 ? it.expectedQuantity : 1,
+                        })),
+                      );
+                      toast.success("ตั้งค่าจำนวนตรวจรับ = จำนวนที่สั่งทั้งหมดเรียบร้อยแล้ว");
+                    }}
+                  >
+                    รับครบตามยอดสั่ง
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 text-xs rounded-xl font-medium"
+                    onClick={() => {
+                      setItems((prev) =>
+                        prev.map((it) => ({
+                          ...it,
+                          isReceived: false,
+                          receivedQuantity: 0,
+                        })),
+                      );
+                      toast.info("รีเซ็ตเป็น 0 แล้ว พร้อมสแกนตรวจนับทีละชิ้น");
+                    }}
+                  >
+                    รีเซ็ตเป็น 0 (สแกนนับ)
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-8 text-xs rounded-xl text-muted-foreground hover:text-destructive"
+                    onClick={() => {
+                      setSelectedPoId("");
+                      setItems([]);
+                      toast.info("ยกเลิกการผูกใบสั่งซื้อแล้ว กลับสู่โหมดตรวจรับอิสระ");
+                    }}
+                  >
+                    ยกเลิกผูก PO
+                  </Button>
+                </div>
+              </div>
+
+              <div className="text-xs text-muted-foreground bg-background/80 rounded-xl px-3 py-2 border flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <PackageCheck className="size-4 text-emerald-600 shrink-0" />
+                  <span>
+                    ความคืบหน้า: ตรวจรับแล้ว <strong>{receivedItemsCount}</strong> จาก{" "}
+                    {totalItemsCount} รายการ (ได้ <strong>{totalReceivedUnits}</strong> / สั่ง{" "}
+                    {selectedPO.totalQuantity} ชิ้น)
+                  </span>
+                </div>
+                {receivedItemsCount === totalItemsCount &&
+                totalReceivedUnits >= selectedPO.totalQuantity ? (
+                  <span className="font-semibold text-emerald-600 flex items-center gap-1 text-xs">
+                    <CheckCircle2 className="size-3.5" /> ตรวจรับครบตามยอดสั่งซื้อเรียบร้อย
+                  </span>
+                ) : (
+                  <span className="text-amber-600 dark:text-amber-400 font-medium text-xs">
+                    กำลังตรวจนับ (ขาดอีก{" "}
+                    {Math.max(0, selectedPO.totalQuantity - totalReceivedUnits)} ชิ้น)
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+
           <Card className="rounded-2xl border-border/80 shadow-sm overflow-hidden w-full max-w-full min-w-0">
             <CardHeader className="p-4 pb-3 border-b flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
               <div className="min-w-0">
@@ -1427,6 +1692,155 @@ function ReceiveCheckPage() {
               เพิ่มในเช็คลิสต์
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* DIALOG TO BROWSE ALL PURCHASE ORDERS */}
+      <Dialog open={poListModalOpen} onOpenChange={setPoListModalOpen}>
+        <DialogContent className="w-[96vw] max-w-3xl rounded-2xl max-h-[85vh] overflow-y-auto p-4 sm:p-6">
+          <DialogHeader>
+            <DialogTitle className="text-base sm:text-lg flex items-center gap-2">
+              <ClipboardCheck className="size-5 text-primary" />
+              รายการใบสั่งซื้อทั้งหมดในระบบ ({purchaseOrders.length} ใบ)
+            </DialogTitle>
+            <DialogDescription className="text-xs">
+              ระบบดึงข้อมูลใบสั่งซื้อจริงทั้งหมด สามารถค้นหาและคลิกเลือกตรวจรับตามใบสั่งซื้อได้ทันที
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3 py-2">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2">
+              <div className="relative flex-1">
+                <Search className="size-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={poSearchQuery}
+                  onChange={(e) => setPoSearchQuery(e.target.value)}
+                  placeholder="พิมพ์ค้นหาเลขที่ PO หรือชื่อซัพพลายเออร์..."
+                  className="pl-9 h-9 text-xs rounded-xl"
+                />
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                <Button
+                  size="sm"
+                  variant={poFilterStatus === "ALL" ? "default" : "outline"}
+                  className="h-8 text-xs rounded-xl shrink-0"
+                  onClick={() => setPoFilterStatus("ALL")}
+                >
+                  ทั้งหมด ({purchaseOrders.length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={poFilterStatus === "ORDERED" ? "default" : "outline"}
+                  className="h-8 text-xs rounded-xl text-blue-600 shrink-0"
+                  onClick={() => setPoFilterStatus("ORDERED")}
+                >
+                  สั่งซื้อแล้ว ({purchaseOrders.filter((p) => p.status === "ORDERED").length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={poFilterStatus === "RECEIVED" ? "default" : "outline"}
+                  className="h-8 text-xs rounded-xl text-emerald-600 shrink-0"
+                  onClick={() => setPoFilterStatus("RECEIVED")}
+                >
+                  รับแล้ว ({purchaseOrders.filter((p) => p.status === "RECEIVED").length})
+                </Button>
+                <Button
+                  size="sm"
+                  variant={poFilterStatus === "DRAFT" ? "default" : "outline"}
+                  className="h-8 text-xs rounded-xl shrink-0"
+                  onClick={() => setPoFilterStatus("DRAFT")}
+                >
+                  ฉบับร่าง ({purchaseOrders.filter((p) => p.status === "DRAFT").length})
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-xl border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-36">เลขที่ PO</TableHead>
+                    <TableHead>ซัพพลายเออร์</TableHead>
+                    <TableHead className="text-center w-28">รายการ/ชิ้น</TableHead>
+                    <TableHead className="text-right w-28">ยอดรวม</TableHead>
+                    <TableHead className="text-center w-32">สถานะ</TableHead>
+                    <TableHead className="text-right w-28">เลือก</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredPurchaseOrders.length === 0 ? (
+                    <TableRow>
+                      <TableCell
+                        colSpan={6}
+                        className="text-center py-8 text-muted-foreground text-xs"
+                      >
+                        {purchaseOrders.length === 0
+                          ? "ยังไม่มีใบสั่งซื้อในระบบ สามารถสร้างใบสั่งซื้อได้ที่หน้ารายการสั่งซื้อ"
+                          : "ไม่พบใบสั่งซื้อตามตัวกรองที่เลือก"}
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredPurchaseOrders.map((po) => (
+                      <TableRow
+                        key={po.id}
+                        className={po.id === selectedPoId ? "bg-primary/5 font-medium" : ""}
+                      >
+                        <TableCell className="font-mono text-xs font-bold text-primary">
+                          {po.orderNumber}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <div className="font-medium text-foreground">
+                            {po.supplierName || "ซัพพลายเออร์ทั่วไป"}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">{po.createdAt}</div>
+                        </TableCell>
+                        <TableCell className="text-center font-mono text-xs">
+                          {po.items.length} รายการ ({po.totalQuantity} ชิ้น)
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs font-bold text-emerald-600">
+                          ฿{po.totalCost.toLocaleString("th-TH")}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {po.status === "ORDERED" && (
+                            <Badge className="bg-blue-600 text-white text-[10px]">
+                              สั่งซื้อแล้ว
+                            </Badge>
+                          )}
+                          {po.status === "RECEIVED" && (
+                            <Badge className="bg-emerald-600 text-white text-[10px]">
+                              รับเข้าแล้ว
+                            </Badge>
+                          )}
+                          {po.status === "DRAFT" && (
+                            <Badge variant="outline" className="text-muted-foreground text-[10px]">
+                              ฉบับร่าง
+                            </Badge>
+                          )}
+                          {po.status === "CANCELLED" && (
+                            <Badge variant="destructive" className="text-[10px]">
+                              ยกเลิก
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs rounded-lg gap-1 font-medium"
+                            onClick={() => {
+                              handleSelectPO(po.id);
+                              setPoListModalOpen(false);
+                            }}
+                          >
+                            <Check className="size-3.5" /> เลือกตรวจรับ
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

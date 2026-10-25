@@ -131,6 +131,7 @@ export async function syncDatabasePayload(payload: {
   deletedZoneIds?: string[];
   products?: DBProductItem[];
   purchaseOrders?: DBPurchaseOrder[];
+  deletedPurchaseOrderIds?: string[];
   movements?: {
     id: string;
     timestamp: string;
@@ -341,6 +342,11 @@ export async function syncDatabasePayload(payload: {
             },
           });
       }
+    }
+    if (payload.deletedPurchaseOrderIds && payload.deletedPurchaseOrderIds.length > 0) {
+      await db
+        .delete(purchaseOrders)
+        .where(inArray(purchaseOrders.id, payload.deletedPurchaseOrderIds));
     }
 
     // 6. Sync Movements

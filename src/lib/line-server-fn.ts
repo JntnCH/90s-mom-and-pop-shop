@@ -63,6 +63,7 @@ export interface ServerSyncPayload {
   followers?: LineUserFollower[] | undefined;
   movements?: StockMovementLog[] | undefined;
   purchaseOrders?: PurchaseOrderRecord[] | undefined;
+  deletedPurchaseOrderIds?: string[] | undefined;
 }
 
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
@@ -237,6 +238,7 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
           deletedZoneIds: data.deletedZoneIds,
           units: data.units,
           purchaseOrders: data.purchaseOrders as unknown as D1SyncPayload["purchaseOrders"],
+          deletedPurchaseOrderIds: data.deletedPurchaseOrderIds,
           movements: data.movements as unknown as D1SyncPayload["movements"],
           receives: data.receives as unknown as D1SyncPayload["receives"],
           followers: removeLegacySampleLineFollowers(data.followers),
@@ -326,6 +328,9 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
           ...(data.deletedZoneIds === undefined ? {} : { deletedZoneIds: data.deletedZoneIds }),
           ...(data.products === undefined ? {} : { products: data.products }),
           ...(data.purchaseOrders === undefined ? {} : { purchaseOrders: data.purchaseOrders }),
+          ...(data.deletedPurchaseOrderIds === undefined
+            ? {}
+            : { deletedPurchaseOrderIds: data.deletedPurchaseOrderIds }),
           ...(data.movements === undefined
             ? {}
             : {

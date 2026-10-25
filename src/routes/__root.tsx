@@ -173,6 +173,9 @@ function RootComponent() {
             followers: MasterStore.getFollowers(),
             movements: MasterStore.getMovements(),
             purchaseOrders: MasterStore.getPurchaseOrders(),
+            ...(MasterStore.getDeletedPurchaseOrderIds().length > 0
+              ? { deletedPurchaseOrderIds: MasterStore.getDeletedPurchaseOrderIds() }
+              : {}),
           },
         });
         if (res?.success && res.data) {

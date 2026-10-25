@@ -347,6 +347,7 @@ export interface D1SyncPayload {
     createdAt?: string;
     updatedAt?: string;
   }>;
+  deletedPurchaseOrderIds?: string[];
   movements?: Array<{
     id: string;
     timestamp: string;
@@ -635,6 +636,19 @@ export async function syncD1Payload(payload: D1SyncPayload): Promise<D1Snapshot 
           .run();
       } catch (err) {
         console.warn("[D1 Sync] Failed to upsert purchase order", po.id, err);
+      }
+    }
+  }
+
+  if (
+    Array.isArray(payload.deletedPurchaseOrderIds) &&
+    payload.deletedPurchaseOrderIds.length > 0
+  ) {
+    for (const poId of payload.deletedPurchaseOrderIds) {
+      try {
+        await db.prepare("DELETE FROM purchase_orders WHERE id = ?").bind(poId).run();
+      } catch (err) {
+        console.warn("[D1 Sync] Failed to delete purchase order", poId, err);
       }
     }
   }

@@ -231,6 +231,7 @@ function ReorderPage() {
   const [poStatusFilter, setPoStatusFilter] = useState<
     "ALL" | "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED"
   >("ALL");
+  const [poSearchQuery, setPoSearchQuery] = useState("");
 
   // Selected Order Items (Cart)
   interface OrderCartItem {
@@ -820,8 +821,16 @@ function ReorderPage() {
       };
     });
   const filteredPOs = purchaseOrders.filter((po) => {
-    if (poStatusFilter === "ALL") return true;
-    return po.status === poStatusFilter;
+    if (poStatusFilter !== "ALL" && po.status !== poStatusFilter) return false;
+    const q = poSearchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      po.orderNumber.toLowerCase().includes(q) ||
+      (po.supplierName && po.supplierName.toLowerCase().includes(q)) ||
+      po.items.some(
+        (it) => it.productName.toLowerCase().includes(q) || it.barcode.toLowerCase().includes(q),
+      )
+    );
   });
 
   const handleUpdateQuantity = (productId: string, val: number, isDirect: boolean = false) => {
@@ -1524,14 +1533,22 @@ function ReorderPage() {
     }
   };
 
-  // Phase 6 Action: Delete PO
+  // Phase 6 Action: Delete PO (ลบใบสั่งซื้อออกจากระบบทุกสถานะ)
   const handleDeletePO = (po: PurchaseOrderRecord) => {
-    if (confirm(`ต้องการลบใบสั่งซื้อ ${po.orderNumber} ออกจากระบบถาวรใช่หรือไม่?`)) {
+    let confirmMsg = `ต้องการลบใบสั่งซื้อ ${po.orderNumber} ออกจากระบบถาวรใช่หรือไม่?`;
+    if (po.status === "RECEIVED") {
+      confirmMsg = `คำเตือน: ใบสั่งซื้อ ${po.orderNumber} นี้ได้รับสินค้าเข้าสต็อกแล้ว\nหากลบใบสั่งซื้อนี้ ยอดสต็อกจะไม่ได้รับผลกระทบ แต่ประวัติใบสั่งซื้อจะถูกลบออกจากระบบ\n\nต้องการลบใบสั่งซื้อ ${po.orderNumber} ใช่หรือไม่?`;
+    } else if (po.status === "ORDERED") {
+      confirmMsg = `ใบสั่งซื้อ ${po.orderNumber} อยู่ในสถานะ "สั่งซื้อแล้ว"\nต้องการลบใบสั่งซื้อนี้ออกจากระบบใช่หรือไม่?`;
+    }
+
+    if (confirm(confirmMsg)) {
       MasterStore.deletePurchaseOrder(po.id);
       setStatusMessage({
         type: "info",
-        text: `ลบใบสั่งซื้อ ${po.orderNumber} เรียบร้อยแล้ว`,
+        text: `ลบใบสั่งซื้อ ${po.orderNumber} ออกจากระบบเรียบร้อยแล้ว`,
       });
+      toast.success(`ลบใบสั่งซื้อ ${po.orderNumber} สำเร็จ`);
       reloadData();
     }
   };
@@ -2557,47 +2574,61 @@ function ReorderPage() {
 
             <CardContent className="p-4 space-y-3">
               {/* Status Filter Buttons */}
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-                <Button
-                  size="sm"
-                  variant={poStatusFilter === "ALL" ? "default" : "outline"}
-                  className="h-8 text-xs rounded-xl shrink-0"
-                  onClick={() => setPoStatusFilter("ALL")}
-                >
-                  ทั้งหมด ({purchaseOrders.length})
-                </Button>
-                <Button
-                  size="sm"
-                  variant={poStatusFilter === "ORDERED" ? "default" : "outline"}
-                  className="h-8 text-xs rounded-xl text-blue-600 shrink-0"
-                  onClick={() => setPoStatusFilter("ORDERED")}
-                >
-                  สั่งซื้อแล้ว ({purchaseOrders.filter((p) => p.status === "ORDERED").length})
-                </Button>
-                <Button
-                  size="sm"
-                  variant={poStatusFilter === "RECEIVED" ? "default" : "outline"}
-                  className="h-8 text-xs rounded-xl text-emerald-600 shrink-0"
-                  onClick={() => setPoStatusFilter("RECEIVED")}
-                >
-                  รับเข้าสต็อกแล้ว ({purchaseOrders.filter((p) => p.status === "RECEIVED").length})
-                </Button>
-                <Button
-                  size="sm"
-                  variant={poStatusFilter === "DRAFT" ? "default" : "outline"}
-                  className="h-8 text-xs rounded-xl shrink-0"
-                  onClick={() => setPoStatusFilter("DRAFT")}
-                >
-                  ฉบับร่าง ({purchaseOrders.filter((p) => p.status === "DRAFT").length})
-                </Button>
-                <Button
-                  size="sm"
-                  variant={poStatusFilter === "CANCELLED" ? "destructive" : "outline"}
-                  className="h-8 text-xs rounded-xl text-destructive shrink-0"
-                  onClick={() => setPoStatusFilter("CANCELLED")}
-                >
-                  ยกเลิก ({purchaseOrders.filter((p) => p.status === "CANCELLED").length})
-                </Button>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none">
+                  <Button
+                    size="sm"
+                    variant={poStatusFilter === "ALL" ? "default" : "outline"}
+                    className="h-8 text-xs rounded-xl shrink-0"
+                    onClick={() => setPoStatusFilter("ALL")}
+                  >
+                    ทั้งหมด ({purchaseOrders.length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={poStatusFilter === "ORDERED" ? "default" : "outline"}
+                    className="h-8 text-xs rounded-xl text-blue-600 shrink-0"
+                    onClick={() => setPoStatusFilter("ORDERED")}
+                  >
+                    สั่งซื้อแล้ว ({purchaseOrders.filter((p) => p.status === "ORDERED").length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={poStatusFilter === "RECEIVED" ? "default" : "outline"}
+                    className="h-8 text-xs rounded-xl text-emerald-600 shrink-0"
+                    onClick={() => setPoStatusFilter("RECEIVED")}
+                  >
+                    รับเข้าสต็อกแล้ว ({purchaseOrders.filter((p) => p.status === "RECEIVED").length}
+                    )
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={poStatusFilter === "DRAFT" ? "default" : "outline"}
+                    className="h-8 text-xs rounded-xl shrink-0"
+                    onClick={() => setPoStatusFilter("DRAFT")}
+                  >
+                    ฉบับร่าง ({purchaseOrders.filter((p) => p.status === "DRAFT").length})
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={poStatusFilter === "CANCELLED" ? "destructive" : "outline"}
+                    className="h-8 text-xs rounded-xl text-destructive shrink-0"
+                    onClick={() => setPoStatusFilter("CANCELLED")}
+                  >
+                    ยกเลิก ({purchaseOrders.filter((p) => p.status === "CANCELLED").length})
+                  </Button>
+                </div>
+
+                {/* Search PO */}
+                <div className="relative w-full sm:w-64 shrink-0">
+                  <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={poSearchQuery}
+                    onChange={(e) => setPoSearchQuery(e.target.value)}
+                    placeholder="ค้นหาเลข PO / ซัพพลายเออร์..."
+                    className="h-8 pl-8 text-xs rounded-xl"
+                  />
+                </div>
               </div>
 
               {/* Mobile PO Cards */}
@@ -2631,7 +2662,7 @@ function ReorderPage() {
                         {po.sentViaLineAt && <div>ส่ง LINE: {po.sentViaLineAt}</div>}
                       </div>
 
-                      {/* ข้อมูลสรุปจำนวนรายการและยอดเงินรวม (แยกแถวเต็มความกว้าง ไม่โดนเบียด) */}
+                      {/* ข้อมูลสรุปจำนวนรายการและยอดเงินรวม */}
                       <div className="flex items-center justify-between border-t border-border/60 pt-2.5 text-xs">
                         <div className="text-muted-foreground">
                           <span className="font-semibold text-foreground">{po.items.length}</span>{" "}
@@ -2649,7 +2680,7 @@ function ReorderPage() {
                         </div>
                       </div>
 
-                      {/* ปุ่มการทำงาน (จัดแถวเป็นสัดส่วน ป้องกันล้นขอบจอและกดง่ายบนมือถือ) */}
+                      {/* ปุ่มการทำงาน */}
                       <div className="space-y-1.5 pt-0.5">
                         <div className="grid grid-cols-3 gap-1.5">
                           <Button
@@ -2668,7 +2699,7 @@ function ReorderPage() {
                             onClick={() => handleOpenPODetail(po)}
                           >
                             <Eye className="size-3.5 shrink-0" />
-                            <span className="truncate">ดู/พิมพ์ A4</span>
+                            <span className="truncate">ดู/พิมพ์</span>
                           </Button>
                           <Button
                             variant="outline"
@@ -2681,26 +2712,22 @@ function ReorderPage() {
                           </Button>
                         </div>
 
-                        {po.status === "ORDERED" && (
-                          <Button
-                            size="sm"
-                            className="h-8.5 text-xs px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold w-full gap-1.5 shadow-sm active:scale-[0.99] transition-all"
-                            onClick={() => handleReceivePO(po)}
+                        <div className="grid grid-cols-2 gap-1.5 pt-1 border-t border-border/50">
+                          <a
+                            href={`/receive?poId=${po.id}`}
+                            className="inline-flex items-center justify-center gap-1.5 h-8.5 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors"
                           >
-                            <PackageCheck className="size-4 shrink-0" /> รับเข้าสต็อก
-                          </Button>
-                        )}
-
-                        {po.status === "DRAFT" && (
+                            <ClipboardCheck className="size-4 shrink-0" /> ตรวจรับสินค้า
+                          </a>
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
-                            className="h-7 text-xs rounded-xl text-destructive hover:bg-destructive/10 w-full gap-1"
+                            className="h-8.5 text-xs rounded-xl text-destructive hover:bg-destructive/10 border-destructive/30 gap-1.5 font-medium"
                             onClick={() => handleDeletePO(po)}
                           >
-                            <Trash2 className="size-3.5 shrink-0" /> ลบฉบับร่าง
+                            <Trash2 className="size-3.5 shrink-0" /> ลบใบสั่งซื้อ
                           </Button>
-                        )}
+                        </div>
                       </div>
                     </div>
                   ))
@@ -2718,7 +2745,7 @@ function ReorderPage() {
                       <TableHead className="text-center w-28">จำนวนรายการ</TableHead>
                       <TableHead className="text-right w-32">ยอดเงินรวม (ทุน)</TableHead>
                       <TableHead className="text-center w-36">สถานะ</TableHead>
-                      <TableHead className="text-right w-64">การดำเนินการ</TableHead>
+                      <TableHead className="text-right w-72">การดำเนินการ</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -2763,7 +2790,7 @@ function ReorderPage() {
                                 className="h-8 text-xs gap-1 rounded-lg"
                                 onClick={() => handleOpenPODetail(po)}
                               >
-                                <Eye className="size-3.5" /> รายละเอียด / พิมพ์
+                                <Eye className="size-3.5" /> รายละเอียด
                               </Button>
                               <Button
                                 variant="outline"
@@ -2773,37 +2800,33 @@ function ReorderPage() {
                               >
                                 <Share2 className="size-3.5" /> ส่งออก
                               </Button>
-                              {po.status === "ORDERED" && (
-                                <Button
-                                  size="sm"
-                                  className="h-8 text-xs rounded-lg font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1"
-                                  onClick={() => handleReceivePO(po)}
-                                >
-                                  <PackageCheck className="size-3.5" /> รับเข้าสต็อก
-                                </Button>
-                              )}
-                              {po.status === "DRAFT" && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="size-8 text-destructive"
-                                  onClick={() => handleDeletePO(po)}
-                                  title="ลบฉบับร่าง"
-                                >
-                                  <Trash2 className="size-4" />
-                                </Button>
-                              )}
+                              <a
+                                href={`/receive?poId=${po.id}`}
+                                className="inline-flex items-center gap-1 h-8 px-2.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors shrink-0"
+                                title="เปิดหน้าตรวจรับสินค้าตามใบสั่งซื้อนี้"
+                              >
+                                <ClipboardCheck className="size-3.5" /> ตรวจรับสินค้า
+                              </a>
                               {po.status === "ORDERED" && (
                                 <Button
                                   variant="ghost"
                                   size="icon"
-                                  className="size-8 text-muted-foreground hover:text-destructive"
+                                  className="size-8 text-muted-foreground hover:text-destructive shrink-0"
                                   onClick={() => handleCancelPO(po)}
-                                  title="ยกเลิกใบสั่ง"
+                                  title="ยกเลิกใบสั่งซื้อ"
                                 >
                                   <XCircle className="size-4" />
                                 </Button>
                               )}
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 text-destructive hover:bg-destructive/10 shrink-0"
+                                onClick={() => handleDeletePO(po)}
+                                title={`ลบใบสั่งซื้อ ${po.orderNumber} ออกจากระบบ`}
+                              >
+                                <Trash2 className="size-4" />
+                              </Button>
                             </div>
                           </TableCell>
                         </TableRow>
@@ -4542,17 +4565,25 @@ function ReorderPage() {
             >
               <Printer className="size-4" /> พิมพ์เอกสาร A4 (Print Document)
             </Button>
-            {selectedPO?.status === "ORDERED" && (
+            {selectedPO && (
+              <a
+                href={`/receive?poId=${selectedPO.id}`}
+                className="inline-flex items-center justify-center h-11 px-4 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 shadow-2xs transition-colors shrink-0"
+                onClick={() => setDetailModalOpen(false)}
+              >
+                <ClipboardCheck className="size-4" /> ตรวจรับสินค้า (Checklist)
+              </a>
+            )}
+            {selectedPO && (
               <Button
-                className="h-11 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                variant="destructive"
+                className="h-11 rounded-xl text-xs gap-1.5 font-semibold shrink-0"
                 onClick={() => {
-                  if (selectedPO) {
-                    handleReceivePO(selectedPO);
-                    setDetailModalOpen(false);
-                  }
+                  handleDeletePO(selectedPO);
+                  setDetailModalOpen(false);
                 }}
               >
-                <PackageCheck className="size-4" /> ตรวจรับเข้าสต็อกทันที
+                <Trash2 className="size-4" /> ลบใบสั่งซื้อนี้
               </Button>
             )}
             <Button
