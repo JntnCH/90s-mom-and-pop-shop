@@ -9,13 +9,12 @@ declare global {
 
 function readEnv(key: string): string | undefined {
   try {
-    if (typeof process !== "undefined" && process.env && typeof process.env[key] === "string") {
-      return process.env[key];
-    }
+    const g = globalThis as unknown as { process?: { env?: Record<string, string | undefined> } };
+    const val = g.process?.env?.[key];
+    return typeof val === "string" ? val : undefined;
   } catch {
-    // ignore (browser / Workers client)
+    return undefined;
   }
-  return undefined;
 }
 
 export const createPool = () => {

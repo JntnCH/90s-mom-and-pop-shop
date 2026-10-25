@@ -6,11 +6,21 @@ const configFiles = import.meta.glob<Record<string, string>>("../../firebase-app
   import: "default",
 });
 
+function envGet(key: string): string {
+  try {
+    const g = globalThis as unknown as { process?: { env?: Record<string, string | undefined> } };
+    const val = g.process?.env?.[key];
+    return typeof val === "string" ? val : "";
+  } catch {
+    return "";
+  }
+}
+
 const firebaseConfig = configFiles["../../firebase-applet-config.json"] || {
   projectId:
-    process.env.VITE_FIREBASE_PROJECT_ID ||
-    process.env.FIREBASE_PROJECT_ID ||
-    process.env.PROJECT_ID ||
+    envGet("VITE_FIREBASE_PROJECT_ID") ||
+    envGet("FIREBASE_PROJECT_ID") ||
+    envGet("PROJECT_ID") ||
     "openclaw-gcp-272026",
 };
 
