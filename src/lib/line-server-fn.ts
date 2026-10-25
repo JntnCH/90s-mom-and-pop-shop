@@ -249,7 +249,6 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
       };
     }
 
-    // In-memory merge fallback when D1 not available
     if (data.products?.length) {
       const productMap = new Map((globalServerDatabase.products || []).map((p) => [p.id, p]));
       data.products.forEach((p) => {
@@ -318,6 +317,35 @@ export const fetchCloudSqlSnapshotFn = createServerFn({ method: "GET" }).handler
   };
 });
 
+export const getDatabaseInspectionFn = createServerFn({ method: "GET" }).handler(async () => {
+  let d1Available = false;
+  let d1ProductCount = 0;
+  try {
+    d1Available = await isD1Available();
+    if (d1Available) {
+      const snap = await getD1Snapshot();
+      d1ProductCount = snap?.products?.length ?? 0;
+    }
+  } catch {
+    // ignore
+  }
+  return {
+    success: true,
+    postgresConfigured: isPostgresConfigured(),
+    d1Available,
+    d1ProductCount,
+    memory: {
+      lastUpdated: globalServerDatabase.lastUpdated,
+      products: globalServerDatabase.products.length,
+      categories: globalServerDatabase.categories.length,
+      units: globalServerDatabase.units.length,
+      zones: globalServerDatabase.zones.length,
+      purchaseOrders: globalServerDatabase.purchaseOrders.length,
+      followers: globalServerDatabase.followers.length,
+    },
+  };
+});
+
 export const getLineFollowersHistoryFn = createServerFn({ method: "GET" }).handler(async () => {
   return { success: true, followers: globalServerDatabase.followers || [] };
 });
@@ -356,7 +384,11 @@ export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
     }
     const messages: unknown[] = [];
     if (data.flexMessage) {
-      messages.push({ type: "flex", altText: data.orderSummary?.slice(0, 400) || "Order", contents: data.flexMessage });
+      messages.push({
+        type: "flex",
+        altText: data.orderSummary?.slice(0, 400) || "Order",
+        contents: data.flexMessage,
+      });
     }
     if (data.imageUrl) {
       messages.push({
@@ -415,10 +447,20 @@ export const sendMiniAppPortalCardFn = createServerFn({ method: "POST" })
       envGet("LINE_USER_ID") ||
       envGet("LINE_RECEIVER_ID");
     if (!token) {
-      return { success: false, configured: false, flexPayload: portalMessage, error: "No LINE token" };
+      return {
+        success: false,
+        configured: false,
+        flexPayload: portalMessage,
+        error: "No LINE token",
+      };
     }
     if (!to) {
-      return { success: false, configured: true, flexPayload: portalMessage, error: "No LINE target" };
+      return {
+        success: false,
+        configured: true,
+        flexPayload: portalMessage,
+        error: "No LINE target",
+      };
     }
     try {
       const res = await fetch("https://api.line.me/v2/bot/message/push", {
