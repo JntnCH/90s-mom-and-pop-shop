@@ -474,9 +474,9 @@ function ReorderPage() {
               unitName: i.unitName,
               costPrice: i.costPrice !== undefined ? i.costPrice : matchedProd?.costPrice || 0,
               note: i.note,
-              categoryId: matchedProd?.categoryId,
-              subCategoryId: matchedProd?.subCategoryId,
-              zoneId: matchedProd?.zoneId,
+              categoryId: i.categoryId || matchedProd?.categoryId,
+              subCategoryId: i.subCategoryId || matchedProd?.subCategoryId,
+              zoneId: i.zoneId || matchedProd?.zoneId,
             };
           });
           setOrderList(loadedItems);
@@ -597,12 +597,16 @@ function ReorderPage() {
           return {
             productId: item.productId,
             productName: item.productName || prod?.name || "",
-            barcode: item.barcode || prod?.barcode,
+            barcode: item.barcode || prod?.barcode || "",
             quantity: item.quantity,
             unitId: item.unitId,
             unitName: item.unitName || (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
             costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
             note: item.note,
+            categoryId: item.categoryId || prod?.categoryId,
+            subCategoryId: item.subCategoryId || prod?.subCategoryId,
+            zoneId: item.zoneId || prod?.zoneId,
+            total: (item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0) * item.quantity,
           };
         });
         const totalQty = updatedItems.reduce((sum, i) => sum + i.quantity, 0);
@@ -2543,19 +2547,22 @@ function ReorderPage() {
           if (editingPOId && orderList.length > 0) {
             const allProds = MasterStore.getProducts();
             const updatedItems = orderList.map((item) => {
-              const prod = allProds.find((p) => p.id === item.productId);
-              return {
-                productId: item.productId,
-                productName: item.productName || prod?.name || "",
-                barcode: item.barcode || prod?.barcode,
-                quantity: item.quantity,
-                unitId: item.unitId,
-                unitName:
-                  item.unitName || (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
-                costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
-                note: item.note,
-              };
-            });
+          const prod = allProds.find((p) => p.id === item.productId);
+          return {
+            productId: item.productId,
+            productName: item.productName || prod?.name || "",
+            barcode: item.barcode || prod?.barcode || "",
+            quantity: item.quantity,
+            unitId: item.unitId,
+            unitName: item.unitName || (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
+            costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
+            note: item.note,
+            categoryId: item.categoryId || prod?.categoryId,
+            subCategoryId: item.subCategoryId || prod?.subCategoryId,
+            zoneId: item.zoneId || prod?.zoneId,
+            total: (item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0) * item.quantity,
+          };
+        });
             const totalQty = updatedItems.reduce((sum, i) => sum + i.quantity, 0);
             const totalCst = updatedItems.reduce(
               (sum, i) => sum + i.quantity * (i.costPrice || 0),

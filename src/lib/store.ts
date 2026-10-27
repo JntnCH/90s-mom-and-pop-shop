@@ -106,6 +106,9 @@ export interface PurchaseOrderRecord {
     costPrice: number;
     total: number;
     note?: string | undefined;
+    categoryId?: string | undefined;
+    subCategoryId?: string | undefined;
+    zoneId?: string | undefined;
   }[];
   totalQuantity: number;
   totalCost: number;
@@ -1280,32 +1283,28 @@ export const MasterStore = {
         localStorage.setItem(STORAGE_KEYS.ZONES, JSON.stringify(data.zones));
       }
       if (Array.isArray(data.products) && data.products.length > 0) {
-        // Merge by id. Local master-data wins when local.updatedAt >= server (or equal/unparseable).
-        // Prevents server snapshot from reverting category/zone right after a local edit.
+        // ALWAYS prefer local master-data (name/category/zone/unit/prices).
+        // Server snapshot was reverting category right after edit when timestamps tied/unparseable.
         const localList = safeGet<ProductItem[]>(STORAGE_KEYS.PRODUCTS, []);
         const localMap = new Map(localList.map((p) => [p.id, p]));
         const merged = data.products.map((serverP) => {
           const localP = localMap.get(serverP.id);
           if (!localP) return serverP;
-          const localTs = Date.parse(String(localP.updatedAt || "")) || 0;
-          const serverTs = Date.parse(String(serverP.updatedAt || "")) || 0;
-          // Prefer local master fields when timestamps equal/unparseable OR local is newer
-          if (localTs >= serverTs) {
-            return {
-              ...serverP,
-              ...localP,
-              stock: Math.max(Number(serverP.stock) || 0, Number(localP.stock) || 0),
-            };
-          }
           return {
-            ...localP,
             ...serverP,
-            name: serverP.name || localP.name,
-            categoryId: serverP.categoryId || localP.categoryId,
-            subCategoryId: serverP.subCategoryId || localP.subCategoryId,
-            zoneId: serverP.zoneId || localP.zoneId,
-            unitId: serverP.unitId || localP.unitId,
+            ...localP,
             stock: Math.max(Number(serverP.stock) || 0, Number(localP.stock) || 0),
+            name: localP.name || serverP.name,
+            categoryId: localP.categoryId || serverP.categoryId,
+            subCategoryId: localP.subCategoryId || serverP.subCategoryId,
+            zoneId: localP.zoneId || serverP.zoneId,
+            unitId: localP.unitId || serverP.unitId,
+            costPrice: localP.costPrice ?? serverP.costPrice,
+            sellPrice: localP.sellPrice ?? serverP.sellPrice,
+            minStock: localP.minStock ?? serverP.minStock,
+            barcode: localP.barcode || serverP.barcode,
+            sku: localP.sku || serverP.sku,
+            updatedAt: localP.updatedAt || serverP.updatedAt,
           };
         });
         for (const lp of localList) {
