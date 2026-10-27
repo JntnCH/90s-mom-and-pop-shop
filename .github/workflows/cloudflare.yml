@@ -48,6 +48,9 @@ jobs:
           fi
           node scripts/apply-d1-line-server-fn.mjs
 
+      - name: Restore store.ts + reduce lag on all pages
+        run: python3 scripts/fix-store-perf.py
+
       - name: Restore products.tsx + guard sellPrice
         run: python3 scripts/fix-products-sellprice.py
 
