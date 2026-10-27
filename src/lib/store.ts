@@ -646,8 +646,7 @@ export const MasterStore = {
   },
   addProduct(item: Omit<ProductItem, "id" | "createdAt" | "updatedAt"> & { createdAt?: string }) {
     const list = this.getProducts();
-    const nowStr =
-      new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH");
+    const nowStr = new Date().toISOString();
     const newItem: ProductItem = {
       ...item,
       id: `prod-${Date.now()}`,
@@ -661,8 +660,7 @@ export const MasterStore = {
     return newItem;
   },
   updateProduct(id: string, updates: Partial<ProductItem>) {
-    const nowStr =
-      new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH");
+    const nowStr = new Date().toISOString();
     const list = this.getProducts().map((p) =>
       p.id === id
         ? {
@@ -1282,23 +1280,32 @@ export const MasterStore = {
         localStorage.setItem(STORAGE_KEYS.ZONES, JSON.stringify(data.zones));
       }
       if (Array.isArray(data.products) && data.products.length > 0) {
-        // Merge by id: keep local fields when local updatedAt is newer or server omits category/zone
+        // Merge by id. Local master-data wins when local.updatedAt >= server (or equal/unparseable).
+        // Prevents server snapshot from reverting category/zone right after a local edit.
         const localList = safeGet<ProductItem[]>(STORAGE_KEYS.PRODUCTS, []);
         const localMap = new Map(localList.map((p) => [p.id, p]));
         const merged = data.products.map((serverP) => {
           const localP = localMap.get(serverP.id);
           if (!localP) return serverP;
-          const localTs = Date.parse(localP.updatedAt || "") || 0;
-          const serverTs = Date.parse(serverP.updatedAt || "") || 0;
-          if (localTs > serverTs) {
-            return { ...serverP, ...localP };
+          const localTs = Date.parse(String(localP.updatedAt || "")) || 0;
+          const serverTs = Date.parse(String(serverP.updatedAt || "")) || 0;
+          // Prefer local master fields when timestamps equal/unparseable OR local is newer
+          if (localTs >= serverTs) {
+            return {
+              ...serverP,
+              ...localP,
+              stock: Math.max(Number(serverP.stock) || 0, Number(localP.stock) || 0),
+            };
           }
           return {
             ...localP,
             ...serverP,
+            name: serverP.name || localP.name,
             categoryId: serverP.categoryId || localP.categoryId,
             subCategoryId: serverP.subCategoryId || localP.subCategoryId,
             zoneId: serverP.zoneId || localP.zoneId,
+            unitId: serverP.unitId || localP.unitId,
+            stock: Math.max(Number(serverP.stock) || 0, Number(localP.stock) || 0),
           };
         });
         for (const lp of localList) {

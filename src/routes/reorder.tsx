@@ -474,6 +474,9 @@ function ReorderPage() {
               unitName: i.unitName,
               costPrice: i.costPrice !== undefined ? i.costPrice : matchedProd?.costPrice || 0,
               note: i.note,
+              categoryId: matchedProd?.categoryId,
+              subCategoryId: matchedProd?.subCategoryId,
+              zoneId: matchedProd?.zoneId,
             };
           });
           setOrderList(loadedItems);
@@ -511,6 +514,9 @@ function ReorderPage() {
             ),
             unitId: p.unitId,
             costPrice: p.costPrice,
+            categoryId: p.categoryId,
+            subCategoryId: p.subCategoryId,
+            zoneId: p.zoneId,
           })),
         );
       }
@@ -621,12 +627,18 @@ function ReorderPage() {
 
     // When creating a new order: Auto-save to PO draft
     MasterStore.saveDraftPurchaseOrder({
-      orderList: orderList.map(({ productId, quantity, unitId, costPrice, note }) => ({
-        productId,
-        quantity,
-        unitId,
-        ...(costPrice !== undefined ? { costPrice } : {}),
-        ...(note !== undefined ? { note } : {}),
+      orderList: orderList.map((item) => ({
+        productId: item.productId,
+        productName: item.productName,
+        barcode: item.barcode,
+        quantity: item.quantity,
+        unitId: item.unitId,
+        unitName: item.unitName,
+        ...(item.costPrice !== undefined ? { costPrice: item.costPrice } : {}),
+        ...(item.note !== undefined ? { note: item.note } : {}),
+        ...(item.categoryId !== undefined ? { categoryId: item.categoryId } : {}),
+        ...(item.subCategoryId !== undefined ? { subCategoryId: item.subCategoryId } : {}),
+        ...(item.zoneId !== undefined ? { zoneId: item.zoneId } : {}),
       })),
       supplierName: supplierNameInput,
       calculationStrategy,
@@ -1070,6 +1082,9 @@ function ReorderPage() {
     const name = editingCartItem.productName.trim() || "สินค้า";
     const barcode = editingCartItem.barcode.trim() || generateStoreBarcode("EAN_13").barcode;
     const note = editingCartItem.note.trim();
+    const nextCategoryId = editingCartItem.categoryId || categories[0]?.id || "cat-general";
+    const nextZoneId = editingCartItem.zoneId ? editingCartItem.zoneId : undefined;
+    const nextSubCatId = editingCartItem.subCategoryId ? editingCartItem.subCategoryId : undefined;
 
     // 1. Update in current order list (include category/zone snapshot for list UI)
     setOrderList((prev) =>
@@ -1084,9 +1099,9 @@ function ReorderPage() {
             unitName: getUnitName(editingCartItem.unitId),
             costPrice: cost,
             note: note || undefined,
-            categoryId: editingCartItem.categoryId,
-            subCategoryId: editingCartItem.subCategoryId || undefined,
-            zoneId: editingCartItem.zoneId || undefined,
+            categoryId: nextCategoryId,
+            subCategoryId: nextSubCatId,
+            zoneId: nextZoneId,
           };
         }
         return item;
@@ -1102,9 +1117,9 @@ function ReorderPage() {
       sellPrice: Number(editingCartItem.sellPrice) || 0,
       minStock: Math.max(0, Number(editingCartItem.minStock) || 0),
       unitId: editingCartItem.unitId,
-      categoryId: editingCartItem.categoryId,
-      subCategoryId: editingCartItem.subCategoryId || undefined,
-      zoneId: editingCartItem.zoneId || undefined,
+      categoryId: nextCategoryId,
+      subCategoryId: nextSubCatId,
+      zoneId: nextZoneId,
     });
 
     // 3. Force UI list to reflect category/zone/name immediately
@@ -1122,9 +1137,9 @@ function ReorderPage() {
               sellPrice: Number(editingCartItem.sellPrice) || 0,
               minStock: Math.max(0, Number(editingCartItem.minStock) || 0),
               unitId: editingCartItem.unitId,
-              categoryId: editingCartItem.categoryId,
-              subCategoryId: editingCartItem.subCategoryId || undefined,
-              zoneId: editingCartItem.zoneId || undefined,
+              categoryId: nextCategoryId,
+              subCategoryId: nextSubCatId,
+              zoneId: nextZoneId,
             }
           : p,
       );
