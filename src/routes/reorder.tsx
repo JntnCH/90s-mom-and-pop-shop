@@ -471,7 +471,10 @@ function ReorderPage() {
               barcode: i.barcode || matchedProd?.barcode,
               quantity: Math.max(1, i.quantity || 1),
               unitId: i.unitId || matchedProd?.unitId || "unit-piece",
-              unitName: i.unitName,
+              unitName:
+                MasterStore.getUnitName(i.unitId || matchedProd?.unitId || "unit-piece") ||
+                i.unitName ||
+                (matchedProd ? MasterStore.getUnitName(matchedProd.unitId) : undefined),
               costPrice: i.costPrice !== undefined ? i.costPrice : matchedProd?.costPrice || 0,
               note: i.note,
               categoryId: i.categoryId || matchedProd?.categoryId,
@@ -548,7 +551,10 @@ function ReorderPage() {
             barcode: item.barcode || prod?.barcode,
             quantity: item.quantity,
             unitId: item.unitId,
-            unitName: item.unitName || (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
+            unitName:
+              MasterStore.getUnitName(item.unitId) ||
+              item.unitName ||
+              (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
             costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
             note: item.note,
           };
@@ -600,7 +606,10 @@ function ReorderPage() {
             barcode: item.barcode || prod?.barcode || "",
             quantity: item.quantity,
             unitId: item.unitId,
-            unitName: item.unitName || (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
+            unitName:
+              MasterStore.getUnitName(item.unitId) ||
+              item.unitName ||
+              (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
             costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
             note: item.note,
             categoryId: item.categoryId || prod?.categoryId,
@@ -637,7 +646,7 @@ function ReorderPage() {
         barcode: item.barcode,
         quantity: item.quantity,
         unitId: item.unitId,
-        unitName: item.unitName,
+        unitName: MasterStore.getUnitName(item.unitId) || item.unitName,
         ...(item.costPrice !== undefined ? { costPrice: item.costPrice } : {}),
         ...(item.note !== undefined ? { note: item.note } : {}),
         ...(item.categoryId !== undefined ? { categoryId: item.categoryId } : {}),
@@ -929,7 +938,10 @@ function ReorderPage() {
         barcode: i.barcode || matchedProd?.barcode,
         quantity: Math.max(1, i.quantity || 1),
         unitId: i.unitId || matchedProd?.unitId || matchedUnit?.id || units[0]?.id || "unit-piece",
-        unitName: i.unitName || (matchedProd ? getUnitName(matchedProd.unitId) : undefined),
+        unitName:
+          getUnitName(i.unitId || matchedProd?.unitId || matchedUnit?.id || units[0]?.id || "unit-piece") ||
+          i.unitName ||
+          (matchedProd ? getUnitName(matchedProd.unitId) : undefined),
         costPrice: i.costPrice !== undefined ? i.costPrice : matchedProd?.costPrice || 0,
         note: i.note,
         // Prefer values saved on the PO item, then product master
@@ -1248,6 +1260,7 @@ function ReorderPage() {
                 ...i,
                 quantity: i.quantity + qty,
                 unitId: uId,
+                unitName: getUnitName(uId),
                 costPrice: cost,
                 note: note || i.note,
               }
@@ -1260,6 +1273,7 @@ function ReorderPage() {
           productId: prodId,
           quantity: qty,
           unitId: uId,
+          unitName: getUnitName(uId),
           costPrice: cost,
           note: note || undefined,
         },
@@ -1298,6 +1312,7 @@ function ReorderPage() {
           productId: prod.id,
           quantity: Math.max(1, addQty),
           unitId: uId,
+          unitName: getUnitName(uId),
           costPrice: cost,
         },
       ];
@@ -1339,6 +1354,7 @@ function ReorderPage() {
             productId: prod.id,
             quantity: qty,
             unitId: uId,
+            unitName: getUnitName(uId),
             costPrice: cost,
           });
         }
@@ -1380,6 +1396,7 @@ function ReorderPage() {
       productId: f.product.id,
       quantity: f.suggestedQuantity,
       unitId: f.product.unitId,
+      unitName: getUnitName(f.product.unitId),
       costPrice: f.product.costPrice,
     }));
     setOrderList(calculatedItems);
@@ -1403,6 +1420,7 @@ function ReorderPage() {
           productId: item.product.id,
           quantity: item.suggestedQuantity,
           unitId: item.product.unitId,
+          unitName: getUnitName(item.product.unitId),
           costPrice: item.product.costPrice,
         },
       ];
@@ -2573,7 +2591,10 @@ function ReorderPage() {
             barcode: item.barcode || prod?.barcode || "",
             quantity: item.quantity,
             unitId: item.unitId,
-            unitName: item.unitName || (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
+            unitName:
+              MasterStore.getUnitName(item.unitId) ||
+              item.unitName ||
+              (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
             costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
             note: item.note,
             categoryId: item.categoryId || prod?.categoryId,
