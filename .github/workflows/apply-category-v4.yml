@@ -14,14 +14,14 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - name: Apply v4 patch
+      - name: Apply unitName complete sync patch
         run: python3 scripts/patch-category-v4.py
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add src/routes/reorder.tsx src/lib/store.ts
+          git add src/routes/reorder.tsx
           git status
           git diff --stat
-          git commit -m "fix(reorder/store): category persist v4 — EditPO/SavePO keep category + pending patches" || echo "no changes"
+          git commit -m "fix(reorder): unitName follows cart unitId everywhere (export/PO save/load) — ลัง stays ลัง" || echo "no changes"
           git push origin HEAD:main
