@@ -1,0 +1,27 @@
+name: Apply category persist v2
+
+on:
+  push:
+    paths:
+      - ".github/workflows/apply-category-v2.yml"
+      - "scripts/patch-category-v2.py"
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply v2 patch
+        run: python3 scripts/patch-category-v2.py
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/reorder.tsx src/lib/store.ts
+          git status
+          git diff --stat
+          git commit -m "fix(reorder/store): category-zone persist v2 (ISO time, local-wins merge, draft fields)" || echo "no changes"
+          git push origin HEAD:main
