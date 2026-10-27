@@ -1,0 +1,16 @@
+# Railway Config as Code (legacy, still supported until 2026-12-01)
+# Docs: https://docs.railway.com/reference/config-as-code
+# Prefer connecting the GitHub repo in Railway dashboard for simplest deploy.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+# Nitro / TanStack Start listens on process.env.PORT (Railway injects this)
+startCommand = "node .output/server/index.mjs"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
+# Optional healthcheck path if you have one (e.g. / or /api/health)
+# healthcheckPath = "/"
+# healthcheckTimeout = 30
