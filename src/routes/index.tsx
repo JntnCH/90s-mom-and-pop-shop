@@ -15,9 +15,7 @@ import {
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/layout/PageHeader";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { MasterStore, type ProductItem } from "@/lib/store";
 
 export const Route = createFileRoute("/")({
@@ -60,6 +58,8 @@ export function Dashboard() {
       unit: "รายการ",
       icon: Package,
       tone: "text-foreground",
+      to: "/stock" as const,
+      search: { status: "ALL" as const },
     },
     {
       label: "พร้อมขาย",
@@ -67,6 +67,8 @@ export function Dashboard() {
       unit: "รายการ",
       icon: Boxes,
       tone: "text-emerald-600",
+      to: "/stock" as const,
+      search: { status: "IN_STOCK" as const },
     },
     {
       label: "ใกล้หมด (เตือน)",
@@ -74,6 +76,8 @@ export function Dashboard() {
       unit: "รายการ",
       icon: AlertTriangle,
       tone: "text-amber-500",
+      to: "/stock" as const,
+      search: { status: "LOW_STOCK" as const },
     },
     {
       label: "หมดสต็อก",
@@ -81,6 +85,8 @@ export function Dashboard() {
       unit: "รายการ",
       icon: CircleSlash,
       tone: "text-destructive",
+      to: "/stock" as const,
+      search: { status: "OUT_OF_STOCK" as const },
     },
     {
       label: "ต้องสั่งซื้อ",
@@ -88,6 +94,8 @@ export function Dashboard() {
       unit: "รายการ",
       icon: ClipboardList,
       tone: "text-sky-600",
+      to: "/stock" as const,
+      search: { status: "LOW_STOCK" as const },
     },
     {
       label: "มูลค่าสต็อก (ทุน)",
@@ -95,6 +103,8 @@ export function Dashboard() {
       unit: "",
       icon: Coins,
       tone: "text-foreground",
+      to: "/stock" as const,
+      search: { status: "ALL" as const },
     },
   ];
 
@@ -176,12 +186,14 @@ export function Dashboard() {
         </div>
       ) : null}
 
-      {/* Summary Cards (2 cols on mobile, 3 cols on desktop) */}
+      {/* Summary Cards (2 cols on mobile, 3 cols on desktop) — now clickable */}
       <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-3">
         {summary.map((item) => (
-          <div
+          <Link
             key={item.label}
-            className="rounded-2xl border bg-card p-3 sm:p-4 shadow-sm space-y-1 transition-all"
+            to={item.to}
+            search={item.search}
+            className="rounded-2xl border bg-card p-3 sm:p-4 shadow-sm space-y-1 transition-all hover:border-primary hover:shadow-md active:scale-[0.98] cursor-pointer"
           >
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <item.icon className={`size-3.5 sm:size-4 shrink-0 ${item.tone}`} />
@@ -197,7 +209,7 @@ export function Dashboard() {
                 </span>
               ) : null}
             </div>
-          </div>
+          </Link>
         ))}
       </div>
 
