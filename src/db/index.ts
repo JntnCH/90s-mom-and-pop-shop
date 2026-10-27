@@ -1,3 +1,12 @@
+/**
+ * LEGACY — Postgres / Cloud SQL pool (NOT the primary database).
+ *
+ * Architecture decision (2026-10): Primary DB = Cloudflare D1 only + Google Sheets.
+ * Runtime sync/read path uses src/db/d1-snapshot.ts and line-server-fn (activeBackend: "d1" | "memory").
+ *
+ * This module is retained only so existing imports (db-service, drizzle tools) do not break.
+ * Do not use for new features. Do not point production traffic here.
+ */
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import * as schema from "./schema.ts";
