@@ -1,5 +1,8 @@
 name: Emergency restore store + reorder
 on:
+  push:
+    paths:
+      - ".github/workflows/emergency-restore-store.yml"
   workflow_dispatch:
 jobs:
   restore:
@@ -68,7 +71,6 @@ jobs:
     });
 
     // 3. Force UI list to reflect category/zone/name immediately
-    //    fullItems derives category from products state via getCatName(product.categoryId)
     setProducts((prev) => {
       const fromStore = MasterStore.getProducts();
       const base = fromStore.length > 0 ? fromStore : prev;
