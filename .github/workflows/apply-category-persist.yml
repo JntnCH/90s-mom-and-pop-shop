@@ -1,0 +1,27 @@
+name: Apply category persist patch
+
+on:
+  push:
+    paths:
+      - ".github/workflows/apply-category-persist.yml"
+      - "scripts/patch-category-persist.py"
+  workflow_dispatch:
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply patch
+        run: python3 scripts/patch-category-persist.py
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/routes/reorder.tsx src/lib/store.ts
+          git status
+          git diff --stat
+          git commit -m "fix(reorder): persist category/zone on cart + merge products on sync" || echo "no changes"
+          git push origin HEAD:main
