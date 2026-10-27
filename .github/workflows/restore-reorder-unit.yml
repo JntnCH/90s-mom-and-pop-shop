@@ -8,31 +8,24 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Apply unitName sync fix to reorder.tsx
+      - name: Patch with regex
         run: |
           python3 << 'PY'
           from pathlib import Path
           import re
           path = Path("src/routes/reorder.tsx")
           text = path.read_text()
-          # Ensure we have the full file (not placeholder)
+          print("size", len(text))
           if len(text) < 100000:
-              text = Path("/dev/null").read_text() if False else None
-              import subprocess
-              text = subprocess.check_output(
-                  ["git", "show", "ce0d88e457bfedbd148bb78f9901e78bcc6e3dc4:src/routes/reorder.tsx"],
-                  text=True,
-              )
-              path.write_text(text)
-              text = path.read_text()
-          old1 = """  const handleUpdateUnit = (productId: string, unitId: string) => {
-    setOrderList((prev) =>
-      prev.map((item) => (item.productId === productId ? { ...item, unitId } : item)),
-    );
-  };"""
-          new1 = """  const handleUpdateUnit = (productId: string, unitId: string) => {
+              raise SystemExit("file too small")
+          pat1 = re.compile(
+              r"(const handleUpdateUnit = \(productId: string, unitId: string\) => \{\s*"
+              r"setOrderList\(\(prev\) =>\s*"
+              r"prev\.map\(\(item\) => \(item\.productId === productId \? \{ \.\.\.item, unitId \} : item\)\),\s*"
+              r"\);\s*"
+              r"\};)"
+          )
+          repl1 = """const handleUpdateUnit = (productId: string, unitId: string) => {
     setOrderList((prev) =>
       prev.map((item) =>
         item.productId === productId
@@ -41,26 +34,31 @@ jobs:
       ),
     );
   };"""
-          old2 = """    const effectiveUnitId = item.unitId || product?.unitId || units[0]?.id || \"unit-piece\";
-    const effectiveUnitName = item.unitName || getUnitName(effectiveUnitId);"""
-          new2 = """    const effectiveUnitId = item.unitId || product?.unitId || units[0]?.id || \"unit-piece\";
-    // unitId is source of truth (inline dropdown); always resolve name so export/preview stay in sync
-    const effectiveUnitName = getUnitName(effectiveUnitId) || item.unitName || \"-\";"""
-          if old1 not in text:
-              raise SystemExit("old1 not found")
-          if old2 not in text:
-              raise SystemExit("old2 not found")
-          text = text.replace(old1, new1, 1).replace(old2, new2, 1)
-          path.write_text(text)
-          assert "unitName: getUnitName(unitId)" in text
-          assert "getUnitName(effectiveUnitId) || item.unitName" in text
-          print("patched ok", path.stat().st_size)
+          text2, n1 = pat1.subn(repl1, text, count=1)
+          print("n1", n1)
+          if n1 != 1:
+              raise SystemExit("failed handleUpdateUnit")
+          pat2 = re.compile(
+              r"const effectiveUnitId = item\.unitId \|\| product\?\.unitId \|\| units\[0\]\?\.id \|\| \"unit-piece\";\n"
+              r"\s*const effectiveUnitName = item\.unitName \|\| getUnitName\(effectiveUnitId\);"
+          )
+          repl2 = (
+              'const effectiveUnitId = item.unitId || product?.unitId || units[0]?.id || "unit-piece";\n'
+              '    // unitId is source of truth (inline dropdown); always resolve name so export/preview stay in sync\n'
+              '    const effectiveUnitName = getUnitName(effectiveUnitId) || item.unitName || "-";'
+          )
+          text3, n2 = pat2.subn(repl2, text2, count=1)
+          print("n2", n2)
+          if n2 != 1:
+              raise SystemExit("failed effectiveUnitName")
+          path.write_text(text3)
+          assert "unitName: getUnitName(unitId)" in text3
+          print("OK", path.stat().st_size)
           PY
-      - name: Commit and push
+      - name: Commit
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add src/routes/reorder.tsx
-          git status
-          git commit -m "fix(reorder): sync unitName when changing unit on cart so export/preview use latest PO units" || echo "no change"
+          git commit -m "fix(reorder): sync unitName when changing unit on cart so export/preview use latest PO units"
           git push
