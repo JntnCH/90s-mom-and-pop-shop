@@ -243,6 +243,10 @@ function ReorderPage() {
     unitName?: string | undefined;
     costPrice?: number | undefined;
     note?: string | undefined;
+    /** Snapshot on cart so list UI keeps category/zone even if products state lags */
+    categoryId?: string | undefined;
+    subCategoryId?: string | undefined;
+    zoneId?: string | undefined;
   }
 
   interface FullOrderItem extends OrderFlexItem {
@@ -682,6 +686,9 @@ function ReorderPage() {
         unitId: newProd.unitId,
         unitName: MasterStore.getUnitName(newProd.unitId),
         costPrice: newProd.costPrice,
+        categoryId: newProd.categoryId,
+        subCategoryId: newProd.subCategoryId,
+        zoneId: newProd.zoneId,
       },
       ...prev,
     ]);
@@ -1064,7 +1071,7 @@ function ReorderPage() {
     const barcode = editingCartItem.barcode.trim() || generateStoreBarcode("EAN_13").barcode;
     const note = editingCartItem.note.trim();
 
-    // 1. Update in current order list
+    // 1. Update in current order list (include category/zone snapshot for list UI)
     setOrderList((prev) =>
       prev.map((item) => {
         if (item.productId === editingCartItem.productId) {
@@ -1077,6 +1084,9 @@ function ReorderPage() {
             unitName: getUnitName(editingCartItem.unitId),
             costPrice: cost,
             note: note || undefined,
+            categoryId: editingCartItem.categoryId,
+            subCategoryId: editingCartItem.subCategoryId || undefined,
+            zoneId: editingCartItem.zoneId || undefined,
           };
         }
         return item;
@@ -1397,20 +1407,30 @@ function ReorderPage() {
       updatedAt: new Date().toISOString(),
     };
 
-    const zoneName = zones.find((z) => z.id === effectiveProduct.zoneId)?.name;
+    // Prefer category/zone saved on the cart row (survives products-state lag / server overwrite)
+    const resolvedCategoryId = item.categoryId || effectiveProduct.categoryId;
+    const resolvedZoneId = item.zoneId || effectiveProduct.zoneId;
+    const resolvedSubCategoryId = item.subCategoryId || effectiveProduct.subCategoryId;
+    const productWithResolved: ProductItem = {
+      ...effectiveProduct,
+      categoryId: resolvedCategoryId,
+      ...(resolvedSubCategoryId !== undefined ? { subCategoryId: resolvedSubCategoryId } : {}),
+      ...(resolvedZoneId !== undefined ? { zoneId: resolvedZoneId } : {}),
+    };
+    const zoneName = zones.find((z) => z.id === productWithResolved.zoneId)?.name;
     return {
-      product: effectiveProduct,
-      name: effectiveProduct.name,
+      product: productWithResolved,
+      name: productWithResolved.name,
       quantity: item.quantity,
       unitId: effectiveUnitId,
       unitName: effectiveUnitName,
-      barcode: effectiveProduct.barcode,
+      barcode: productWithResolved.barcode,
       costPrice: effectiveCostPrice,
       priceEstimate: effectiveCostPrice * item.quantity,
       ...(item.note !== undefined ? { note: item.note } : {}),
-      categoryId: effectiveProduct.categoryId,
-      categoryName: getCatName(effectiveProduct.categoryId),
-      ...(effectiveProduct.zoneId !== undefined ? { zoneId: effectiveProduct.zoneId } : {}),
+      categoryId: productWithResolved.categoryId,
+      categoryName: getCatName(productWithResolved.categoryId),
+      ...(productWithResolved.zoneId !== undefined ? { zoneId: productWithResolved.zoneId } : {}),
       ...(zoneName !== undefined ? { zoneName } : {}),
     };
   });

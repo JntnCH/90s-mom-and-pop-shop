@@ -1282,7 +1282,29 @@ export const MasterStore = {
         localStorage.setItem(STORAGE_KEYS.ZONES, JSON.stringify(data.zones));
       }
       if (Array.isArray(data.products) && data.products.length > 0) {
-        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(data.products));
+        // Merge by id: keep local fields when local updatedAt is newer or server omits category/zone
+        const localList = safeGet<ProductItem[]>(STORAGE_KEYS.PRODUCTS, []);
+        const localMap = new Map(localList.map((p) => [p.id, p]));
+        const merged = data.products.map((serverP) => {
+          const localP = localMap.get(serverP.id);
+          if (!localP) return serverP;
+          const localTs = Date.parse(localP.updatedAt || "") || 0;
+          const serverTs = Date.parse(serverP.updatedAt || "") || 0;
+          if (localTs > serverTs) {
+            return { ...serverP, ...localP };
+          }
+          return {
+            ...localP,
+            ...serverP,
+            categoryId: serverP.categoryId || localP.categoryId,
+            subCategoryId: serverP.subCategoryId || localP.subCategoryId,
+            zoneId: serverP.zoneId || localP.zoneId,
+          };
+        });
+        for (const lp of localList) {
+          if (!merged.some((p) => p.id === lp.id)) merged.unshift(lp);
+        }
+        localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(merged));
       }
       if (Array.isArray(data.receives) && data.receives.length > 0) {
         localStorage.setItem(STORAGE_KEYS.RECEIVES, JSON.stringify(data.receives));
