@@ -1,0 +1,71 @@
+name: Restore reorder unitName fix
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore reorder.tsx from good commit and apply unitName fix
+        run: |
+          git show ce0d88e457bfedbd148bb78f9901e78bcc6e3dc4:src/routes/reorder.tsx > src/routes/reorder.tsx
+          python3 << 'PY'
+          from pathlib import Path
+          text = Path("src/routes/reorder.tsx").read_text()
+          old1 = """  const handleUpdateUnit = (productId: string, unitId: string) => {
+            setOrderList((prev) =>
+              prev.map((item) => (item.productId === productId ? { ...item, unitId } : item)),
+            );
+          };"""
+          new1 = """  const handleUpdateUnit = (productId: string, unitId: string) => {
+            setOrderList((prev) =>
+              prev.map((item) =>
+                item.productId === productId
+                  ? { ...item, unitId, unitName: getUnitName(unitId) }
+                  : item,
+              ),
+            );
+          };"""
+          old2 = """    const effectiveUnitId = item.unitId || product?.unitId || units[0]?.id || \"unit-piece\";
+            const effectiveUnitName = item.unitName || getUnitName(effectiveUnitId);"""
+          new2 = """    const effectiveUnitId = item.unitId || product?.unitId || units[0]?.id || \"unit-piece\";
+            // unitId is source of truth (inline dropdown); always resolve name so export/preview stay in sync
+            const effectiveUnitName = getUnitName(effectiveUnitId) || item.unitName || \"-\";"""
+          # normalize whitespace for match
+          import re
+          def norm(s):
+              return re.sub(r"[ \t]+", " ", s)
+          if old1 not in text:
+              # try flexible
+              m = re.search(r"const handleUpdateUnit = \(productId: string, unitId: string\) => \{[\s\S]*?\n  \};", text)
+              if not m:
+                  raise SystemExit("handleUpdateUnit not found")
+              text = text[:m.start()] + new1 + text[m.end():]
+          else:
+              text = text.replace(old1, new1, 1)
+          if old2 not in text:
+              text2 = re.sub(
+                  r"const effectiveUnitId = item\.unitId \|\| product\?\.unitId \|\| units\[0\]\?\.id \|\| \"unit-piece\";\n\s*const effectiveUnitName = item\.unitName \|\| getUnitName\(effectiveUnitId\);",
+                  new2.strip(),
+                  text,
+                  count=1,
+              )
+              if text2 == text:
+                  raise SystemExit("effectiveUnitName block not found")
+              text = text2
+          else:
+              text = text.replace(old2, new2, 1)
+          Path("src/routes/reorder.tsx").write_text(text)
+          print("patched ok")
+          PY
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/reorder.tsx
+          git commit -m "fix(reorder): restore file + sync unitName on cart unit change for export/preview" || echo "no change"
+          git push
