@@ -1,0 +1,39 @@
+name: unit-sync-v2
+on:
+  workflow_dispatch:
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch reorder.tsx unitName
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          path = Path("src/routes/reorder.tsx")
+          text = path.read_text()
+          print("size before", len(text))
+          if len(text) < 100000:
+              raise SystemExit("file too small, abort")
+          old1 = "  const handleUpdateUnit = (productId: string, unitId: string) => {\n    setOrderList((prev) =>\n      prev.map((item) => (item.productId === productId ? { ...item, unitId } : item)),\n    );\n  };"
+          new1 = "  const handleUpdateUnit = (productId: string, unitId: string) => {\n    setOrderList((prev) =>\n      prev.map((item) =>\n        item.productId === productId\n          ? { ...item, unitId, unitName: getUnitName(unitId) }\n          : item,\n      ),\n    );\n  };"
+          old2 = '    const effectiveUnitId = item.unitId || product?.unitId || units[0]?.id || "unit-piece";\n    const effectiveUnitName = item.unitName || getUnitName(effectiveUnitId);'
+          new2 = '    const effectiveUnitId = item.unitId || product?.unitId || units[0]?.id || "unit-piece";\n    // unitId is source of truth (inline dropdown); always resolve name so export/preview stay in sync\n    const effectiveUnitName = getUnitName(effectiveUnitId) || item.unitName || "-";'
+          if old1 not in text:
+              raise SystemExit("old1 missing")
+          if old2 not in text:
+              raise SystemExit("old2 missing")
+          text = text.replace(old1, new1, 1).replace(old2, new2, 1)
+          path.write_text(text)
+          assert "unitName: getUnitName(unitId)" in text
+          print("patched ok", path.stat().st_size)
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/reorder.tsx
+          git commit -m "fix(reorder): sync unitName when changing unit on cart so export/preview use latest PO units"
+          git push
