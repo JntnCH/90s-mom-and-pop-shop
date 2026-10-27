@@ -239,6 +239,9 @@ export const STORAGE_KEYS = {
   STORE_NAME: "minimark_store_name",
 };
 
+const PENDING_PRODUCT_PATCHES_KEY = "minimark_pending_product_patches";
+
+
 function safeGet<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
@@ -678,6 +681,25 @@ export const MasterStore = {
         : p,
     );
     this.saveProducts(list);
+    // Durable patch so server snapshots cannot wipe recent master-field edits
+    try {
+      if (typeof window !== "undefined") {
+        const raw = localStorage.getItem(PENDING_PRODUCT_PATCHES_KEY);
+        const patches: Record<string, Partial<ProductItem> & { _patchedAt?: string }> = raw
+          ? JSON.parse(raw)
+          : {};
+        const prev = patches[id] || {};
+        patches[id] = {
+          ...prev,
+          ...updates,
+          updatedAt: nowStr,
+          _patchedAt: nowStr,
+        };
+        localStorage.setItem(PENDING_PRODUCT_PATCHES_KEY, JSON.stringify(patches));
+      }
+    } catch {
+      /* ignore */
+    }
   },
   toggleProductStatus(id: string): boolean {
     const product = this.getProducts().find((p) => p.id === id);
@@ -1311,6 +1333,37 @@ export const MasterStore = {
           if (!merged.some((p) => p.id === lp.id)) merged.unshift(lp);
         }
         localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(merged));
+        // Re-apply recent local product master patches (category/zone/name/prices)
+        try {
+          const rawPatches = localStorage.getItem(PENDING_PRODUCT_PATCHES_KEY);
+          if (rawPatches) {
+            const patches: Record<string, Partial<ProductItem> & { _patchedAt?: string }> =
+              JSON.parse(rawPatches);
+            let changed = false;
+            const nextList = safeGet<ProductItem[]>(STORAGE_KEYS.PRODUCTS, []).map((p) => {
+              const patch = patches[p.id];
+              if (!patch) return p;
+              changed = true;
+              const { _patchedAt, ...fields } = patch;
+              return {
+                ...p,
+                ...fields,
+                ...(fields.categoryId ? { categoryId: fields.categoryId } : {}),
+                ...(fields.subCategoryId !== undefined
+                  ? { subCategoryId: fields.subCategoryId }
+                  : {}),
+                ...(fields.zoneId !== undefined ? { zoneId: fields.zoneId } : {}),
+                ...(fields.name ? { name: fields.name } : {}),
+                updatedAt: fields.updatedAt || p.updatedAt,
+              };
+            });
+            if (changed) {
+              localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(nextList));
+            }
+          }
+        } catch {
+          /* ignore */
+        }
       }
       if (Array.isArray(data.receives) && data.receives.length > 0) {
         localStorage.setItem(STORAGE_KEYS.RECEIVES, JSON.stringify(data.receives));

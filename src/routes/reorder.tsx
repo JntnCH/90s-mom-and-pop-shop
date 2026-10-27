@@ -913,8 +913,11 @@ function ReorderPage() {
     setEditingPOStatus(po.status);
     setSupplierNameInput(po.supplierName || "");
 
+    // Always read latest master data (React state may lag after category edits)
+    const allProds = MasterStore.getProducts();
     const loadedItems: OrderCartItem[] = po.items.map((i) => {
-      const matchedProd = products.find((p) => p.id === i.productId);
+      const matchedProd =
+        allProds.find((p) => p.id === i.productId) || products.find((p) => p.id === i.productId);
       const matchedUnit = units.find((u) => u.name === i.unitName);
       return {
         productId: i.productId,
@@ -925,10 +928,15 @@ function ReorderPage() {
         unitName: i.unitName || (matchedProd ? getUnitName(matchedProd.unitId) : undefined),
         costPrice: i.costPrice !== undefined ? i.costPrice : matchedProd?.costPrice || 0,
         note: i.note,
+        // Prefer values saved on the PO item, then product master
+        categoryId: i.categoryId || matchedProd?.categoryId,
+        subCategoryId: i.subCategoryId || matchedProd?.subCategoryId,
+        zoneId: i.zoneId || matchedProd?.zoneId,
       };
     });
 
     setOrderList(loadedItems);
+    setProducts(allProds);
     setHasRestoredDraft(false);
     setLastAutoSavedAt(new Date());
     setActiveTab("create_po");
@@ -1478,6 +1486,9 @@ function ReorderPage() {
           costPrice: f.costPrice,
           total: f.priceEstimate,
           note: f.note,
+          categoryId: f.product.categoryId,
+          subCategoryId: f.product.subCategoryId,
+          zoneId: f.product.zoneId,
         })),
         totalQuantity,
         totalCost,
@@ -1533,6 +1544,9 @@ function ReorderPage() {
         costPrice: f.costPrice,
         total: f.priceEstimate,
         ...(f.note !== undefined ? { note: f.note } : {}),
+        categoryId: f.product.categoryId,
+        ...(f.product.subCategoryId !== undefined ? { subCategoryId: f.product.subCategoryId } : {}),
+        ...(f.product.zoneId !== undefined ? { zoneId: f.product.zoneId } : {}),
       })),
       totalQuantity,
       totalCost,
