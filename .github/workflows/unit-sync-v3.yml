@@ -1,0 +1,65 @@
+name: unit-sync-v3
+on:
+  workflow_dispatch:
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch with regex
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          import re
+          path = Path("src/routes/reorder.tsx")
+          text = path.read_text()
+          print("size", len(text))
+          # 1) handleUpdateUnit: also set unitName
+          pat1 = re.compile(
+              r"(const handleUpdateUnit = \(productId: string, unitId: string\) => \{\s*"
+              r"setOrderList\(\(prev\) =>\s*"
+              r"prev\.map\(\(item\) => \(item\.productId === productId \? \{ \.\.\.item, unitId \} : item\)\),\s*"
+              r"\);\s*"
+              r"\};)"
+          )
+          repl1 = """const handleUpdateUnit = (productId: string, unitId: string) => {
+    setOrderList((prev) =>
+      prev.map((item) =>
+        item.productId === productId
+          ? { ...item, unitId, unitName: getUnitName(unitId) }
+          : item,
+      ),
+    );
+  };"""
+          text2, n1 = pat1.subn(repl1, text, count=1)
+          print("handleUpdateUnit replacements", n1)
+          if n1 != 1:
+              raise SystemExit("failed to patch handleUpdateUnit")
+          # 2) fullItems effectiveUnitName resolve from unitId first
+          pat2 = re.compile(
+              r"const effectiveUnitId = item\.unitId \|\| product\?\.unitId \|\| units\[0\]\?\.id \|\| \"unit-piece\";\n"
+              r"\s*const effectiveUnitName = item\.unitName \|\| getUnitName\(effectiveUnitId\);"
+          )
+          repl2 = (
+              'const effectiveUnitId = item.unitId || product?.unitId || units[0]?.id || "unit-piece";\n'
+              '    // unitId is source of truth (inline dropdown); always resolve name so export/preview stay in sync\n'
+              '    const effectiveUnitName = getUnitName(effectiveUnitId) || item.unitName || "-";'
+          )
+          text3, n2 = pat2.subn(repl2, text2, count=1)
+          print("effectiveUnitName replacements", n2)
+          if n2 != 1:
+              raise SystemExit("failed to patch effectiveUnitName")
+          path.write_text(text3)
+          assert "unitName: getUnitName(unitId)" in text3
+          assert "getUnitName(effectiveUnitId) || item.unitName" in text3
+          print("OK", path.stat().st_size)
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/reorder.tsx
+          git commit -m "fix(reorder): sync unitName when changing unit on cart so export/preview use latest PO units"
+          git push
