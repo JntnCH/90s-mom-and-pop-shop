@@ -1,0 +1,109 @@
+name: Emergency restore store + reorder
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore store.ts from known-good + perf patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import urllib.request
+          p = Path("src/lib/store.ts")
+          text = urllib.request.urlopen(
+            "https://raw.githubusercontent.com/JntnCH/90s-mom-and-pop-shop/32f99ffeae255d901269f4a335ac7d9d99de9a24/src/lib/store.ts",
+            timeout=60,
+          ).read().decode("utf-8")
+          p.write_text(text)
+          print("wrote store", len(text))
+          PY
+          if [ -f scripts/fix-store-perf.py ]; then
+            python3 scripts/fix-store-perf.py || true
+          fi
+          wc -c src/lib/store.ts
+          grep -c "updateProduct\|export const MasterStore" src/lib/store.ts || true
+      - name: Restore reorder.tsx from parent + optimistic patch
+        run: |
+          git show bcfe641f9c7cb79f6b3488249cbcdf04d4dbeca2:src/routes/reorder.tsx > src/routes/reorder.tsx
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("src/routes/reorder.tsx")
+          text = p.read_text()
+          old = '''    // 2. Always update the product in MasterStore as well
+    MasterStore.updateProduct(editingCartItem.productId, {
+      name,
+      barcode,
+      ...(editingCartItem.sku?.trim() ? { sku: editingCartItem.sku.trim() } : {}),
+      costPrice: cost,
+      sellPrice: Number(editingCartItem.sellPrice) || 0,
+      minStock: Math.max(0, Number(editingCartItem.minStock) || 0),
+      unitId: editingCartItem.unitId,
+      categoryId: editingCartItem.categoryId,
+      subCategoryId: editingCartItem.subCategoryId || undefined,
+      zoneId: editingCartItem.zoneId || undefined,
+    });
+    setProducts(MasterStore.getProducts());
+
+    toast.success(`บันทึกข้อมูลสินค้า "${name}" และอัปเดตใบสั่งซื้อเรียบร้อยแล้ว`);
+    setEditItemModalOpen(false);
+  };'''
+          new = '''    // 2. Always update the product in MasterStore as well
+    MasterStore.updateProduct(editingCartItem.productId, {
+      name,
+      barcode,
+      ...(editingCartItem.sku?.trim() ? { sku: editingCartItem.sku.trim() } : {}),
+      costPrice: cost,
+      sellPrice: Number(editingCartItem.sellPrice) || 0,
+      minStock: Math.max(0, Number(editingCartItem.minStock) || 0),
+      unitId: editingCartItem.unitId,
+      categoryId: editingCartItem.categoryId,
+      subCategoryId: editingCartItem.subCategoryId || undefined,
+      zoneId: editingCartItem.zoneId || undefined,
+    });
+
+    // 3. Force UI list to reflect category/zone/name immediately
+    //    fullItems derives category from products state via getCatName(product.categoryId)
+    setProducts((prev) => {
+      const fromStore = MasterStore.getProducts();
+      const base = fromStore.length > 0 ? fromStore : prev;
+      return base.map((p) =>
+        p.id === editingCartItem.productId
+          ? {
+              ...p,
+              name,
+              barcode,
+              ...(editingCartItem.sku?.trim() ? { sku: editingCartItem.sku.trim() } : {}),
+              costPrice: cost,
+              sellPrice: Number(editingCartItem.sellPrice) || 0,
+              minStock: Math.max(0, Number(editingCartItem.minStock) || 0),
+              unitId: editingCartItem.unitId,
+              categoryId: editingCartItem.categoryId,
+              subCategoryId: editingCartItem.subCategoryId || undefined,
+              zoneId: editingCartItem.zoneId || undefined,
+            }
+          : p,
+      );
+    });
+
+    toast.success(`บันทึกข้อมูลสินค้า "${name}" และอัปเดตใบสั่งซื้อเรียบร้อยแล้ว`);
+    setEditItemModalOpen(false);
+  };'''
+          if old not in text:
+              raise SystemExit('reorder block not found')
+          p.write_text(text.replace(old, new, 1))
+          print('reorder patched', p.stat().st_size)
+          PY
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/store.ts src/routes/reorder.tsx
+          git status
+          git commit -m "fix: restore MasterStore + immediate category update on PO item save" || echo "no changes"
+          git push origin HEAD:main
