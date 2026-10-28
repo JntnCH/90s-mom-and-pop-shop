@@ -161,7 +161,10 @@ function getPurchaseOrderFlexItems(po: PurchaseOrderRecord): OrderFlexItem[] {
     return {
       name: item.productName,
       quantity: item.quantity,
-      unitName: item.unitName,
+      unitName:
+        (item.unitId ? MasterStore.getUnitName(item.unitId) : "") ||
+        item.unitName ||
+        (product ? MasterStore.getUnitName(product.unitId) : "-"),
       barcode: item.barcode,
       costPrice: item.costPrice,
       priceEstimate: item.total,
@@ -470,10 +473,19 @@ function ReorderPage() {
               productName: i.productName || matchedProd?.name || "",
               barcode: i.barcode || matchedProd?.barcode,
               quantity: Math.max(1, i.quantity || 1),
-              unitId: i.unitId || matchedProd?.unitId || "unit-piece",
+              unitId:
+                i.unitId ||
+                (i.unitName
+                  ? MasterStore.getUnits().find((u) => u.name === i.unitName || u.shortName === i.unitName)?.id
+                  : undefined) ||
+                matchedProd?.unitId ||
+                "unit-piece",
               unitName:
-                MasterStore.getUnitName(i.unitId || matchedProd?.unitId || "unit-piece") ||
+                (i.unitId ? MasterStore.getUnitName(i.unitId) : undefined) ||
                 i.unitName ||
+                MasterStore.getUnitName(
+                  i.unitId || matchedProd?.unitId || "unit-piece",
+                ) ||
                 (matchedProd ? MasterStore.getUnitName(matchedProd.unitId) : undefined),
               costPrice: i.costPrice !== undefined ? i.costPrice : matchedProd?.costPrice || 0,
               note: i.note,
@@ -937,10 +949,11 @@ function ReorderPage() {
         productName: i.productName || matchedProd?.name,
         barcode: i.barcode || matchedProd?.barcode,
         quantity: Math.max(1, i.quantity || 1),
-        unitId: i.unitId || matchedProd?.unitId || matchedUnit?.id || units[0]?.id || "unit-piece",
+        unitId: i.unitId || matchedUnit?.id || matchedProd?.unitId || units[0]?.id || "unit-piece",
         unitName:
-          getUnitName(i.unitId || matchedProd?.unitId || matchedUnit?.id || units[0]?.id || "unit-piece") ||
+          (i.unitId ? getUnitName(i.unitId) : undefined) ||
           i.unitName ||
+          getUnitName(i.unitId || matchedUnit?.id || matchedProd?.unitId || units[0]?.id || "unit-piece") ||
           (matchedProd ? getUnitName(matchedProd.unitId) : undefined),
         costPrice: i.costPrice !== undefined ? i.costPrice : matchedProd?.costPrice || 0,
         note: i.note,
@@ -1218,7 +1231,7 @@ function ReorderPage() {
           categoryName: p ? getCatName(p.categoryId) : "-",
           zoneName: p ? zones.find((z) => z.id === p.zoneId)?.name || "-" : "-",
           quantity: i.quantity,
-          unitName: i.unitName,
+          unitName: (i.unitId ? getUnitName(i.unitId) : undefined) || i.unitName || (p ? getUnitName(p.unitId) : "-"),
           costPrice: i.costPrice,
           total: i.total,
           ...(i.note !== undefined ? { note: i.note } : {}),
