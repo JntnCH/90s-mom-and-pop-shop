@@ -1,0 +1,22 @@
+name: Restore GoogleSheetsSyncTab
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore file from good commit and apply fix
+        run: |
+          set -e
+          git show fb4dfd49c04c32f55a3a5e3263a3010d3034795c:src/components/sheets/GoogleSheetsSyncTab.tsx > src/components/sheets/GoogleSheetsSyncTab.tsx
+          node scripts/fix-sa-data-wrapper.mjs
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/components/sheets/GoogleSheetsSyncTab.tsx
+          git commit -m "fix(sheets): restore SyncTab + wrap SA server-fn calls in { data }" || echo "no change"
+          git push
