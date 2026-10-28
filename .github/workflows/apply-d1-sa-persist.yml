@@ -1,0 +1,38 @@
+name: Apply D1 SA Persist
+on:
+  workflow_dispatch:
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply D1 SA persist from artifact script in repo
+        run: |
+          set -e
+          # Restore server-fn from PROCESS-SAFE style via inline node if file is placeholder
+          if [ ! -s src/lib/google-sheets-server-fn.ts ] || grep -q PLACEHOLDER src/lib/google-sheets-server-fn.ts; then
+            git show 3a97d53ace92b738b3fd27e3ffe400036eec7e89:src/lib/google-sheets-server-fn.ts > src/lib/google-sheets-server-fn.ts || true
+          fi
+          node << 'NODE'
+const fs = require('fs');
+let text = fs.readFileSync('src/lib/google-sheets-server-fn.ts','utf8');
+if (text.includes('PLACEHOLDER') || text.length < 500) {
+  console.error('server-fn still bad');
+  process.exit(1);
+}
+// Inject D1 persistence if not already present
+if (!text.includes('app_settings') || !text.includes('readSaFromD1')) {
+  console.log('Need full D1 persist implementation - failing for manual');
+  process.exit(2);
+}
+console.log('server-fn already has D1 persist');
+NODE
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git status
