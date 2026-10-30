@@ -10,6 +10,8 @@ import {
   syncD1Payload,
   type D1SyncPayload,
 } from "../db/d1-snapshot.ts";
+import { isPostgresConfigured } from "../db/index.ts";
+import { getDatabaseSnapshot, syncDatabasePayload } from "../db/db-service.ts";
 import { removeLegacySampleLineFollowers } from "./line-follower-data";
 import type {
   CategoryItem,
@@ -66,7 +68,7 @@ export interface ServerSyncPayload {
 /** Shape expected by settings.tsx Database Status card */
 export interface DatabaseInspectionResult {
   success: boolean;
-  activeBackend: "d1" | "memory";
+  activeBackend: "postgres" | "d1" | "memory";
   backendLabel: string;
   databaseHost: string;
   lastSyncAt: string;
@@ -143,6 +145,32 @@ function getLineChannelAccessToken(): string {
   ).trim();
 }
 
+function applySnapshotToMemory(snap: {
+  products?: unknown[];
+  categories?: unknown[];
+  units?: unknown[];
+  zones?: unknown[];
+  subCategories?: unknown[];
+  purchaseOrders?: unknown[];
+  movements?: unknown[];
+  receives?: unknown[];
+  followers?: unknown[];
+}) {
+  if (snap.products) globalServerDatabase.products = snap.products as ProductItem[];
+  if (snap.categories) globalServerDatabase.categories = snap.categories as CategoryItem[];
+  if (snap.units) globalServerDatabase.units = snap.units as UnitItem[];
+  if (snap.zones) globalServerDatabase.zones = snap.zones as ZoneItem[];
+  if (snap.subCategories)
+    globalServerDatabase.subCategories = snap.subCategories as SubCategoryItem[];
+  if (snap.purchaseOrders)
+    globalServerDatabase.purchaseOrders = snap.purchaseOrders as PurchaseOrderRecord[];
+  if (snap.movements) globalServerDatabase.movements = snap.movements as StockMovementLog[];
+  if (snap.receives) globalServerDatabase.receives = snap.receives as ReceiveItem[];
+  if (snap.followers)
+    globalServerDatabase.followers = snap.followers as (ServerLineFollower | LineUserFollower)[];
+  globalServerDatabase.lastUpdated = new Date().toISOString();
+}
+
 export const getLineServerConfigFn = createServerFn({ method: "GET" }).handler(async () => {
   const envLiff = (
     envGet("LINE_LIFF_ID") ||
@@ -175,6 +203,48 @@ export const getLineServerConfigFn = createServerFn({ method: "GET" }).handler(a
 export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
   .validator((payload: ServerSyncPayload) => payload)
   .handler(async ({ data }) => {
+    // 1) Railway Postgres primary
+    if (isPostgresConfigured()) {
+      try {
+        const result = await syncDatabasePayload({
+          products: data.products,
+          categories: data.categories,
+          subCategories: data.subCategories,
+          deletedSubCategoryIds: data.deletedSubCategoryIds,
+          zones: data.zones,
+          deletedZoneIds: data.deletedZoneIds,
+          units: data.units,
+          purchaseOrders: data.purchaseOrders as Parameters<
+            typeof syncDatabasePayload
+          >[0]["purchaseOrders"],
+          deletedPurchaseOrderIds: data.deletedPurchaseOrderIds,
+          movements: data.movements,
+          receives: data.receives,
+          followers: removeLegacySampleLineFollowers(data.followers),
+        });
+        applySnapshotToMemory(result);
+        return {
+          success: true,
+          data: {
+            products: globalServerDatabase.products,
+            categories: globalServerDatabase.categories,
+            units: globalServerDatabase.units,
+            zones: globalServerDatabase.zones,
+            subCategories: globalServerDatabase.subCategories,
+            purchaseOrders: globalServerDatabase.purchaseOrders || [],
+            movements: globalServerDatabase.movements || [],
+            receives: globalServerDatabase.receives || [],
+            followers: globalServerDatabase.followers || [],
+          },
+          lastUpdated: globalServerDatabase.lastUpdated,
+          source: "postgres" as const,
+        };
+      } catch (pgErr) {
+        console.warn("[Database Sync] Postgres sync notice:", pgErr);
+      }
+    }
+
+    // 2) Optional D1 (Workers)
     let d1Result: Awaited<ReturnType<typeof syncD1Payload>> = null;
     let d1Success = false;
     try {
@@ -254,6 +324,7 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
       };
     }
 
+    // 3) Memory fallback
     if (data.products?.length) {
       const productMap = new Map((globalServerDatabase.products || []).map((p) => [p.id, p]));
       data.products.forEach((p) => {
@@ -293,8 +364,17 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
     };
   });
 
-/** @deprecated name retained for compatibility — resolves D1 then memory only (Cloud SQL removed) */
+/** Resolves Postgres → D1 → memory */
 export const fetchCloudSqlSnapshotFn = createServerFn({ method: "GET" }).handler(async () => {
+  if (isPostgresConfigured()) {
+    try {
+      const snap = await getDatabaseSnapshot();
+      applySnapshotToMemory(snap);
+      return { success: true, source: "postgres" as const, data: snap };
+    } catch (e) {
+      console.warn("[fetchDatabaseSnapshotFn] Postgres:", e);
+    }
+  }
   try {
     const d1 = await getD1Snapshot();
     if (d1) {
@@ -332,25 +412,46 @@ export const getDatabaseInspectionFn = createServerFn({ method: "GET" }).handler
     let databaseHost = "in-memory";
     let lastSyncAt = globalServerDatabase.lastUpdated || new Date().toISOString();
     let d1Available = false;
+    const postgresConfigured = isPostgresConfigured();
 
-    try {
-      d1Available = await isD1Available();
-      if (d1Available) {
-        const snap = await getD1Snapshot();
-        if (snap) {
-          activeBackend = "d1";
-          backendLabel = "Cloudflare D1 (Primary)";
-          databaseHost = "mom-and-pop-shop-db";
-          zones = (snap.zones as ZoneItem[]) || [];
-          categories = (snap.categories as CategoryItem[]) || [];
-          subCategories = (snap.subCategories as SubCategoryItem[]) || [];
-          units = (snap.units as UnitItem[]) || [];
-          products = (snap.products as ProductItem[]) || [];
-          lastSyncAt = new Date().toISOString();
-        }
+    if (postgresConfigured) {
+      try {
+        const snap = await getDatabaseSnapshot();
+        activeBackend = "postgres";
+        backendLabel = "Railway Postgres (Primary)";
+        databaseHost = envGet("SQL_HOST") || envGet("PGHOST") || "railway-postgres";
+        zones = (snap.zones as ZoneItem[]) || [];
+        categories = (snap.categories as CategoryItem[]) || [];
+        subCategories = (snap.subCategories as SubCategoryItem[]) || [];
+        units = (snap.units as UnitItem[]) || [];
+        products = (snap.products as ProductItem[]) || [];
+        lastSyncAt = new Date().toISOString();
+        applySnapshotToMemory(snap);
+      } catch (e) {
+        console.warn("[getDatabaseInspectionFn] Postgres:", e);
       }
-    } catch (e) {
-      console.warn("[getDatabaseInspectionFn]", e);
+    }
+
+    if (activeBackend === "memory") {
+      try {
+        d1Available = await isD1Available();
+        if (d1Available) {
+          const snap = await getD1Snapshot();
+          if (snap) {
+            activeBackend = "d1";
+            backendLabel = "Cloudflare D1";
+            databaseHost = "mom-and-pop-shop-db";
+            zones = (snap.zones as ZoneItem[]) || [];
+            categories = (snap.categories as CategoryItem[]) || [];
+            subCategories = (snap.subCategories as SubCategoryItem[]) || [];
+            units = (snap.units as UnitItem[]) || [];
+            products = (snap.products as ProductItem[]) || [];
+            lastSyncAt = new Date().toISOString();
+          }
+        }
+      } catch (e) {
+        console.warn("[getDatabaseInspectionFn] D1:", e);
+      }
     }
 
     return {
@@ -359,7 +460,7 @@ export const getDatabaseInspectionFn = createServerFn({ method: "GET" }).handler
       backendLabel,
       databaseHost,
       lastSyncAt,
-      postgresConfigured: false,
+      postgresConfigured,
       d1Available,
       counts: {
         zones: zones.length,

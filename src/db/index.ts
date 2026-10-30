@@ -1,11 +1,10 @@
 /**
- * LEGACY — Postgres / Cloud SQL pool (NOT the primary database).
+ * Postgres pool — primary on Railway when SQL_HOST / DATABASE_URL is set.
  *
- * Architecture decision (2026-10): Primary DB = Cloudflare D1 only + Google Sheets.
- * Runtime sync/read path uses src/db/d1-snapshot.ts and line-server-fn (activeBackend: "d1" | "memory").
- *
- * This module is retained only so existing imports (db-service, drizzle tools) do not break.
- * Do not use for new features. Do not point production traffic here.
+ * Architecture (2026-10-30):
+ * - Railway production: Postgres primary + Google Sheets backup
+ * - Cloudflare Workers: D1 path still available via d1-snapshot (optional)
+ * - Fallback: in-process memory when neither is configured
  */
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -20,43 +19,75 @@ function readEnv(key: string): string | undefined {
   try {
     const g = globalThis as unknown as { process?: { env?: Record<string, string | undefined> } };
     const val = g.process?.env?.[key];
-    return typeof val === "string" ? val : undefined;
+    return typeof val === "string" && val.length > 0 ? val : undefined;
   } catch {
     return undefined;
   }
 }
 
+/** True when Railway/SQL env is present (does not open a connection). */
+export function isPostgresConfigured(): boolean {
+  if (readEnv("DATABASE_URL")) return true;
+  const host = readEnv("SQL_HOST") || readEnv("PGHOST");
+  const user =
+    readEnv("SQL_USER") ||
+    readEnv("SQL_ADMIN_USER") ||
+    readEnv("DB_USER") ||
+    readEnv("PGUSER");
+  const password =
+    readEnv("SQL_PASSWORD") ||
+    readEnv("SQL_ADMIN_PASSWORD") ||
+    readEnv("DB_PASSWORD") ||
+    readEnv("PGPASSWORD");
+  return Boolean(host && user && password);
+}
+
 export const createPool = () => {
   if (!globalThis._postgresPool) {
-    const host =
-      readEnv("SQL_HOST") ||
-      (readEnv("INSTANCE_CONNECTION_NAME")
-        ? `/cloudsql/${readEnv("INSTANCE_CONNECTION_NAME")}`
-        : undefined);
-    const user =
-      readEnv("SQL_USER") ||
-      readEnv("SQL_ADMIN_USER") ||
-      readEnv("DB_USER") ||
-      readEnv("PGUSER");
-    const password =
-      readEnv("SQL_PASSWORD") ||
-      readEnv("SQL_ADMIN_PASSWORD") ||
-      readEnv("DB_PASSWORD") ||
-      readEnv("PGPASSWORD");
-    const database =
-      readEnv("SQL_DB_NAME") ||
-      readEnv("DB_NAME") ||
-      readEnv("PGDATABASE") ||
-      "postgres";
+    const databaseUrl = readEnv("DATABASE_URL");
+    if (databaseUrl) {
+      globalThis._postgresPool = new Pool({
+        connectionString: databaseUrl,
+        max: 10,
+        connectionTimeoutMillis: 15000,
+        // Railway internal network typically does not require SSL
+        ssl: databaseUrl.includes("localhost") ? false : undefined,
+      });
+    } else {
+      const host =
+        readEnv("SQL_HOST") ||
+        readEnv("PGHOST") ||
+        (readEnv("INSTANCE_CONNECTION_NAME")
+          ? `/cloudsql/${readEnv("INSTANCE_CONNECTION_NAME")}`
+          : undefined);
+      const portRaw = readEnv("SQL_PORT") || readEnv("PGPORT");
+      const port = portRaw ? Number(portRaw) : 5432;
+      const user =
+        readEnv("SQL_USER") ||
+        readEnv("SQL_ADMIN_USER") ||
+        readEnv("DB_USER") ||
+        readEnv("PGUSER");
+      const password =
+        readEnv("SQL_PASSWORD") ||
+        readEnv("SQL_ADMIN_PASSWORD") ||
+        readEnv("DB_PASSWORD") ||
+        readEnv("PGPASSWORD");
+      const database =
+        readEnv("SQL_DB_NAME") ||
+        readEnv("DB_NAME") ||
+        readEnv("PGDATABASE") ||
+        "postgres";
 
-    globalThis._postgresPool = new Pool({
-      host,
-      user,
-      password,
-      database,
-      max: 10,
-      connectionTimeoutMillis: 15000,
-    });
+      globalThis._postgresPool = new Pool({
+        host,
+        port: Number.isFinite(port) ? port : 5432,
+        user,
+        password,
+        database,
+        max: 10,
+        connectionTimeoutMillis: 15000,
+      });
+    }
 
     globalThis._postgresPool.on("error", (err) => {
       console.error("Unexpected error on idle SQL pool client:", err);
