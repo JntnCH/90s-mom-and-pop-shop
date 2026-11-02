@@ -118,7 +118,7 @@ export interface PurchaseOrderRecord {
 
 export const DEFAULT_ZONES: ZoneItem[] = [
   { id: "zone-a", code: "Z-A", name: "โซน A (หน้าร้าน/เคาน์เตอร์)", description: "สินค้าขายดี ขนม บุหรี่" },
-  { id: "zone-b", code: "Z-B", name: "โซน B (ชั้นกลาง อาหารแห้ง)", description: "บะหมี่สำเร็จรูป เครื่องปรุง ของแห้ง" },
+  { id: "zone-b", code: "Z-B", name: "โซน B (ชั้นกลาง อาหารแห้ง)", description: "บะหมี่สำเร็จรูป เครื่องปรุงรส" },
   { id: "zone-c", code: "Z-C", name: "โซน C (ตู้แช่ เครื่องดื่ม)", description: "น้ำอัดลม นม น้ำดื่ม เบียร์" },
   { id: "zone-d", code: "Z-D", name: "โซน D (ของใช้ในบ้าน/ซักล้าง)", description: "ผงซักฟอก ยาสระผม สบู่" },
   { id: "zone-e", code: "Z-E", name: "โซน E (หลังร้าน/สต็อกสำรอง)", description: "กล่องสต็อกสำรอง" },
@@ -608,6 +608,18 @@ export const MasterStore = {
     if (product.stock <= 0) return "OUT_OF_STOCK";
     if (product.stock <= product.minStock) return "LOW_STOCK";
     return "NORMAL";
+  },
+  getUnitName(unitId?: string): string {
+    return this.getUnits().find((u) => u.id === unitId)?.name || "ชิ้น";
+  },
+  getCategoryName(categoryId?: string): string {
+    return this.getCategories().find((c) => c.id === categoryId)?.name || "ไม่ระบุ";
+  },
+  getSubCategoryName(subCategoryId?: string): string {
+    return this.getSubCategories().find((s) => s.id === subCategoryId)?.name || "ไม่ระบุ";
+  },
+  getZoneName(zoneId?: string): string {
+    return this.getZones().find((z) => z.id === zoneId)?.name || "ไม่ระบุ";
   },
 
   getReorderProducts(): ProductItem[] {
