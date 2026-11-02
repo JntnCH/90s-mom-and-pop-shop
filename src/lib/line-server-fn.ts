@@ -66,7 +66,6 @@ export interface ServerSyncPayload {
   deletedProductIds?: string[] | undefined;
 }
 
-/** Shape expected by settings.tsx Database Status card */
 export interface DatabaseInspectionResult {
   success: boolean;
   activeBackend: "postgres" | "d1" | "memory";
@@ -93,10 +92,6 @@ export interface DatabaseInspectionResult {
   };
 }
 
-/**
- * Safe env read for Cloudflare Workers + browser.
- * Never reference free variable `process` (Safari throws ReferenceError).
- */
 function envGet(key: string): string {
   try {
     const g = globalThis as unknown as { process?: { env?: Record<string, string | undefined> } };
@@ -204,7 +199,6 @@ export const getLineServerConfigFn = createServerFn({ method: "GET" }).handler(a
 export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
   .validator((payload: ServerSyncPayload) => payload)
   .handler(async ({ data }) => {
-    // 1) Railway Postgres primary
     if (isPostgresConfigured()) {
       try {
         const result = await syncDatabasePayload({
@@ -246,7 +240,6 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
       }
     }
 
-    // 2) Optional D1 (Workers)
     let d1Result: Awaited<ReturnType<typeof syncD1Payload>> = null;
     let d1Success = false;
     try {
@@ -327,7 +320,6 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
       };
     }
 
-    // 3) Memory fallback
     if (data.products?.length) {
       const productMap = new Map((globalServerDatabase.products || []).map((p) => [p.id, p]));
       data.products.forEach((p) => {
@@ -373,7 +365,6 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
     };
   });
 
-/** Resolves Postgres → D1 → memory */
 export const fetchCloudSqlSnapshotFn = createServerFn({ method: "GET" }).handler(async () => {
   if (isPostgresConfigured()) {
     try {
@@ -533,33 +524,32 @@ export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
     if (!to && !data.isBroadcast) {
       return { success: false, error: "No LINE target user/group id" };
     }
-    // Minimal safe implementation – full flex/image logic lives in ops module if split
+    const messages: unknown[] = [];
+    if (data.flexMessage) {
+      messages.push({
+        type: "flex",
+        altText: data.orderSummary?.slice(0, 400) || "Order",
+        contents: data.flexMessage,
+      });
+    }
+    if (data.imageUrl) {
+      messages.push({
+        type: "image",
+        originalContentUrl: data.imageUrl,
+        previewImageUrl: data.imageUrl,
+      });
+    }
+    if (messages.length === 0 && data.orderSummary) {
+      messages.push({ type: "text", text: data.orderSummary.slice(0, 5000) });
+    }
+    if (messages.length === 0) {
+      return { success: false, error: "No message content" };
+    }
+    const url = data.isBroadcast
+      ? "https://api.line.me/v2/bot/message/broadcast"
+      : "https://api.line.me/v2/bot/message/push";
+    const body = data.isBroadcast ? { messages } : { to, messages };
     try {
-      const messages: unknown[] = [];
-      if (data.flexMessage) {
-        messages.push({
-          type: "flex",
-          altText: data.orderSummary || "Order",
-          contents: data.flexMessage,
-        });
-      }
-      if (data.imageUrl) {
-        messages.push({
-          type: "image",
-          originalContentUrl: data.imageUrl,
-          previewImageUrl: data.imageUrl,
-        });
-      }
-      if (messages.length === 0 && data.orderSummary) {
-        messages.push({ type: "text", text: data.orderSummary });
-      }
-      if (messages.length === 0) {
-        return { success: false, error: "No message content" };
-      }
-      const url = data.isBroadcast
-        ? "https://api.line.me/v2/bot/message/broadcast"
-        : "https://api.line.me/v2/bot/message/push";
-      const body = data.isBroadcast ? { messages } : { to, messages };
       const res = await fetch(url, {
         method: "POST",
         headers: {
@@ -573,7 +563,61 @@ export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
         return { success: false, error: `LINE API ${res.status}: ${errText}` };
       }
       return { success: true };
-    } catch (err) {
+    } catch (err: unknown) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+export const sendMiniAppPortalCardFn = createServerFn({ method: "POST" })
+  .validator((data: { toUserIdOrGroupId?: string }) => data)
+  .handler(async ({ data }) => {
+    const token = getLineChannelAccessToken();
+    const liffId =
+      envGet("LINE_LIFF_ID") ||
+      envGet("VITE_LINE_LIFF_ID") ||
+      envGet("LIFF_ID") ||
+      DEFAULT_LINE_LIFF_ID;
+    const storeName = getSystemStoreName?.() || DEFAULT_STORE_NAME;
+    const portalMessage = createMiniAppPortalFlexBubble({
+      storeName,
+      liffId,
+    });
+    const to =
+      data.toUserIdOrGroupId ||
+      envGet("LINE_TO_ID") ||
+      envGet("LINE_TARGET_ID") ||
+      envGet("LINE_USER_ID") ||
+      envGet("LINE_RECEIVER_ID");
+    if (!token) {
+      return { success: false, error: "LINE_CHANNEL_ACCESS_TOKEN not configured" };
+    }
+    if (!to) {
+      return { success: false, error: "No LINE target user/group id" };
+    }
+    try {
+      const res = await fetch("https://api.line.me/v2/bot/message/push", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          to,
+          messages: [
+            {
+              type: "flex",
+              altText: `${storeName} Mini App`,
+              contents: portalMessage,
+            },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        return { success: false, error: `LINE API ${res.status}: ${errText}` };
+      }
+      return { success: true };
+    } catch (err: unknown) {
       return { success: false, error: String(err) };
     }
   });
