@@ -23,10 +23,17 @@ export default defineConfig({
           specifiers: ["server-only"],
         },
       },
+      // Redirect TanStack Start's bundled server entry to src/server.ts (SSR error wrapper)
       server: { entry: "server" },
       ...(isCloudflare ? { target: "cloudflare" as const } : {}),
     }),
-    nitro({ preset: nitroPreset }),
+    // Critical: disable Nitro's default renderer so TanStack Start shellComponent + Scripts work.
+    // Without this, production serves the raw index.html template (white screen).
+    nitro({
+      preset: nitroPreset,
+      // @ts-expect-error nitro vite plugin accepts renderer option used by TanStack Start
+      renderer: false,
+    }),
     react(),
   ],
   resolve: {
