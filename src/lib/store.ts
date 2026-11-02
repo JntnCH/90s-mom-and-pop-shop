@@ -560,6 +560,43 @@ export const MasterStore = {
   getUnits(): UnitItem[] {
     return safeGet<UnitItem[]>(STORAGE_KEYS.UNITS, DEFAULT_UNITS);
   },
+  getUnitName(unitIdOrName?: string): string {
+    if (!unitIdOrName) return "ชิ้น";
+    const units = this.getUnits();
+    const matched = units.find(
+      (u) =>
+        u.id === unitIdOrName ||
+        u.name === unitIdOrName ||
+        u.shortName === unitIdOrName ||
+        u.id.toLowerCase() === unitIdOrName.toLowerCase() ||
+        u.name.toLowerCase() === unitIdOrName.toLowerCase(),
+    );
+    return matched ? matched.name : unitIdOrName;
+  },
+  getCategoryName(catIdOrName?: string): string {
+    if (!catIdOrName) return "ทั่วไป";
+    const cats = this.getCategories();
+    const matched = cats.find(
+      (c) => c.id === catIdOrName || c.name === catIdOrName || c.code === catIdOrName,
+    );
+    return matched ? matched.name : catIdOrName;
+  },
+  getZoneName(zoneIdOrName?: string): string {
+    if (!zoneIdOrName) return "-";
+    const zones = this.getZones();
+    const matched = zones.find(
+      (z) => z.id === zoneIdOrName || z.name === zoneIdOrName || z.code === zoneIdOrName,
+    );
+    return matched ? matched.name : zoneIdOrName;
+  },
+  getSubCategoryName(subIdOrName?: string): string {
+    if (!subIdOrName) return "-";
+    const subs = this.getSubCategories();
+    const matched = subs.find(
+      (s) => s.id === subIdOrName || s.name === subIdOrName || s.code === subIdOrName,
+    );
+    return matched ? matched.name : subIdOrName;
+  },
   saveUnits(items: UnitItem[]) {
     safeSet(STORAGE_KEYS.UNITS, items);
   },
