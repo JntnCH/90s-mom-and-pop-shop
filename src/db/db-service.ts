@@ -130,6 +130,7 @@ export async function syncDatabasePayload(payload: {
   zones?: { id: string; code: string; name: string; description?: string }[];
   deletedZoneIds?: string[];
   products?: DBProductItem[];
+  deletedProductIds?: string[];
   purchaseOrders?: DBPurchaseOrder[];
   deletedPurchaseOrderIds?: string[];
   movements?: {
@@ -258,7 +259,7 @@ export async function syncDatabasePayload(payload: {
       await db.delete(zones).where(inArray(zones.id, payload.deletedZoneIds));
     }
 
-    // 4. Sync Products
+    // 4. Sync Products (upsert then delete)
     if (payload.products && payload.products.length > 0) {
       for (const p of payload.products) {
         await db
@@ -309,6 +310,9 @@ export async function syncDatabasePayload(payload: {
             },
           });
       }
+    }
+    if (payload.deletedProductIds && payload.deletedProductIds.length > 0) {
+      await db.delete(products).where(inArray(products.id, payload.deletedProductIds));
     }
 
     // 5. Sync Purchase Orders
