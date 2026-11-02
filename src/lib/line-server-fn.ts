@@ -577,3 +577,76 @@ export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
       return { success: false, error: String(err) };
     }
   });
+
+export const sendMiniAppPortalCardFn = createServerFn({ method: "POST" })
+  .validator((data: { toUserIdOrGroupId?: string }) => data)
+  .handler(async ({ data }) => {
+    const token = getLineChannelAccessToken();
+    const liffId =
+      envGet("LINE_LIFF_ID") ||
+      envGet("VITE_LINE_LIFF_ID") ||
+      envGet("LIFF_ID") ||
+      DEFAULT_LINE_LIFF_ID;
+    const storeName = getSystemStoreName?.() || DEFAULT_STORE_NAME;
+    const portalMessage = createMiniAppPortalFlexBubble({
+      storeName,
+      liffId,
+    });
+    const to =
+      data.toUserIdOrGroupId ||
+      envGet("LINE_TO_ID") ||
+      envGet("LINE_TARGET_ID") ||
+      envGet("LINE_USER_ID") ||
+      envGet("LINE_RECEIVER_ID");
+    if (!token) {
+      return {
+        success: false,
+        configured: false,
+        flexPayload: portalMessage,
+        error: "No LINE token",
+      };
+    }
+    if (!to) {
+      return {
+        success: false,
+        configured: true,
+        flexPayload: portalMessage,
+        error: "No LINE target",
+      };
+    }
+    try {
+      const res = await fetch("https://api.line.me/v2/bot/message/push", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          to,
+          messages: [
+            {
+              type: "flex",
+              altText: `${storeName} Mini App`,
+              contents: portalMessage,
+            },
+          ],
+        }),
+      });
+      if (!res.ok) {
+        return {
+          success: false,
+          configured: true,
+          flexPayload: portalMessage,
+          error: await res.text(),
+        };
+      }
+      return { success: true, configured: true, flexPayload: portalMessage };
+    } catch (err: unknown) {
+      return {
+        success: false,
+        configured: true,
+        flexPayload: portalMessage,
+        error: String(err),
+      };
+    }
+  });
