@@ -738,7 +738,10 @@ export function scheduleAutoBackupToServerSheets(): void {
   if (serverAutoBackupTimer) clearTimeout(serverAutoBackupTimer);
   serverAutoBackupTimer = setTimeout(() => {
     serverAutoBackupTimer = null;
-    if (serverBackupInProgress) return;
+    if (serverBackupInProgress) {
+      scheduleAutoBackupToServerSheets();
+      return;
+    }
     serverBackupInProgress = true;
     void backupDatabaseToGoogleSheetsServer()
       .catch((error) => {
