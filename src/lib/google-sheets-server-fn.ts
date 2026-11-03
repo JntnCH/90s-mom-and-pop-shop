@@ -546,7 +546,7 @@ function cell(value: unknown): string | number {
   if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
-  return JSON.stringify(value);
+  return JSON.stringify(value) ?? String(value);
 }
 
 function buildServerBackupTabs(snapshot: Awaited<ReturnType<typeof getDatabaseSnapshot>>): ServerBackupTab[] {
@@ -623,15 +623,11 @@ async function googleSheetsRequest<T>(
   token: string,
   init?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/json",
-      ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...init?.headers,
-    },
-  });
+  const headers = new Headers(init?.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  headers.set("Accept", "application/json");
+  if (init?.body) headers.set("Content-Type", "application/json");
+  const response = await fetch(url, { ...init, headers });
   if (!response.ok) {
     const detail = await response.text();
     throw new Error(`Google Sheets API (${response.status}): ${detail}`);
@@ -659,55 +655,47 @@ export async function backupDatabaseToGoogleSheetsServer(options?: {
       ? extractSpreadsheetId(options.spreadsheetId)
       : credentials.spreadsheetId;
 
-    let spreadsheetId = targetId || "";
-    let spreadsheetTitle = "";
-    let spreadsheetUrl = "";
-
-    if (!spreadsheetId) {
-      const created = await googleSheetsRequest<{
-        spreadsheetId: string;
-        spreadsheetUrl?: string;
-        properties?: { title?: string };
-      }>("https://sheets.googleapis.com/v4/spreadsheets", token, {
-        method: "POST",
-        body: JSON.stringify({
-          properties: { title: `90s Mom-and-Pop Shop - Database Backup (${new Date().toLocaleDateString("th-TH")})` },
-          sheets: tabs.map((tab) => ({ properties: { title: tab.title } })),
-        }),
-      });
-      spreadsheetId = created.spreadsheetId;
-      spreadsheetTitle = created.properties?.title || "90s Mom-and-Pop Shop Database Backup";
-      spreadsheetUrl = created.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
-    } else {
-      const metadata = await googleSheetsRequest<{
-        properties?: { title?: string };
-        sheets?: Array<{ properties?: { title?: string } }>;
-      }>(
-        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title,sheets.properties.title`,
-        token,
+    const spreadsheetId =
+      targetId ||
+      extractSpreadsheetId(
+        (await getBindingOrEnv("GOOGLE_SPREADSHEET_ID")) ||
+          (await getBindingOrEnv("SPREADSHEET_ID")) ||
+          (await getBindingOrEnv("GOOGLE_SHEET_ID")) ||
+          (await getBindingOrEnv("SHEET_ID")) ||
+          "",
       );
-      spreadsheetTitle = metadata.properties?.title || "Google Sheets Backup";
-      spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
-      const existingTitles = new Set((metadata.sheets ?? []).map((sheet) => sheet.properties?.title || ""));
-      const missingTabs = tabs.filter((tab) => !existingTitles.has(tab.title));
-      if (missingTabs.length > 0) {
-        await googleSheetsRequest(
-          `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
-          token,
-          {
-            method: "POST",
-            body: JSON.stringify({
-              requests: missingTabs.map((tab) => ({ addSheet: { properties: { title: tab.title } } })),
-            }),
-          },
-        );
-      }
+    if (!spreadsheetId) {
+      throw new Error("กรุณากำหนด GOOGLE_SPREADSHEET_ID ใน Railway Variables ก่อนเปิดใช้ Server Backup");
+    }
+
+    const metadata = await googleSheetsRequest<{
+      properties?: { title?: string };
+      sheets?: Array<{ properties?: { title?: string } }>;
+    }>(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title,sheets.properties.title`,
+      token,
+    );
+    const spreadsheetTitle = metadata.properties?.title || "Google Sheets Backup";
+    const spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+    const existingTitles = new Set((metadata.sheets ?? []).map((sheet) => sheet.properties?.title || ""));
+    const missingTabs = tabs.filter((tab) => !existingTitles.has(tab.title));
+    if (missingTabs.length > 0) {
       await googleSheetsRequest(
-        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchClear`,
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
         token,
-        { method: "POST", body: JSON.stringify({ ranges: tabs.map((tab) => `'${tab.title}'!A:Z`) }) },
+        {
+          method: "POST",
+          body: JSON.stringify({
+            requests: missingTabs.map((tab) => ({ addSheet: { properties: { title: tab.title } } })),
+          }),
+        },
       );
     }
+    await googleSheetsRequest(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchClear`,
+      token,
+      { method: "POST", body: JSON.stringify({ ranges: tabs.map((tab) => `'${tab.title}'!A:Z`) }) },
+    );
 
     await googleSheetsRequest(
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`,
