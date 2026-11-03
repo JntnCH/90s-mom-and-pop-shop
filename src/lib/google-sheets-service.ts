@@ -906,9 +906,13 @@ export async function backupFullDatabaseToGoogleSheets(options?: {
       );
     }
   } catch (err) {
-    console.warn(
-      "Could not pre-fetch Cloud SQL snapshot, proceeding with current store state:",
+    console.error(
+      "[GoogleSheets] Backup aborted because the authoritative server snapshot could not be loaded:",
       err,
+    );
+    throw new Error(
+      "ยกเลิกการสำรองข้อมูล: ไม่สามารถอ่านข้อมูลล่าสุดจากฐานข้อมูลหลักได้ เพื่อป้องกันการสำรองข้อมูลที่ไม่ครบถ้วน",
+      { cause: err },
     );
   }
 
