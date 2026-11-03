@@ -446,6 +446,77 @@ function safeSet<T>(key: string, value: T): void {
   }
 }
 
+export function calculateSuggestedQuantity(
+  product: ProductItem,
+  strategy: "TARGET_PAR" | "MINIMUM_RESTORE" | "WEEKEND_BUFFER" | "DOUBLE_BUFFER" = "TARGET_PAR",
+  customMultiplier: number = 1.0,
+): number {
+  const current = Math.max(0, product.stock || 0);
+  const min = Math.max(1, product.minStock || 5);
+  const target = Math.max(min, product.targetStock || product.reorderQuantity || min * 2);
+  let calculated = 0;
+  switch (strategy) {
+    case "TARGET_PAR":
+      calculated = Math.max(0, target - current);
+      break;
+    case "MINIMUM_RESTORE":
+      calculated = Math.max(1, min + Math.ceil(min * 0.2) - current);
+      break;
+    case "WEEKEND_BUFFER":
+      calculated = Math.max(1, Math.ceil((target - current) * 1.5));
+      break;
+    case "DOUBLE_BUFFER":
+      calculated = Math.max(1, Math.ceil((target - current) * 2.0));
+      break;
+  }
+  if (customMultiplier > 0 && customMultiplier !== 1.0) {
+    calculated = Math.max(1, Math.ceil(calculated * customMultiplier));
+  }
+  if (calculated <= 0 && current <= min) {
+    calculated = Math.max(1, product.reorderQuantity || min);
+  }
+  return calculated;
+}
+
+export interface SmartReorderForecastItem {
+  product: ProductItem;
+  currentStock: number;
+  minStock: number;
+  targetStock: number;
+  suggestedQuantity: number;
+  estimatedCost: number;
+  urgency: "HIGH" | "MEDIUM";
+  isOutOfStock: boolean;
+}
+
+export function getSmartReorderForecast(
+  products?: ProductItem[],
+  strategy: "TARGET_PAR" | "MINIMUM_RESTORE" | "WEEKEND_BUFFER" | "DOUBLE_BUFFER" = "TARGET_PAR",
+  multiplier: number = 1.0,
+): SmartReorderForecastItem[] {
+  const list = products && products.length > 0 ? products : MasterStore.getReorderProducts();
+  return list.map((p) => {
+    const suggestedQty = calculateSuggestedQuantity(p, strategy, multiplier);
+    const isOutOfStock = p.stock <= 0;
+    const urgency = isOutOfStock
+      ? ("HIGH" as const)
+      : p.stock <= Math.ceil(p.minStock * 0.5)
+        ? ("HIGH" as const)
+        : ("MEDIUM" as const);
+    const estimatedCost = (p.costPrice || 0) * suggestedQty;
+    return {
+      product: p,
+      currentStock: p.stock,
+      minStock: p.minStock,
+      targetStock: p.targetStock || p.reorderQuantity || p.minStock * 2,
+      suggestedQuantity: suggestedQty,
+      estimatedCost,
+      urgency,
+      isOutOfStock,
+    };
+  });
+}
+
 export const MasterStore = {
   hasSavedZones(): boolean {
     if (typeof window === "undefined") return false;
@@ -638,57 +709,55 @@ export const MasterStore = {
     strategy: "TARGET_PAR" | "MINIMUM_RESTORE" | "WEEKEND_BUFFER" | "DOUBLE_BUFFER" = "TARGET_PAR",
     customMultiplier: number = 1.0,
   ): number {
-    const current = Math.max(0, product.stock || 0);
-    const min = Math.max(1, product.minStock || 5);
-    const target = Math.max(min, product.targetStock || product.reorderQuantity || min * 2);
-    let calculated = 0;
-    switch (strategy) {
-      case "TARGET_PAR":
-        calculated = Math.max(0, target - current);
-        break;
-      case "MINIMUM_RESTORE":
-        calculated = Math.max(1, min + Math.ceil(min * 0.2) - current);
-        break;
-      case "WEEKEND_BUFFER":
-        calculated = Math.max(1, Math.ceil((target - current) * 1.5));
-        break;
-      case "DOUBLE_BUFFER":
-        calculated = Math.max(1, Math.ceil((target - current) * 2.0));
-        break;
-    }
-    if (customMultiplier > 0 && customMultiplier !== 1.0) {
-      calculated = Math.max(1, Math.ceil(calculated * customMultiplier));
-    }
-    if (calculated <= 0 && current <= min) {
-      calculated = Math.max(1, product.reorderQuantity || min);
-    }
-    return calculated;
+    return calculateSuggestedQuantity(product, strategy, customMultiplier);
   },
   getSmartReorderForecast(
     strategy: "TARGET_PAR" | "MINIMUM_RESTORE" | "WEEKEND_BUFFER" | "DOUBLE_BUFFER" = "TARGET_PAR",
     multiplier: number = 1.0,
-  ) {
-    const products = this.getReorderProducts();
-    return products.map((p) => {
-      const suggestedQty = this.calculateSuggestedQuantity(p, strategy, multiplier);
-      const isOutOfStock = p.stock <= 0;
-      const urgency = isOutOfStock
-        ? ("HIGH" as const)
-        : p.stock <= Math.ceil(p.minStock * 0.5)
-          ? ("HIGH" as const)
-          : ("MEDIUM" as const);
-      const estimatedCost = (p.costPrice || 0) * suggestedQty;
-      return {
-        product: p,
-        currentStock: p.stock,
-        minStock: p.minStock,
-        targetStock: p.targetStock || p.reorderQuantity || p.minStock * 2,
-        suggestedQuantity: suggestedQty,
-        estimatedCost,
-        urgency,
-        isOutOfStock,
-      };
-    });
+  ): SmartReorderForecastItem[] {
+    return getSmartReorderForecast(this.getReorderProducts(), strategy, multiplier);
+  },
+
+  getDraftPurchaseOrder() {
+    return safeGet<{
+      orderList?: {
+        productId: string;
+        productName: string;
+        barcode?: string;
+        quantity: number;
+        unitId?: string;
+        unitName?: string;
+        costPrice?: number;
+        note?: string;
+        categoryId?: string;
+        subCategoryId?: string;
+        zoneId?: string;
+      }[];
+      supplierName?: string;
+      calculationStrategy?: string;
+      savedAt?: string;
+    } | null>(STORAGE_KEYS.PO_DRAFT, null);
+  },
+  saveDraftPurchaseOrder(draft: unknown): void {
+    safeSet(STORAGE_KEYS.PO_DRAFT, draft);
+  },
+  clearDraftPurchaseOrder(): void {
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(STORAGE_KEYS.PO_DRAFT);
+        notifyStoreChange(STORAGE_KEYS.PO_DRAFT);
+      } catch {
+        // ignore
+      }
+    }
+  },
+
+  getDeletedPurchaseOrderIds(): string[] {
+    return safeGet<string[]>(STORAGE_KEYS.DELETED_PO_IDS, []);
+  },
+
+  getPurchaseOrderById(id: string): PurchaseOrderRecord | undefined {
+    return this.getPurchaseOrders().find((po) => po.id === id);
   },
 
   getReceives(): ReceiveItem[] {
@@ -703,12 +772,23 @@ export const MasterStore = {
     this.saveReceives([...list, newItem]);
     return newItem;
   },
+  clearReceives(): void {
+    this.saveReceives([]);
+  },
 
   getFollowers(): LineUserFollower[] {
     return safeGet<LineUserFollower[]>(STORAGE_KEYS.FOLLOWERS, DEFAULT_FOLLOWERS);
   },
   saveFollowers(items: LineUserFollower[]) {
     safeSet(STORAGE_KEYS.FOLLOWERS, items);
+  },
+  saveFollower(follower: LineUserFollower): void {
+    const list = this.getFollowers();
+    const exists = list.some((f) => f.userId === follower.userId);
+    const nextList = exists
+      ? list.map((f) => (f.userId === follower.userId ? { ...f, ...follower } : f))
+      : [...list, follower];
+    this.saveFollowers(nextList);
   },
 
   getMovements(): StockMovementLog[] {
@@ -723,6 +803,121 @@ export const MasterStore = {
     this.saveMovements([...list, newItem]);
     return newItem;
   },
+  clearMovements(): void {
+    this.saveMovements([]);
+  },
+
+  receiveStock(
+    productIdOrBarcode: string,
+    quantity: number,
+    operator: string = "ผู้ดูแลระบบ",
+    note?: string,
+    fallbackProductName?: string,
+  ): { success: boolean; product?: ProductItem; error?: string } {
+    if (quantity <= 0) return { success: false, error: "จำนวนต้องมากกว่า 0" };
+    const allProds = this.getProducts();
+    const prod = allProds.find(
+      (p) => p.id === productIdOrBarcode || p.barcode === productIdOrBarcode,
+    );
+    if (!prod) {
+      return { success: false, error: "ไม่พบสินค้าในระบบ" };
+    }
+    const prevStock = prod.stock || 0;
+    const newStock = prevStock + quantity;
+    const updated = {
+      ...prod,
+      stock: newStock,
+      updatedAt: new Date().toISOString(),
+    };
+    this.updateProduct(prod.id, updated);
+    this.addMovement({
+      timestamp: new Date().toISOString(),
+      productId: prod.id,
+      productName: prod.name || fallbackProductName || "สินค้า",
+      barcode: prod.barcode,
+      type: "RECEIVE",
+      quantity,
+      previousStock: prevStock,
+      newStock,
+      operator,
+      note: note || `รับสินค้าเข้าสต็อก +${quantity}`,
+    });
+    return { success: true, product: updated };
+  },
+
+  issueStock(
+    productIdOrBarcode: string,
+    quantity: number,
+    operator: string = "ผู้เบิกจ่าย",
+    note?: string,
+  ): { success: boolean; product?: ProductItem; error?: string } {
+    if (quantity <= 0) return { success: false, error: "จำนวนต้องมากกว่า 0" };
+    const allProds = this.getProducts();
+    const prod = allProds.find(
+      (p) => p.id === productIdOrBarcode || p.barcode === productIdOrBarcode,
+    );
+    if (!prod) {
+      return { success: false, error: "ไม่พบสินค้าในระบบ" };
+    }
+    const prevStock = prod.stock || 0;
+    const newStock = Math.max(0, prevStock - quantity);
+    const updated = {
+      ...prod,
+      stock: newStock,
+      updatedAt: new Date().toISOString(),
+    };
+    this.updateProduct(prod.id, updated);
+    this.addMovement({
+      timestamp: new Date().toISOString(),
+      productId: prod.id,
+      productName: prod.name,
+      barcode: prod.barcode,
+      type: "ISSUE",
+      quantity,
+      previousStock: prevStock,
+      newStock,
+      operator,
+      note: note || `จ่ายสินค้าออก -${quantity}`,
+    });
+    return { success: true, product: updated };
+  },
+
+  adjustStock(
+    productIdOrBarcode: string,
+    newStockValue: number,
+    operator: string = "ผู้ดูแลระบบ",
+    note?: string,
+  ): { success: boolean; product?: ProductItem; error?: string } {
+    const validStock = Math.max(0, Number(newStockValue) || 0);
+    const allProds = this.getProducts();
+    const prod = allProds.find(
+      (p) => p.id === productIdOrBarcode || p.barcode === productIdOrBarcode,
+    );
+    if (!prod) {
+      return { success: false, error: "ไม่พบสินค้าในระบบ" };
+    }
+    const prevStock = prod.stock || 0;
+    const diff = validStock - prevStock;
+    const updated = {
+      ...prod,
+      stock: validStock,
+      updatedAt: new Date().toISOString(),
+    };
+    this.updateProduct(prod.id, updated);
+    this.addMovement({
+      timestamp: new Date().toISOString(),
+      productId: prod.id,
+      productName: prod.name,
+      barcode: prod.barcode,
+      type: "ADJUST",
+      quantity: Math.abs(diff),
+      previousStock: prevStock,
+      newStock: validStock,
+      operator,
+      note: note || `ปรับสต็อก (${prevStock} -> ${validStock})`,
+    });
+    return { success: true, product: updated };
+  },
 
   getPurchaseOrders(): PurchaseOrderRecord[] {
     return safeGet<PurchaseOrderRecord[]>(STORAGE_KEYS.PURCHASE_ORDERS, DEFAULT_PURCHASE_ORDERS);
@@ -736,9 +931,56 @@ export const MasterStore = {
     this.savePurchaseOrders([...list, newItem]);
     return newItem;
   },
+  savePurchaseOrder(
+    record: (Omit<PurchaseOrderRecord, "id"> & { id?: string }) | PurchaseOrderRecord,
+  ): PurchaseOrderRecord {
+    const list = this.getPurchaseOrders();
+    if (record.id) {
+      const idx = list.findIndex((po) => po.id === record.id);
+      if (idx >= 0) {
+        const updated = { ...list[idx], ...record } as PurchaseOrderRecord;
+        const nextList = [...list];
+        nextList[idx] = updated;
+        this.savePurchaseOrders(nextList);
+        return updated;
+      }
+    }
+    const newPO: PurchaseOrderRecord = {
+      ...record,
+      id: record.id || `po-${Date.now()}`,
+      orderNumber: record.orderNumber || `PO-${Date.now().toString().slice(-6)}`,
+      createdAt: record.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      status: (record.status as PurchaseOrderRecord["status"]) || "DRAFT",
+      items: record.items || [],
+      totalQuantity:
+        record.totalQuantity ??
+        (record.items ? record.items.reduce((s, it) => s + (it.quantity || 0), 0) : 0),
+      totalCost:
+        record.totalCost ??
+        (record.items
+          ? record.items.reduce(
+              (s, it) => s + (it.total || (it.costPrice || 0) * (it.quantity || 0)),
+              0,
+            )
+          : 0),
+    };
+    this.savePurchaseOrders([newPO, ...list]);
+    return newPO;
+  },
   updatePurchaseOrder(id: string, updates: Partial<PurchaseOrderRecord>) {
     const list = this.getPurchaseOrders().map((po) => (po.id === id ? { ...po, ...updates } : po));
     this.savePurchaseOrders(list);
+  },
+  updatePurchaseOrderStatus(
+    id: string,
+    status: "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED",
+  ): void {
+    const list = this.getPurchaseOrders();
+    const updated = list.map((po) =>
+      po.id === id ? { ...po, status, updatedAt: new Date().toISOString() } : po,
+    );
+    this.savePurchaseOrders(updated);
   },
   deletePurchaseOrder(id: string) {
     const deleted = safeGet<string[]>(STORAGE_KEYS.DELETED_PO_IDS, []);
@@ -748,6 +990,57 @@ export const MasterStore = {
     const list = this.getPurchaseOrders().filter((po) => po.id !== id);
     this.savePurchaseOrders(list);
     return true;
+  },
+  receivePurchaseOrderIntoStock(
+    poId: string,
+    operator: string = "ผู้ดูแลระบบ",
+  ): { success: boolean; message?: string; error?: string } {
+    const po = this.getPurchaseOrderById(poId);
+    if (!po) {
+      return { success: false, error: "ไม่พบใบสั่งซื้อ" };
+    }
+    if (po.status === "RECEIVED") {
+      return { success: false, error: "ใบสั่งซื้อนี้ได้ถูกตรวจรับเข้าสต็อกไปแล้ว" };
+    }
+    const allProds = this.getProducts();
+    const movementsToAdd: Omit<StockMovementLog, "id">[] = [];
+    const updatedProds = allProds.map((prod) => {
+      const matchItem = po.items.find(
+        (it) => it.productId === prod.id || it.barcode === prod.barcode,
+      );
+      if (matchItem && matchItem.quantity > 0) {
+        const prevStock = prod.stock || 0;
+        const newStock = prevStock + matchItem.quantity;
+        movementsToAdd.push({
+          timestamp: new Date().toISOString(),
+          productId: prod.id,
+          productName: prod.name,
+          barcode: prod.barcode,
+          type: "RECEIVE",
+          quantity: matchItem.quantity,
+          previousStock: prevStock,
+          newStock,
+          operator,
+          note: `ตรวจรับเข้าสต็อกตามใบสั่งซื้อ ${po.orderNumber}`,
+        });
+        return {
+          ...prod,
+          stock: newStock,
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return prod;
+    });
+
+    this.saveProducts(updatedProds);
+    for (const mov of movementsToAdd) {
+      this.addMovement(mov);
+    }
+    this.updatePurchaseOrderStatus(poId, "RECEIVED");
+    return {
+      success: true,
+      message: `ตรวจรับสินค้าตามใบสั่งซื้อ ${po.orderNumber} (${po.items.length} รายการ, ${po.totalQuantity} ชิ้น) เข้าสต็อกเรียบร้อยแล้ว`,
+    };
   },
 
   syncDatabaseSnapshot(data: {

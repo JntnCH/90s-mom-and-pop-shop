@@ -9,16 +9,11 @@
     "build": "NODE_ENV=production vite build",
     "postbuild": "node scripts/patch-cloudflare-worker.mjs",
     "build:dev": "vite build --mode development",
-    "build:cloudflare": "rm -rf public/assets/aistudio .output/public/assets/aistudio && NODE_ENV=production NITRO_PRESET=cloudflare-module vite build && node scripts/patch-cloudflare-worker.mjs",
     "preview": "vite preview",
     "check": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint .",
-    "format": "prettier --write .",
-    "deploy": "npm run deploy:cloudflare",
-    "deploy:cloudflare": "npm run build:cloudflare && npx wrangler deploy",
-    "deploy:dry-run": "npm run build:cloudflare && npx wrangler deploy --dry-run",
-    "deploy:incremental": "node scripts/incremental-deploy.mjs"
+    "format": "prettier --write ."
   },
   "overrides": {
     "rolldown": "1.2.1"

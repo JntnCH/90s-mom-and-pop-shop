@@ -96,11 +96,59 @@ export const createPool = () => {
   return globalThis._postgresPool;
 };
 
+function createMockDb(): ReturnType<typeof drizzle<typeof schema>> {
+  const noOp = {
+    findMany: async () => [],
+    findFirst: async () => null,
+    findUnique: async () => null,
+    create: async (d: { data?: unknown }) => d?.data ?? {},
+    update: async (d: { data?: unknown }) => d?.data ?? {},
+    delete: async () => ({}),
+  };
+
+  const createChainable = (terminalValue: unknown = []): unknown => {
+    const handler: ProxyHandler<object> = {
+      get(_t, prop) {
+        if (prop === "then") {
+          return (resolve: (v: unknown) => void) => resolve(terminalValue);
+        }
+        return (..._args: unknown[]) => new Proxy({}, handler);
+      },
+    };
+    return new Proxy({}, handler);
+  };
+
+  return new Proxy({} as ReturnType<typeof drizzle<typeof schema>>, {
+    get(_t, prop) {
+      if (prop === "query") {
+        return new Proxy({}, { get: () => noOp });
+      }
+      if (prop === "execute") {
+        return async () => ({ rows: [] });
+      }
+      if (prop === "transaction") {
+        return async (cb: (tx: unknown) => unknown) => cb(createMockDb());
+      }
+      return () => createChainable([]);
+    },
+  });
+}
+
 /** Lazy accessor — avoids top-level process.env on client bundles */
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
-function getDb() {
+function getDb(): ReturnType<typeof drizzle<typeof schema>> {
   if (!_db) {
-    _db = drizzle(createPool(), { schema });
+    if (!isPostgresConfigured()) {
+      console.warn("[AI Studio] Database not configured — using in-memory mock");
+      _db = createMockDb();
+    } else {
+      try {
+        _db = drizzle(createPool(), { schema });
+      } catch (err) {
+        console.warn("[AI Studio] Database connection failed — using in-memory mock", err);
+        _db = createMockDb();
+      }
+    }
   }
   return _db;
 }

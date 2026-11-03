@@ -145,6 +145,8 @@ import { PrinterService } from "@/lib/printer-service";
 import { generateStoreBarcode } from "@/lib/barcode-engine";
 import {
   MasterStore,
+  calculateSuggestedQuantity,
+  getSmartReorderForecast,
   type CategoryItem,
   type LineUserFollower,
   type ProductItem,
@@ -504,7 +506,10 @@ function ReorderPage() {
       // ignore
     }
 
-    const draft = MasterStore.getDraftPurchaseOrder();
+    const draft =
+      typeof MasterStore.getDraftPurchaseOrder === "function"
+        ? MasterStore.getDraftPurchaseOrder()
+        : null;
     if (draft && draft.orderList && draft.orderList.length > 0) {
       setOrderList(draft.orderList);
       if (draft.supplierName) setSupplierNameInput(draft.supplierName);
@@ -522,11 +527,10 @@ function ReorderPage() {
             productId: p.id,
             productName: p.name,
             barcode: p.barcode,
-            quantity: MasterStore.calculateSuggestedQuantity(
-              p,
-              calculationStrategy,
-              customMultiplier,
-            ),
+            quantity:
+              typeof MasterStore.calculateSuggestedQuantity === "function"
+                ? MasterStore.calculateSuggestedQuantity(p, calculationStrategy, customMultiplier)
+                : calculateSuggestedQuantity(p, calculationStrategy, customMultiplier),
             unitId: p.unitId,
             costPrice: p.costPrice,
             categoryId: p.categoryId,
@@ -607,7 +611,10 @@ function ReorderPage() {
 
     if (editingPOId) {
       // When editing an existing draft PO: Auto-save back to MasterStore so navigating away NEVER loses edits!
-      const currentPO = MasterStore.getPurchaseOrderById(editingPOId);
+      const currentPO =
+        typeof MasterStore.getPurchaseOrderById === "function"
+          ? MasterStore.getPurchaseOrderById(editingPOId)
+          : MasterStore.getPurchaseOrders().find((po) => po.id === editingPOId);
       if (currentPO) {
         const allProds = MasterStore.getProducts();
         const updatedItems = orderList.map((item) => {
@@ -651,28 +658,32 @@ function ReorderPage() {
     }
 
     // When creating a new order: Auto-save to PO draft
-    MasterStore.saveDraftPurchaseOrder({
-      orderList: orderList.map((item) => ({
-        productId: item.productId,
-        productName: item.productName,
-        barcode: item.barcode,
-        quantity: item.quantity,
-        unitId: item.unitId,
-        unitName: MasterStore.getUnitName(item.unitId) || item.unitName,
-        ...(item.costPrice !== undefined ? { costPrice: item.costPrice } : {}),
-        ...(item.note !== undefined ? { note: item.note } : {}),
-        ...(item.categoryId !== undefined ? { categoryId: item.categoryId } : {}),
-        ...(item.subCategoryId !== undefined ? { subCategoryId: item.subCategoryId } : {}),
-        ...(item.zoneId !== undefined ? { zoneId: item.zoneId } : {}),
-      })),
-      supplierName: supplierNameInput,
-      calculationStrategy,
-    });
+    if (typeof MasterStore.saveDraftPurchaseOrder === "function") {
+      MasterStore.saveDraftPurchaseOrder({
+        orderList: orderList.map((item) => ({
+          productId: item.productId,
+          productName: item.productName,
+          barcode: item.barcode,
+          quantity: item.quantity,
+          unitId: item.unitId,
+          unitName: MasterStore.getUnitName(item.unitId) || item.unitName,
+          ...(item.costPrice !== undefined ? { costPrice: item.costPrice } : {}),
+          ...(item.note !== undefined ? { note: item.note } : {}),
+          ...(item.categoryId !== undefined ? { categoryId: item.categoryId } : {}),
+          ...(item.subCategoryId !== undefined ? { subCategoryId: item.subCategoryId } : {}),
+          ...(item.zoneId !== undefined ? { zoneId: item.zoneId } : {}),
+        })),
+        supplierName: supplierNameInput,
+        calculationStrategy,
+      });
+    }
     setLastAutoSavedAt(new Date());
   }, [orderList, supplierNameInput, calculationStrategy, editingPOId]);
 
   const handleClearDraft = () => {
-    MasterStore.clearDraftPurchaseOrder();
+    if (typeof MasterStore.clearDraftPurchaseOrder === "function") {
+      MasterStore.clearDraftPurchaseOrder();
+    }
     setOrderList([]);
     setHasRestoredDraft(false);
     toast.info("ล้างแบบร่างใบสั่งซื้อเรียบร้อยแล้ว");
@@ -825,7 +836,10 @@ function ReorderPage() {
   const allReorderNeeded = products.filter((p) => p.isActive !== false && p.stock <= p.minStock);
 
   // Phase 5: Smart Reorder Forecast List
-  const forecastList = MasterStore.getSmartReorderForecast(calculationStrategy, customMultiplier);
+  const forecastList =
+    typeof MasterStore.getSmartReorderForecast === "function"
+      ? MasterStore.getSmartReorderForecast(calculationStrategy, customMultiplier)
+      : getSmartReorderForecast(products, calculationStrategy, customMultiplier);
   const displayedForecastList = forecastList.filter((item) => {
     if (calcCatFilter !== "all" && item.product.categoryId !== calcCatFilter) return false;
     if (calcSubCatFilter !== "all" && item.product.subCategoryId !== calcSubCatFilter) return false;
@@ -981,7 +995,10 @@ function ReorderPage() {
     setEditingPOId(null);
     setEditingPONumber("");
     setEditingPOCreatedAt("");
-    const draft = MasterStore.getDraftPurchaseOrder();
+    const draft =
+      typeof MasterStore.getDraftPurchaseOrder === "function"
+        ? MasterStore.getDraftPurchaseOrder()
+        : null;
     if (draft && draft.orderList && draft.orderList.length > 0) {
       setOrderList(draft.orderList);
       if (draft.supplierName) setSupplierNameInput(draft.supplierName);
@@ -1542,7 +1559,9 @@ function ReorderPage() {
           /* ignore */
         }
         setPurchaseOrders(MasterStore.getPurchaseOrders());
-        MasterStore.clearDraftPurchaseOrder();
+        if (typeof MasterStore.clearDraftPurchaseOrder === "function") {
+          MasterStore.clearDraftPurchaseOrder();
+        }
         setOrderList([]);
         setSupplierNameInput("");
         setEditingPOId(null);
@@ -1594,7 +1613,9 @@ function ReorderPage() {
     });
 
     setPurchaseOrders(MasterStore.getPurchaseOrders());
-    MasterStore.clearDraftPurchaseOrder();
+    if (typeof MasterStore.clearDraftPurchaseOrder === "function") {
+      MasterStore.clearDraftPurchaseOrder();
+    }
     setOrderList([]);
     setSupplierNameInput("");
     setStatusMessage({
@@ -4445,11 +4466,18 @@ function ReorderPage() {
                     ) : (
                       displayedAlertItems.map((p) => {
                         const isOut = p.stock <= 0;
-                        const needed = MasterStore.calculateSuggestedQuantity(
-                          p,
-                          calculationStrategy,
-                          customMultiplier,
-                        );
+                        const needed =
+                          typeof MasterStore.calculateSuggestedQuantity === "function"
+                            ? MasterStore.calculateSuggestedQuantity(
+                                p,
+                                calculationStrategy,
+                                customMultiplier,
+                              )
+                            : calculateSuggestedQuantity(
+                                p,
+                                calculationStrategy,
+                                customMultiplier,
+                              );
                         const isAdded = orderList.some((item) => item.productId === p.id);
 
                         return (

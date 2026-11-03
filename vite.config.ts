@@ -48,8 +48,9 @@ export default defineConfig({
     ],
   },
   server: {
-    host: "::",
-    port: 8080,
+    host: "0.0.0.0",
+    port: 3000,
+    allowedHosts: true,
   },
   define: {
     "import.meta.env.VITE_LINE_LIFF_ID": JSON.stringify(
