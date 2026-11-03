@@ -1283,31 +1283,34 @@ function ReorderPage() {
 
     setOrderList((prev) => {
       const existing = prev.find((i) => i.productId === prodId);
-      if (existing) {
-        return prev.map((i) =>
-          i.productId === prodId
-            ? {
-                ...i,
-                quantity: i.quantity + qty,
-                unitId: uId,
-                unitName: getUnitName(uId),
-                costPrice: cost,
-                note: note || i.note,
-              }
-            : i,
-        );
-      }
-      return [
-        ...prev,
-        {
-          productId: prodId,
-          quantity: qty,
-          unitId: uId,
-          unitName: getUnitName(uId),
-          costPrice: cost,
-          note: note || undefined,
-        },
-      ];
+      const nextItem = existing
+        ? {
+            ...existing,
+            productName: prod.name,
+            barcode: prod.barcode,
+            quantity: existing.quantity + qty,
+            unitId: uId,
+            unitName: getUnitName(uId),
+            costPrice: cost,
+            note: note || existing.note,
+            categoryId: prod.categoryId,
+            subCategoryId: prod.subCategoryId,
+            zoneId: prod.zoneId,
+          }
+        : {
+            productId: prodId,
+            productName: prod.name,
+            barcode: prod.barcode,
+            quantity: qty,
+            unitId: uId,
+            unitName: getUnitName(uId),
+            costPrice: cost,
+            note: note || undefined,
+            categoryId: prod.categoryId,
+            subCategoryId: prod.subCategoryId,
+            zoneId: prod.zoneId,
+          };
+      return [nextItem, ...prev.filter((i) => i.productId !== prodId)];
     });
 
     toast.success(
@@ -1337,14 +1340,19 @@ function ReorderPage() {
         return prev.map((i) => (i.productId === prod.id ? { ...i, quantity: nextQty } : i));
       }
       return [
-        ...prev,
         {
           productId: prod.id,
+          productName: prod.name,
+          barcode: prod.barcode,
           quantity: Math.max(1, addQty),
           unitId: uId,
           unitName: getUnitName(uId),
           costPrice: cost,
+          categoryId: prod.categoryId,
+          subCategoryId: prod.subCategoryId,
+          zoneId: prod.zoneId,
         },
+        ...prev,
       ];
     });
 
@@ -1368,28 +1376,38 @@ function ReorderPage() {
     if (prodsToAdd.length === 0) return;
 
     setOrderList((prev) => {
-      const updated = [...prev];
-      for (const prod of prodsToAdd) {
+      const addedProdIds = new Set(prodsToAdd.map((p) => p.id));
+      const prependedItems = prodsToAdd.map((prod) => {
         const qty = prod.reorderQuantity && prod.reorderQuantity > 0 ? prod.reorderQuantity : 10;
         const uId = prod.unitId;
         const cost = prod.costPrice;
-        const existingIdx = updated.findIndex((i) => i.productId === prod.id);
-        if (existingIdx >= 0) {
-          updated[existingIdx] = {
-            ...updated[existingIdx],
-            quantity: updated[existingIdx].quantity + qty,
+        const existing = prev.find((i) => i.productId === prod.id);
+        if (existing) {
+          return {
+            ...existing,
+            productName: prod.name,
+            barcode: prod.barcode,
+            quantity: existing.quantity + qty,
+            categoryId: prod.categoryId,
+            subCategoryId: prod.subCategoryId,
+            zoneId: prod.zoneId,
           };
-        } else {
-          updated.push({
-            productId: prod.id,
-            quantity: qty,
-            unitId: uId,
-            unitName: getUnitName(uId),
-            costPrice: cost,
-          });
         }
-      }
-      return updated;
+        return {
+          productId: prod.id,
+          productName: prod.name,
+          barcode: prod.barcode,
+          quantity: qty,
+          unitId: uId,
+          unitName: getUnitName(uId),
+          costPrice: cost,
+          categoryId: prod.categoryId,
+          subCategoryId: prod.subCategoryId,
+          zoneId: prod.zoneId,
+        };
+      });
+      const remaining = prev.filter((i) => !addedProdIds.has(i.productId));
+      return [...prependedItems, ...remaining];
     });
 
     const sample = prodsToAdd
@@ -1424,10 +1442,15 @@ function ReorderPage() {
     const listToApply = displayedForecastList.length > 0 ? displayedForecastList : forecastList;
     const calculatedItems = listToApply.map((f) => ({
       productId: f.product.id,
+      productName: f.product.name,
+      barcode: f.product.barcode,
       quantity: f.suggestedQuantity,
       unitId: f.product.unitId,
       unitName: getUnitName(f.product.unitId),
       costPrice: f.product.costPrice,
+      categoryId: f.product.categoryId,
+      subCategoryId: f.product.subCategoryId,
+      zoneId: f.product.zoneId,
     }));
     setOrderList(calculatedItems);
     setActiveTab("create_po");
@@ -1439,21 +1462,29 @@ function ReorderPage() {
   const handleApplySingleForecast = (item: (typeof forecastList)[0]) => {
     setOrderList((prev) => {
       const existing = prev.find((i) => i.productId === item.product.id);
-      if (existing) {
-        return prev.map((i) =>
-          i.productId === item.product.id ? { ...i, quantity: item.suggestedQuantity } : i,
-        );
-      }
-      return [
-        ...prev,
-        {
-          productId: item.product.id,
-          quantity: item.suggestedQuantity,
-          unitId: item.product.unitId,
-          unitName: getUnitName(item.product.unitId),
-          costPrice: item.product.costPrice,
-        },
-      ];
+      const nextItem = existing
+        ? {
+            ...existing,
+            productName: item.product.name,
+            barcode: item.product.barcode,
+            quantity: item.suggestedQuantity,
+            categoryId: item.product.categoryId,
+            subCategoryId: item.product.subCategoryId,
+            zoneId: item.product.zoneId,
+          }
+        : {
+            productId: item.product.id,
+            productName: item.product.name,
+            barcode: item.product.barcode,
+            quantity: item.suggestedQuantity,
+            unitId: item.product.unitId,
+            unitName: getUnitName(item.product.unitId),
+            costPrice: item.product.costPrice,
+            categoryId: item.product.categoryId,
+            subCategoryId: item.product.subCategoryId,
+            zoneId: item.product.zoneId,
+          };
+      return [nextItem, ...prev.filter((i) => i.productId !== item.product.id)];
     });
   };
 
@@ -4526,8 +4557,19 @@ function ReorderPage() {
                                   className="h-8 text-xs rounded-lg font-semibold bg-emerald-600 hover:bg-emerald-700 text-white"
                                   onClick={() => {
                                     setOrderList((prev) => [
-                                      ...prev,
-                                      { productId: p.id, quantity: needed, unitId: p.unitId },
+                                      {
+                                        productId: p.id,
+                                        productName: p.name,
+                                        barcode: p.barcode,
+                                        quantity: needed,
+                                        unitId: p.unitId,
+                                        unitName: getUnitName(p.unitId),
+                                        costPrice: p.costPrice,
+                                        categoryId: p.categoryId,
+                                        subCategoryId: p.subCategoryId,
+                                        zoneId: p.zoneId,
+                                      },
+                                      ...prev.filter((item) => item.productId !== p.id),
                                     ]);
                                     toast.success(`เพิ่ม ${p.name} เข้าใบสั่งซื้อแล้ว`);
                                   }}

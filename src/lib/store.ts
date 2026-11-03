@@ -95,6 +95,7 @@ export interface PurchaseOrderRecord {
   id: string;
   orderNumber: string;
   createdAt: string;
+  updatedAt?: string | undefined;
   supplierName?: string | undefined;
   items: {
     productId: string;
@@ -517,6 +518,57 @@ export function getSmartReorderForecast(
   });
 }
 
+function parseOrderDateMs(raw?: string): number {
+  if (!raw || typeof raw !== "string") return 0;
+  const trimmed = raw.trim();
+  if (!trimmed) return 0;
+
+  const thaiMatch = trimmed.match(
+    /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[\s,]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/,
+  );
+  if (thaiMatch) {
+    const day = Number(thaiMatch[1]);
+    const month = Number(thaiMatch[2]);
+    const rawYear = Number(thaiMatch[3]);
+    const year = rawYear >= 2400 ? rawYear - 543 : rawYear;
+    const hour = Number(thaiMatch[4] || 0);
+    const minute = Number(thaiMatch[5] || 0);
+    const second = Number(thaiMatch[6] || 0);
+    const dt = new Date(year, month - 1, day, hour, minute, second).getTime();
+    if (!Number.isNaN(dt) && dt > 0) return dt;
+  }
+
+  const parsed = Date.parse(trimmed);
+  return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function getPurchaseOrderSortTimestamp(po: PurchaseOrderRecord): number {
+  const updatedMs = parseOrderDateMs(po.updatedAt);
+  const createdMs = parseOrderDateMs(po.createdAt);
+  let idMs = 0;
+  if (typeof po.id === "string") {
+    const idMatch = po.id.match(/(\d{10,15})/);
+    if (idMatch) {
+      const n = Number(idMatch[1]);
+      if (!Number.isNaN(n) && n > 0) idMs = n;
+    }
+  }
+  return Math.max(updatedMs, createdMs, idMs);
+}
+
+export function sortPurchaseOrdersNewestFirst(
+  items: PurchaseOrderRecord[],
+): PurchaseOrderRecord[] {
+  if (!Array.isArray(items) || items.length <= 1) return Array.isArray(items) ? [...items] : [];
+  return items
+    .map((item, idx) => ({ item, idx, ts: getPurchaseOrderSortTimestamp(item) }))
+    .sort((a, b) => {
+      if (b.ts !== a.ts) return b.ts - a.ts;
+      return a.idx - b.idx;
+    })
+    .map((entry) => entry.item);
+}
+
 export const MasterStore = {
   hasSavedZones(): boolean {
     if (typeof window === "undefined") return false;
@@ -920,28 +972,42 @@ export const MasterStore = {
   },
 
   getPurchaseOrders(): PurchaseOrderRecord[] {
-    return safeGet<PurchaseOrderRecord[]>(STORAGE_KEYS.PURCHASE_ORDERS, DEFAULT_PURCHASE_ORDERS);
+    const raw = safeGet<PurchaseOrderRecord[]>(
+      STORAGE_KEYS.PURCHASE_ORDERS,
+      DEFAULT_PURCHASE_ORDERS,
+    );
+    return sortPurchaseOrdersNewestFirst(raw);
   },
   savePurchaseOrders(items: PurchaseOrderRecord[]) {
-    safeSet(STORAGE_KEYS.PURCHASE_ORDERS, items);
+    safeSet(STORAGE_KEYS.PURCHASE_ORDERS, sortPurchaseOrdersNewestFirst(items));
   },
   addPurchaseOrder(item: Omit<PurchaseOrderRecord, "id">) {
     const list = this.getPurchaseOrders();
-    const newItem: PurchaseOrderRecord = { ...item, id: `po-${Date.now()}` };
-    this.savePurchaseOrders([...list, newItem]);
+    const nowIso = new Date().toISOString();
+    const newItem: PurchaseOrderRecord = {
+      ...item,
+      id: `po-${Date.now()}`,
+      createdAt: item.createdAt || nowIso,
+      updatedAt: item.updatedAt || nowIso,
+    };
+    this.savePurchaseOrders([newItem, ...list]);
     return newItem;
   },
   savePurchaseOrder(
     record: (Omit<PurchaseOrderRecord, "id"> & { id?: string }) | PurchaseOrderRecord,
   ): PurchaseOrderRecord {
     const list = this.getPurchaseOrders();
+    const nowIso = new Date().toISOString();
     if (record.id) {
       const idx = list.findIndex((po) => po.id === record.id);
       if (idx >= 0) {
-        const updated = { ...list[idx], ...record } as PurchaseOrderRecord;
-        const nextList = [...list];
-        nextList[idx] = updated;
-        this.savePurchaseOrders(nextList);
+        const updated: PurchaseOrderRecord = {
+          ...list[idx],
+          ...record,
+          updatedAt: nowIso,
+        } as PurchaseOrderRecord;
+        const remaining = list.filter((po) => po.id !== record.id);
+        this.savePurchaseOrders([updated, ...remaining]);
         return updated;
       }
     }
@@ -949,8 +1015,8 @@ export const MasterStore = {
       ...record,
       id: record.id || `po-${Date.now()}`,
       orderNumber: record.orderNumber || `PO-${Date.now().toString().slice(-6)}`,
-      createdAt: record.createdAt || new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      createdAt: record.createdAt || nowIso,
+      updatedAt: nowIso,
       status: (record.status as PurchaseOrderRecord["status"]) || "DRAFT",
       items: record.items || [],
       totalQuantity:
@@ -968,9 +1034,21 @@ export const MasterStore = {
     this.savePurchaseOrders([newPO, ...list]);
     return newPO;
   },
-  updatePurchaseOrder(id: string, updates: Partial<PurchaseOrderRecord>) {
-    const list = this.getPurchaseOrders().map((po) => (po.id === id ? { ...po, ...updates } : po));
-    this.savePurchaseOrders(list);
+  updatePurchaseOrder(
+    id: string,
+    updates: Partial<PurchaseOrderRecord>,
+  ): PurchaseOrderRecord | undefined {
+    const list = this.getPurchaseOrders();
+    const idx = list.findIndex((po) => po.id === id);
+    if (idx < 0) return undefined;
+    const updated: PurchaseOrderRecord = {
+      ...list[idx],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    const remaining = list.filter((po) => po.id !== id);
+    this.savePurchaseOrders([updated, ...remaining]);
+    return updated;
   },
   updatePurchaseOrderStatus(
     id: string,
@@ -1103,7 +1181,10 @@ export const MasterStore = {
         localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(merged));
       }
       if (Array.isArray(data.purchaseOrders)) {
-        localStorage.setItem(STORAGE_KEYS.PURCHASE_ORDERS, JSON.stringify(data.purchaseOrders));
+        localStorage.setItem(
+          STORAGE_KEYS.PURCHASE_ORDERS,
+          JSON.stringify(sortPurchaseOrdersNewestFirst(data.purchaseOrders)),
+        );
       }
       if (Array.isArray(data.movements) && data.movements.length > 0) {
         localStorage.setItem(STORAGE_KEYS.MOVEMENTS, JSON.stringify(data.movements));
