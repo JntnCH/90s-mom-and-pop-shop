@@ -1,5 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getD1Snapshot } from "../db/d1-snapshot.ts";
+import { getDatabaseSnapshot } from "../db/db-service.ts";
+import { isPostgresConfigured } from "../db/index.ts";
 
 export interface ServiceAccountCredentials {
   clientEmail: string;
@@ -507,13 +509,258 @@ export const testGoogleSheetsConnectionFn = createServerFn({ method: "POST" })
     }
   });
 
-export function scheduleAutoBackupToServerSheets(): void {}
-
 export type ServerBackupResult = {
   success: boolean;
   message?: string;
   error?: string;
+  spreadsheetId?: string;
+  spreadsheetTitle?: string;
+  spreadsheetUrl?: string;
+  backedUpAt?: string;
+  stats?: {
+    products: number;
+    movements: number;
+    orders: number;
+    categories: number;
+  };
 };
+
+type ServerBackupTab = {
+  title: string;
+  rows: (string | number)[][];
+};
+
+let lastServerBackupStatus: ServerBackupResult & { checkedAt?: string } = {
+  success: false,
+  message: "ยังไม่มีประวัติการสำรองข้อมูลจากเซิร์ฟเวอร์",
+};
+let serverAutoBackupTimer: ReturnType<typeof setTimeout> | null = null;
+let serverBackupInProgress = false;
+
+export function getLastServerBackupStatus() {
+  return lastServerBackupStatus;
+}
+
+function cell(value: unknown): string | number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+function buildServerBackupTabs(snapshot: Awaited<ReturnType<typeof getDatabaseSnapshot>>): ServerBackupTab[] {
+  const products = snapshot.products ?? [];
+  const movements = snapshot.movements ?? [];
+  const orders = snapshot.purchaseOrders ?? [];
+  const categories = snapshot.categories ?? [];
+  const raw = JSON.stringify(snapshot);
+
+  return [
+    {
+      title: "📊 สรุปภาพรวม",
+      rows: [
+        ["ฐานข้อมูลสำรองร้านค้า - 90s Mom-and-Pop Shop"],
+        ["สำรองเมื่อ", new Date().toISOString()],
+        ["จำนวนสินค้า", products.length],
+        ["ประวัติสต็อก", movements.length],
+        ["ใบสั่งซื้อ", orders.length],
+        ["หมวดหมู่", categories.length],
+      ],
+    },
+    {
+      title: "📦 สินค้า",
+      rows: [
+        ["ID", "SKU", "Barcode", "ชื่อสินค้า", "หมวดหมู่", "หมวดย่อย", "โซน", "หน่วย", "ต้นทุน", "ราคาขาย", "คงเหลือ", "ขั้นต่ำ", "เป้าหมาย", "สถานะ", "อัปเดตล่าสุด"],
+        ...products.map((p) => [
+          cell(p.id), cell(p.sku), cell(p.barcode), cell(p.name), cell(p.categoryId),
+          cell(p.subCategoryId), cell(p.zoneId), cell(p.unitId), cell(p.costPrice),
+          cell(p.sellPrice), cell(p.stock), cell(p.minStock), cell(p.targetStock),
+          p.isActive === false ? "ระงับ" : "ใช้งาน", cell(p.updatedAt),
+        ]),
+      ],
+    },
+    {
+      title: "📝 การเคลื่อนไหวสต็อก",
+      rows: [
+        ["ID", "วันที่", "Product ID", "สินค้า", "Barcode", "ประเภท", "จำนวน", "ก่อนหน้า", "คงเหลือใหม่", "ผู้ทำรายการ", "หมายเหตุ"],
+        ...movements.map((m) => [
+          cell(m.id), cell(m.timestamp), cell(m.productId), cell(m.productName), cell(m.barcode),
+          cell(m.type), cell(m.quantity), cell(m.previousStock), cell(m.newStock),
+          cell(m.operator), cell(m.note),
+        ]),
+      ],
+    },
+    {
+      title: "📋 ใบสั่งซื้อ",
+      rows: [
+        ["ID", "เลขที่ PO", "วันที่", "ผู้ขาย", "สถานะ", "จำนวนรวม", "มูลค่ารวม", "รายการสินค้า"],
+        ...orders.map((o) => [
+          cell(o.id), cell(o.orderNumber), cell(o.createdAt), cell(o.supplierName),
+          cell(o.status), cell(o.totalQuantity), cell(o.totalCost), cell(o.items),
+        ]),
+      ],
+    },
+    {
+      title: "🏷️ ข้อมูลหลัก",
+      rows: [
+        ["ประเภท", "ID", "รหัส", "ชื่อ", "ข้อมูลเพิ่มเติม"],
+        ...categories.map((v) => ["หมวดหมู่", cell(v.id), cell(v.code), cell(v.name), ""]),
+        ...(snapshot.subCategories ?? []).map((v) => ["หมวดหมู่ย่อย", cell(v.id), cell(v.code), cell(v.name), cell(v.categoryId)]),
+        ...(snapshot.zones ?? []).map((v) => ["โซน", cell(v.id), cell(v.code), cell(v.name), cell(v.description)]),
+        ...(snapshot.units ?? []).map((v) => ["หน่วยนับ", cell(v.id), "", cell(v.name), cell(v.shortName)]),
+      ],
+    },
+    {
+      title: "⚙️ สำรองดิบ_JSON",
+      rows: [["ข้อมูล JSON สำรองฉบับเต็ม"], [raw]],
+    },
+  ];
+}
+
+async function googleSheetsRequest<T>(
+  url: string,
+  token: string,
+  init?: RequestInit,
+): Promise<T> {
+  const response = await fetch(url, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/json",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...init?.headers,
+    },
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Google Sheets API (${response.status}): ${detail}`);
+  }
+  return (await response.json()) as T;
+}
+
+export async function backupDatabaseToGoogleSheetsServer(options?: {
+  spreadsheetId?: string;
+}): Promise<ServerBackupResult> {
+  try {
+    if (!isPostgresConfigured()) {
+      throw new Error("ไม่พบการตั้งค่า PostgreSQL หลัก จึงยกเลิกการสำรองข้อมูล");
+    }
+
+    const credentials = await resolveServiceAccount();
+    if (!credentials) {
+      throw new Error("ยังไม่ได้กำหนด Service Account ใน Railway Variables");
+    }
+
+    const snapshot = await getDatabaseSnapshot();
+    const tabs = buildServerBackupTabs(snapshot);
+    const token = await mintServiceAccountAccessToken(credentials);
+    const targetId = options?.spreadsheetId
+      ? extractSpreadsheetId(options.spreadsheetId)
+      : credentials.spreadsheetId;
+
+    let spreadsheetId = targetId || "";
+    let spreadsheetTitle = "";
+    let spreadsheetUrl = "";
+
+    if (!spreadsheetId) {
+      const created = await googleSheetsRequest<{
+        spreadsheetId: string;
+        spreadsheetUrl?: string;
+        properties?: { title?: string };
+      }>("https://sheets.googleapis.com/v4/spreadsheets", token, {
+        method: "POST",
+        body: JSON.stringify({
+          properties: { title: `90s Mom-and-Pop Shop - Database Backup (${new Date().toLocaleDateString("th-TH")})` },
+          sheets: tabs.map((tab) => ({ properties: { title: tab.title } })),
+        }),
+      });
+      spreadsheetId = created.spreadsheetId;
+      spreadsheetTitle = created.properties?.title || "90s Mom-and-Pop Shop Database Backup";
+      spreadsheetUrl = created.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+    } else {
+      const metadata = await googleSheetsRequest<{
+        properties?: { title?: string };
+        sheets?: Array<{ properties?: { title?: string } }>;
+      }>(
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}?fields=properties.title,sheets.properties.title`,
+        token,
+      );
+      spreadsheetTitle = metadata.properties?.title || "Google Sheets Backup";
+      spreadsheetUrl = `https://docs.google.com/spreadsheets/d/${spreadsheetId}`;
+      const existingTitles = new Set((metadata.sheets ?? []).map((sheet) => sheet.properties?.title || ""));
+      const missingTabs = tabs.filter((tab) => !existingTitles.has(tab.title));
+      if (missingTabs.length > 0) {
+        await googleSheetsRequest(
+          `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}:batchUpdate`,
+          token,
+          {
+            method: "POST",
+            body: JSON.stringify({
+              requests: missingTabs.map((tab) => ({ addSheet: { properties: { title: tab.title } } })),
+            }),
+          },
+        );
+      }
+      await googleSheetsRequest(
+        `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchClear`,
+        token,
+        { method: "POST", body: JSON.stringify({ ranges: tabs.map((tab) => `'${tab.title}'!A:Z`) }) },
+      );
+    }
+
+    await googleSheetsRequest(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          valueInputOption: "RAW",
+          data: tabs.map((tab) => ({ range: `'${tab.title}'!A1`, values: tab.rows })),
+        }),
+      },
+    );
+
+    const backedUpAt = new Date().toISOString();
+    const result: ServerBackupResult = {
+      success: true,
+      message: "สำรองข้อมูลจาก PostgreSQL ไปยัง Google Sheets สำเร็จ",
+      spreadsheetId,
+      spreadsheetTitle,
+      spreadsheetUrl,
+      backedUpAt,
+      stats: {
+        products: snapshot.products.length,
+        movements: snapshot.movements.length,
+        orders: snapshot.purchaseOrders.length,
+        categories: snapshot.categories.length,
+      },
+    };
+    lastServerBackupStatus = { ...result, checkedAt: backedUpAt };
+    return result;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    lastServerBackupStatus = { success: false, error: message, checkedAt: new Date().toISOString() };
+    throw error;
+  }
+}
+
+export function scheduleAutoBackupToServerSheets(): void {
+  if (envGet("GOOGLE_SHEETS_AUTO_BACKUP") !== "true") return;
+  if (serverAutoBackupTimer) clearTimeout(serverAutoBackupTimer);
+  serverAutoBackupTimer = setTimeout(() => {
+    serverAutoBackupTimer = null;
+    if (serverBackupInProgress) return;
+    serverBackupInProgress = true;
+    void backupDatabaseToGoogleSheetsServer()
+      .catch((error) => {
+        console.error("[GoogleSheets] Scheduled server backup failed:", error);
+      })
+      .finally(() => {
+        serverBackupInProgress = false;
+      });
+  }, 15000);
+}
 
 export const backupMasterDataToSheetsFn = createServerFn({ method: "POST" }).handler(async () => {
   try {
