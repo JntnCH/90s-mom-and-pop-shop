@@ -453,8 +453,8 @@ export function ReceiptOcrModal({
 
   return (
     <Dialog open={open} onOpenChange={(isOpen) => !isOpen && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto p-4 sm:p-6 rounded-2xl">
-        <DialogHeader className="pb-3 border-b">
+      <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col p-0 rounded-2xl overflow-hidden shadow-2xl">
+        <DialogHeader className="p-4 sm:p-5 pb-3 border-b bg-background shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <div className="p-2 rounded-xl bg-primary/10 text-primary">
@@ -473,9 +473,9 @@ export function ReceiptOcrModal({
           </div>
         </DialogHeader>
 
-        {/* TOP SECTION: PHOTO CAPTURE & UPLOAD */}
-        <div className="space-y-4 pt-1">
-          {/* Capture Toolbar */}
+        {/* UNIFIED VERTICAL SCROLL BODY: All blocks scroll in the exact same direction */}
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-4 sm:p-5 space-y-4 overscroll-contain scroll-smooth">
+          {/* TOP SECTION: PHOTO CAPTURE & UPLOAD */}
           <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-muted/60 border">
             <div className="flex flex-wrap items-center gap-2">
               {/* File Upload Input */}
@@ -541,6 +541,40 @@ export function ReceiptOcrModal({
               </span>
             </div>
           </div>
+
+          {/* RECEIPT PREVIEW STRIP (ALIGNED IN SAME VERTICAL FLOW) */}
+          {previewUrl && !isCameraActive && (
+            <div className="p-3 rounded-2xl border bg-muted/20 flex items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-3 min-w-0">
+                <div
+                  className="size-12 rounded-xl overflow-hidden border bg-background shrink-0 cursor-pointer hover:ring-2 hover:ring-primary/40 transition-all"
+                  onClick={() => setLightboxOpen(true)}
+                  title="คลิกเพื่อดูภาพขยาย"
+                >
+                  <img src={previewUrl} alt="Receipt preview" className="size-full object-cover" />
+                </div>
+                <div className="min-w-0">
+                  <div className="font-bold text-foreground truncate flex items-center gap-1.5">
+                    <CheckCircle2 className="size-3.5 text-emerald-600 shrink-0" />
+                    <span>รูปถ่ายใบเสร็จ / บิลต้นฉบับ</span>
+                  </div>
+                  <div className="text-[11px] text-muted-foreground truncate">
+                    ระบบประมวลผลข้อมูลลงในฟอร์มด้านล่างแล้ว คลิกภาพเพื่อดูขนาดเต็ม
+                  </div>
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-8 rounded-xl text-xs font-semibold shrink-0 gap-1"
+                onClick={() => setLightboxOpen(true)}
+              >
+                <Eye className="size-3" /> ขยายภาพ
+              </Button>
+            </div>
+          )}
 
           {/* LIVE CAMERA VIEWFINDER */}
           {isCameraActive && (
@@ -905,97 +939,95 @@ export function ReceiptOcrModal({
               </Button>
             </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs text-left">
-                <thead className="bg-muted/20 text-muted-foreground font-semibold border-b">
-                  <tr>
-                    <th className="py-2.5 px-3">ชื่อรายการ / สินค้า</th>
-                    {docType === "PURCHASE_GOODS" && (
-                      <th className="py-2.5 px-3 min-w-[190px]">จับคู่สินค้าในร้าน</th>
-                    )}
-                    <th className="py-2.5 px-2 text-center w-20">จำนวน</th>
-                    <th className="py-2.5 px-2 text-center w-20">หน่วย</th>
-                    <th className="py-2.5 px-2 text-right w-24">ราคา/หน่วย</th>
-                    <th className="py-2.5 px-2 text-right w-20">ส่วนลด</th>
-                    <th className="py-2.5 px-3 text-right w-28">ยอดรวม</th>
-                    <th className="py-2.5 px-2 text-center w-10"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {items.length === 0 ? (
-                    <tr>
-                      <td
-                        colSpan={docType === "PURCHASE_GOODS" ? 8 : 7}
-                        className="py-8 text-center text-muted-foreground text-xs"
-                      >
-                        ยังไม่มีรายการ กรุณาอัปโหลดรูปภาพบิล หรือกด "+ เพิ่มแถวรายการ" ด้านบน
-                      </td>
-                    </tr>
-                  ) : (
-                    items.map((item, idx) => (
-                      <tr key={item.id} className="hover:bg-muted/20 transition-colors">
-                        {/* Name */}
-                        <td className="py-2 px-3">
+            {/* UNIFIED ITEMS SECTION: Both mobile and desktop scroll in the SAME vertical direction */}
+            {items.length === 0 ? (
+              <div className="py-8 text-center text-muted-foreground text-xs p-4">
+                ยังไม่มีรายการ กรุณาอัปโหลดรูปภาพบิล หรือกด "+ เพิ่มแถวรายการ" ด้านบน
+              </div>
+            ) : (
+              <>
+                {/* 1. MOBILE RESPONSIVE CARDS (No horizontal sliding, strictly vertical scroll) */}
+                <div className="md:hidden space-y-3 p-3 bg-muted/10">
+                  {items.map((item, idx) => (
+                    <div
+                      key={item.id}
+                      className="p-3 rounded-xl border bg-card space-y-2.5 shadow-2xs"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                          <span className="text-[11px] font-mono font-bold text-primary shrink-0">
+                            #{idx + 1}
+                          </span>
                           <Input
                             value={item.name}
                             onChange={(e) => handleItemChange(item.id, { name: e.target.value })}
                             placeholder="ชื่อสินค้า/บริการ"
-                            className="h-8 text-xs rounded-lg"
+                            className="h-8 text-xs rounded-lg font-medium"
                           />
-                        </td>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="text-muted-foreground hover:text-destructive p-1 rounded-md shrink-0"
+                          title="ลบแถวนี้"
+                        >
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      </div>
 
-                        {/* Product Matcher (Only if PURCHASE_GOODS) */}
-                        {docType === "PURCHASE_GOODS" && (
-                          <td className="py-2 px-3">
-                            <div className="space-y-1">
-                              <select
-                                className="w-full h-8 text-xs rounded-lg border bg-background px-2 truncate"
-                                value={item.matchedProductId || ""}
-                                onChange={(e) => handleMatchProduct(item.id, e.target.value)}
-                              >
-                                <option value="">-- ไม่จับคู่ (ไม่เพิ่มสต็อก) --</option>
-                                {allProducts.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {p.name} [{p.barcode}] (สต็อก: {p.stock})
-                                  </option>
-                                ))}
-                              </select>
-                              {item.matchedProductId && (
-                                <div className="flex items-center gap-2 text-[10px]">
-                                  <label className="flex items-center gap-1 cursor-pointer text-emerald-700 dark:text-emerald-400">
-                                    <input
-                                      type="checkbox"
-                                      checked={Boolean(item.shouldUpdateStock)}
-                                      onChange={(e) =>
-                                        handleItemChange(item.id, {
-                                          shouldUpdateStock: e.target.checked,
-                                        })
-                                      }
-                                      className="size-3"
-                                    />
-                                    <span>เพิ่มสต็อก +{item.quantity}</span>
-                                  </label>
-                                  <label className="flex items-center gap-1 cursor-pointer text-sky-700 dark:text-sky-400">
-                                    <input
-                                      type="checkbox"
-                                      checked={Boolean(item.shouldUpdateCostPrice)}
-                                      onChange={(e) =>
-                                        handleItemChange(item.id, {
-                                          shouldUpdateCostPrice: e.target.checked,
-                                        })
-                                      }
-                                      className="size-3"
-                                    />
-                                    <span>ปรับทุนเป็น ฿{item.unitPrice}</span>
-                                  </label>
-                                </div>
-                              )}
+                      {docType === "PURCHASE_GOODS" && (
+                        <div className="space-y-1.5 pt-1 border-t border-border/50">
+                          <label className="text-[11px] font-medium text-muted-foreground flex items-center gap-1">
+                            <Package className="size-3 text-emerald-600" /> จับคู่สินค้าในร้าน:
+                          </label>
+                          <select
+                            className="w-full h-8 text-xs rounded-lg border bg-background px-2 truncate"
+                            value={item.matchedProductId || ""}
+                            onChange={(e) => handleMatchProduct(item.id, e.target.value)}
+                          >
+                            <option value="">-- ไม่จับคู่ (ไม่เพิ่มสต็อก) --</option>
+                            {allProducts.map((p) => (
+                              <option key={p.id} value={p.id}>
+                                {p.name} [{p.barcode}] (สต็อก: {p.stock})
+                              </option>
+                            ))}
+                          </select>
+                          {item.matchedProductId && (
+                            <div className="flex flex-wrap items-center gap-3 text-[10px] pt-0.5">
+                              <label className="flex items-center gap-1 cursor-pointer text-emerald-700 dark:text-emerald-400 font-medium">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(item.shouldUpdateStock)}
+                                  onChange={(e) =>
+                                    handleItemChange(item.id, {
+                                      shouldUpdateStock: e.target.checked,
+                                    })
+                                  }
+                                  className="size-3"
+                                />
+                                <span>เพิ่มสต็อก +{item.quantity}</span>
+                              </label>
+                              <label className="flex items-center gap-1 cursor-pointer text-sky-700 dark:text-sky-400 font-medium">
+                                <input
+                                  type="checkbox"
+                                  checked={Boolean(item.shouldUpdateCostPrice)}
+                                  onChange={(e) =>
+                                    handleItemChange(item.id, {
+                                      shouldUpdateCostPrice: e.target.checked,
+                                    })
+                                  }
+                                  className="size-3"
+                                />
+                                <span>ปรับทุนเป็น ฿{item.unitPrice}</span>
+                              </label>
                             </div>
-                          </td>
-                        )}
+                          )}
+                        </div>
+                      )}
 
-                        {/* Quantity */}
-                        <td className="py-2 px-2 text-center">
+                      <div className="grid grid-cols-4 gap-2 pt-1 border-t border-border/50">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-muted-foreground">จำนวน</span>
                           <Input
                             type="number"
                             min="1"
@@ -1008,20 +1040,18 @@ export function ReceiptOcrModal({
                             }
                             className="h-8 text-xs text-center font-mono rounded-lg"
                           />
-                        </td>
-
-                        {/* Unit */}
-                        <td className="py-2 px-2 text-center">
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-muted-foreground">หน่วย</span>
                           <Input
                             value={item.unit}
                             onChange={(e) => handleItemChange(item.id, { unit: e.target.value })}
                             placeholder="ชิ้น"
                             className="h-8 text-xs text-center rounded-lg"
                           />
-                        </td>
-
-                        {/* Unit Price */}
-                        <td className="py-2 px-2 text-right">
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-muted-foreground">ราคา/หน่วย</span>
                           <Input
                             type="number"
                             min="0"
@@ -1034,10 +1064,9 @@ export function ReceiptOcrModal({
                             }
                             className="h-8 text-xs text-right font-mono rounded-lg"
                           />
-                        </td>
-
-                        {/* Discount */}
-                        <td className="py-2 px-2 text-right">
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-muted-foreground">ส่วนลด</span>
                           <Input
                             type="number"
                             min="0"
@@ -1050,30 +1079,180 @@ export function ReceiptOcrModal({
                             }
                             className="h-8 text-xs text-right font-mono rounded-lg"
                           />
-                        </td>
+                        </div>
+                      </div>
 
-                        {/* Total */}
-                        <td className="py-2 px-3 text-right font-mono font-bold text-foreground">
+                      <div className="flex items-center justify-between text-xs pt-1.5 border-t border-border/50 font-mono">
+                        <span className="text-muted-foreground text-[11px]">ยอดรวมแถวนี้:</span>
+                        <span className="font-bold text-foreground">
                           ฿{item.total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-                        </td>
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
 
-                        {/* Delete Row */}
-                        <td className="py-2 px-2 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveItem(item.id)}
-                            className="text-muted-foreground hover:text-destructive p-1 rounded-md"
-                            title="ลบแถวนี้"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </button>
-                        </td>
+                {/* 2. DESKTOP VIEW (Fits container cleanly, scrolls in exact same vertical direction) */}
+                <div className="hidden md:block overflow-x-hidden">
+                  <table className="w-full text-xs text-left table-fixed">
+                    <thead className="bg-muted/30 text-muted-foreground font-semibold border-b">
+                      <tr>
+                        <th className="py-2.5 px-3 w-[26%]">ชื่อรายการ / สินค้า</th>
+                        {docType === "PURCHASE_GOODS" ? (
+                          <th className="py-2.5 px-2 w-[24%]">จับคู่สินค้าในร้าน</th>
+                        ) : null}
+                        <th className="py-2.5 px-2 text-center w-[10%]">จำนวน</th>
+                        <th className="py-2.5 px-2 text-center w-[8%]">หน่วย</th>
+                        <th className="py-2.5 px-2 text-right w-[11%]">ราคา/หน่วย</th>
+                        <th className="py-2.5 px-2 text-right w-[9%]">ส่วนลด</th>
+                        <th className="py-2.5 px-3 text-right w-[12%]">ยอดรวม</th>
+                        <th className="py-2.5 px-2 text-center w-[5%]"></th>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    </thead>
+                    <tbody className="divide-y">
+                      {items.map((item) => (
+                        <tr key={item.id} className="hover:bg-muted/20 transition-colors">
+                          {/* Name */}
+                          <td className="py-2 px-3">
+                            <Input
+                              value={item.name}
+                              onChange={(e) => handleItemChange(item.id, { name: e.target.value })}
+                              placeholder="ชื่อสินค้า/บริการ"
+                              className="h-8 text-xs rounded-lg"
+                            />
+                          </td>
+
+                          {/* Product Matcher (Only if PURCHASE_GOODS) */}
+                          {docType === "PURCHASE_GOODS" && (
+                            <td className="py-2 px-2">
+                              <div className="space-y-1">
+                                <select
+                                  className="w-full h-8 text-xs rounded-lg border bg-background px-2 truncate"
+                                  value={item.matchedProductId || ""}
+                                  onChange={(e) => handleMatchProduct(item.id, e.target.value)}
+                                >
+                                  <option value="">-- ไม่จับคู่ (ไม่เพิ่มสต็อก) --</option>
+                                  {allProducts.map((p) => (
+                                    <option key={p.id} value={p.id}>
+                                      {p.name} [{p.barcode}] (สต็อก: {p.stock})
+                                    </option>
+                                  ))}
+                                </select>
+                                {item.matchedProductId && (
+                                  <div className="flex items-center gap-2 text-[10px]">
+                                    <label className="flex items-center gap-1 cursor-pointer text-emerald-700 dark:text-emerald-400">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(item.shouldUpdateStock)}
+                                        onChange={(e) =>
+                                          handleItemChange(item.id, {
+                                            shouldUpdateStock: e.target.checked,
+                                          })
+                                        }
+                                        className="size-3"
+                                      />
+                                      <span>เพิ่มสต็อก +{item.quantity}</span>
+                                    </label>
+                                    <label className="flex items-center gap-1 cursor-pointer text-sky-700 dark:text-sky-400">
+                                      <input
+                                        type="checkbox"
+                                        checked={Boolean(item.shouldUpdateCostPrice)}
+                                        onChange={(e) =>
+                                          handleItemChange(item.id, {
+                                            shouldUpdateCostPrice: e.target.checked,
+                                          })
+                                        }
+                                        className="size-3"
+                                      />
+                                      <span>ปรับทุน</span>
+                                    </label>
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          )}
+
+                          {/* Quantity */}
+                          <td className="py-2 px-2 text-center">
+                            <Input
+                              type="number"
+                              min="1"
+                              step="any"
+                              value={item.quantity}
+                              onChange={(e) =>
+                                handleItemChange(item.id, {
+                                  quantity: Number(e.target.value) || 0,
+                                })
+                              }
+                              className="h-8 text-xs text-center font-mono rounded-lg"
+                            />
+                          </td>
+
+                          {/* Unit */}
+                          <td className="py-2 px-2 text-center">
+                            <Input
+                              value={item.unit}
+                              onChange={(e) => handleItemChange(item.id, { unit: e.target.value })}
+                              placeholder="ชิ้น"
+                              className="h-8 text-xs text-center rounded-lg"
+                            />
+                          </td>
+
+                          {/* Unit Price */}
+                          <td className="py-2 px-2 text-right">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={item.unitPrice}
+                              onChange={(e) =>
+                                handleItemChange(item.id, {
+                                  unitPrice: Number(e.target.value) || 0,
+                                })
+                              }
+                              className="h-8 text-xs text-right font-mono rounded-lg"
+                            />
+                          </td>
+
+                          {/* Discount */}
+                          <td className="py-2 px-2 text-right">
+                            <Input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={item.discount || 0}
+                              onChange={(e) =>
+                                handleItemChange(item.id, {
+                                  discount: Number(e.target.value) || 0,
+                                })
+                              }
+                              className="h-8 text-xs text-right font-mono rounded-lg"
+                            />
+                          </td>
+
+                          {/* Total */}
+                          <td className="py-2 px-3 text-right font-mono font-bold text-foreground truncate">
+                            ฿{item.total.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                          </td>
+
+                          {/* Delete Row */}
+                          <td className="py-2 px-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(item.id)}
+                              className="text-muted-foreground hover:text-destructive p-1 rounded-md"
+                              title="ลบแถวนี้"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
 
             {/* TOTALS FOOTER */}
             <div className="p-4 bg-muted/20 border-t flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
@@ -1128,8 +1307,8 @@ export function ReceiptOcrModal({
           </div>
         </div>
 
-        {/* MODAL FOOTER */}
-        <DialogFooter className="pt-3 border-t flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        {/* MODAL FOOTER - PINNED AT BOTTOM (UNIFIED FLOW) */}
+        <DialogFooter className="p-3.5 sm:p-4 border-t bg-muted/30 shrink-0 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="text-xs text-muted-foreground">
             {docType === "PURCHASE_GOODS" ? (
               <span className="text-emerald-700 dark:text-emerald-400 font-medium flex items-center gap-1">

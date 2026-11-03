@@ -167,7 +167,9 @@ export function ExpenseManagementTab() {
   };
 
   const handleClearAll = () => {
-    if (confirm("คุณต้องการล้างรายการเอกสารรายจ่ายทั้งหมดใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้")) {
+    if (
+      confirm("คุณต้องการล้างรายการเอกสารรายจ่ายทั้งหมดใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้")
+    ) {
       expenseService.clearAllExpenses();
       loadExpenses();
       toast.success("ล้างรายการเอกสารรายจ่ายทั้งหมดเรียบร้อยแล้ว");
