@@ -480,19 +480,35 @@ function StockPage() {
                       </TableCell>
                       <TableCell>
                         {isOut ? (
-                          <Badge variant="destructive" className="text-[10px]">หมด</Badge>
+                          <Badge variant="destructive" className="text-[10px]">
+                            หมด
+                          </Badge>
                         ) : isLow ? (
-                          <Badge className="bg-amber-500/15 text-amber-700 text-[10px]">ใกล้หมด</Badge>
+                          <Badge className="bg-amber-500/15 text-amber-700 text-[10px]">
+                            ใกล้หมด
+                          </Badge>
                         ) : (
-                          <Badge variant="outline" className="text-emerald-600 text-[10px]">ปกติ</Badge>
+                          <Badge variant="outline" className="text-emerald-600 text-[10px]">
+                            ปกติ
+                          </Badge>
                         )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => handleOpenHistory(item)}>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleOpenHistory(item)}
+                          >
                             <History className="size-3" />
                           </Button>
-                          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenAdjust(item)}>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-xs"
+                            onClick={() => handleOpenAdjust(item)}
+                          >
                             ปรับยอด
                           </Button>
                         </div>
@@ -512,7 +528,8 @@ function StockPage() {
           <DialogHeader>
             <DialogTitle>ปรับยอดสต็อก</DialogTitle>
             <DialogDescription>
-              {adjustingProduct?.name} (ปัจจุบัน {adjustingProduct?.stock} {adjustingProduct ? getUnitName(adjustingProduct.unitId) : ""})
+              {adjustingProduct?.name} (ปัจจุบัน {adjustingProduct?.stock}{" "}
+              {adjustingProduct ? getUnitName(adjustingProduct.unitId) : ""})
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3 py-2">
@@ -544,7 +561,11 @@ function StockPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" className="rounded-xl" onClick={() => setAdjustModalOpen(false)}>
+            <Button
+              variant="outline"
+              className="rounded-xl"
+              onClick={() => setAdjustModalOpen(false)}
+            >
               ยกเลิก
             </Button>
             <Button className="rounded-xl" onClick={handleSaveAdjustment}>

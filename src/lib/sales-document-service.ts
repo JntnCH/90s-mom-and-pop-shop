@@ -213,14 +213,24 @@ class SalesDocumentManager {
 
       const rawDocs = localStorage.getItem(STORAGE_KEY_DOCS);
       if (rawDocs) {
-        this.documents = JSON.parse(rawDocs);
+        const parsed = JSON.parse(rawDocs);
+        if (Array.isArray(parsed)) {
+          // Permanently strip any sample/demo documents
+          this.documents = parsed.filter(
+            (d: SalesDocument) => d && d.id && !d.id.startsWith("doc_sample_"),
+          );
+          if (this.documents.length !== parsed.length) {
+            this.saveToStorage();
+          }
+        } else {
+          this.documents = [];
+        }
       } else {
-        this.documents = this.getInitialSampleDocuments();
-        this.saveToStorage();
+        this.documents = [];
       }
       this.isLoaded = true;
     } catch {
-      this.documents = this.getInitialSampleDocuments();
+      this.documents = [];
       this.isLoaded = true;
     }
   }
@@ -436,168 +446,12 @@ class SalesDocumentManager {
     }
   }
 
-  private getInitialSampleDocuments(): SalesDocument[] {
-    const today = new Date().toISOString().slice(0, 10);
-    const dueDate30 = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
-
-    const items1: DocumentItem[] = [
-      {
-        id: "item_1",
-        name: "ข้าวหอมมะลิ 100% ตราฉัตร 5 กก.",
-        quantity: 10,
-        unit: "ถุง",
-        unitPrice: 220,
-        total: 2200,
-      },
-      {
-        id: "item_2",
-        name: "น้ำมันพืช มรกต 1 ลิตร",
-        quantity: 24,
-        unit: "ขวด",
-        unitPrice: 55,
-        total: 1320,
-      },
-      {
-        id: "item_3",
-        name: "ปลากระป๋อง โรซ่า แมคเคอเรล 155 กรัม",
-        quantity: 50,
-        unit: "กระป๋อง",
-        unitPrice: 20,
-        total: 1000,
-      },
-    ];
-
-    const calc1 = calculateDocumentTotals(items1, "INCLUDED", 7, 0, 0);
-
-    const items2: DocumentItem[] = [
-      {
-        id: "item_21",
-        name: "ชุดของขวัญสวัสดีปีใหม่ พรีเมียม A",
-        quantity: 5,
-        unit: "ชุด",
-        unitPrice: 1250,
-        total: 6250,
-      },
-      {
-        id: "item_22",
-        name: "เครื่องดื่มรังนกแท้ สำเร็จรูป 6 ขวด/กล่อง",
-        quantity: 10,
-        unit: "กล่อง",
-        unitPrice: 490,
-        total: 4900,
-      },
-    ];
-    const calc2 = calculateDocumentTotals(items2, "EXCLUDED", 7, 3, 0);
-
-    return [
-      {
-        id: "doc_sample_tax_01",
-        docNumber: "TAX-202609-001",
-        type: "TAX_INVOICE_RECEIPT",
-        status: "PAID",
-        issueDate: today,
-        dueDate: today,
-        creditDays: 0,
-        customer: {
-          name: "บริษัท สยาม ซินเนอร์จี้ จำกัด (มหาชน)",
-          taxId: "0107558000123",
-          branchType: "HEAD_OFFICE",
-          branchCode: "00000",
-          address:
-            "99/1 อาคารสยามทาวเวอร์ ชั้น 18 ถนนพระราม 9 แขวงห้วยขวาง เขตห้วยขวาง กรุงเทพฯ 10310",
-          phone: "02-123-4567",
-          email: "procurement@siamsynergy.co.th",
-          contactPerson: "คุณสมชาย มุ่งมั่น",
-        },
-        items: items1,
-        calculation: calc1,
-        paymentMethod: "BANK_TRANSFER",
-        paymentDate: today,
-        paymentRef: "KBANK-TRX-982104",
-        notes: "ได้รับชำระเงินเรียบร้อยแล้ว ขอบคุณที่ใช้บริการ",
-        termsAndConditions: "สินค้าซื้อแล้วไม่รับเปลี่ยนหรือคืนหากแกะบรรจุภัณฑ์",
-        salesPerson: "เจ้าหน้าที่ขายหน้าร้าน",
-        createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-        updatedAt: new Date(Date.now() - 3600000 * 4).toISOString(),
-        stockDeducted: true,
-      },
-      {
-        id: "doc_sample_inv_01",
-        docNumber: "INV-202609-001",
-        type: "BILLING_INVOICE",
-        status: "PENDING",
-        issueDate: today,
-        dueDate: dueDate30,
-        creditDays: 30,
-        customer: {
-          name: "ห้างหุ้นส่วนจำกัด เจริญทรัพย์ อินเตอร์เทรด",
-          taxId: "0103554009876",
-          branchType: "BRANCH",
-          branchCode: "00001",
-          address: "45/2 หมู่ 3 ถนนเพชรเกษม ตำบลอ้อมใหญ่ อำเภอสามพราน จังหวัดนครปฐม 73160",
-          phone: "034-889-111",
-          email: "account@charoensap.com",
-          contactPerson: "คุณวันเพ็ญ สดใส",
-        },
-        items: items2,
-        calculation: calc2,
-        notes: "กรุณาโอนเงินเข้าบัญชี บจก. มินิมาร์ค รีเทล ก่อนวันครบกำหนด",
-        termsAndConditions: "เครดิตเทอม 30 วัน หากเกินกำหนดมีค่าปรับตามระเบียบ",
-        salesPerson: "คุณประเสริฐ ขายดี",
-        createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-        updatedAt: new Date(Date.now() - 3600000 * 12).toISOString(),
-        stockDeducted: false,
-      },
-      {
-        id: "doc_sample_qt_01",
-        docNumber: "QT-202609-001",
-        type: "QUOTATION",
-        status: "PENDING",
-        issueDate: today,
-        dueDate: dueDate30,
-        creditDays: 15,
-        customer: {
-          name: "บริษัท ทัศนียา มีเดีย จำกัด",
-          taxId: "0105559088776",
-          branchType: "HEAD_OFFICE",
-          branchCode: "00000",
-          address:
-            "88 อาคารเพรสทีจ ซอยทองหล่อ 13 ถนนสุขุมวิท 55 แขวงคลองตันเหนือ เขตวัฒนา กรุงเทพฯ 10110",
-          phone: "02-777-8899",
-          email: "purchase@tassaniya.com",
-          contactPerson: "คุณกมลวรรณ สุขุม",
-        },
-        items: [
-          {
-            id: "item_31",
-            name: "เครื่องดื่มน้ำผลไม้ มาลี 100% 1,000 มล. (ยกลัง 12 กล่อง)",
-            quantity: 20,
-            unit: "ลัง",
-            unitPrice: 650,
-            total: 13000,
-          },
-        ],
-        calculation: calculateDocumentTotals(
-          [
-            {
-              quantity: 20,
-              unitPrice: 650,
-              discountAmount: 500,
-            },
-          ],
-          "INCLUDED",
-          7,
-          0,
-          0,
-        ),
-        notes: "ใบเสนอราคานี้มีผลบังคับใช้ 30 วันนับจากวันที่ออกเอกสาร",
-        termsAndConditions: "ส่งฟรีเมื่อสั่งซื้อครบ 5,000 บาทขึ้นไป",
-        salesPerson: "คุณวิชัย บริการดี",
-        createdAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-        updatedAt: new Date(Date.now() - 3600000 * 24).toISOString(),
-        stockDeducted: false,
-      },
-    ];
+  /**
+   * Clear all stored sales documents
+   */
+  public clearAllDocuments(): void {
+    this.documents = [];
+    this.saveToStorage();
   }
 }
 

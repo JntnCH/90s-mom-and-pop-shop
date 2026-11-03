@@ -9,6 +9,7 @@ import {
   MessageCircle,
   Package,
   PackagePlus,
+  Receipt,
   ScanLine,
   Settings,
 } from "lucide-react";
@@ -122,6 +123,13 @@ export function Dashboard() {
       desc: "สแกนเข้าสต็อก",
       icon: PackagePlus,
       color: "bg-emerald-500/10 text-emerald-600",
+    },
+    {
+      to: "/documents?tab=expenses",
+      label: "บิลซื้อ & OCR",
+      desc: "สแกนบิล/รายจ่าย",
+      icon: Receipt,
+      color: "bg-teal-500/10 text-teal-600",
     },
     {
       to: "/reorder",

@@ -58,6 +58,9 @@ import {
 } from "@/lib/sales-document-service";
 import { DocumentA4Print } from "@/components/documents/DocumentA4Print";
 import { DocumentModal } from "@/components/documents/DocumentModal";
+import { ExpenseManagementTab } from "@/components/documents/ExpenseManagementTab";
+import { ReceiptOcrModal } from "@/components/documents/ReceiptOcrModal";
+import { cn } from "@/lib/utils";
 
 declare module "@tanstack/react-router" {
   interface FileRoutesByPath {
@@ -76,12 +79,23 @@ export const Route = createFileRoute("/documents")({
 });
 
 function DocumentsPage() {
+  const [docSection, setDocSection] = useState<"SALES" | "EXPENSES">("SALES");
+  const [ocrModalOpen, setOcrModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
 
   // State trigger for re-rendering documents list
   const [refreshKey, setRefreshKey] = useState(0);
+
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const p = new URLSearchParams(window.location.search);
+      if (p.get("tab") === "expenses" || p.get("type") === "expense") {
+        setDocSection("EXPENSES");
+      }
+    }
+  }, []);
 
   React.useEffect(() => {
     const onStoreChange = () => setRefreshKey((k) => k + 1);
@@ -288,328 +302,386 @@ function DocumentsPage() {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Page Header */}
-      <PageHeader
-        title="เอกสารขาย & ใบกำกับภาษี (Sales & Tax Invoices)"
-        description="ระบบบริหารเอกสารขายสไตล์ FlowAccount: ใบเสนอราคา, ใบแจ้งหนี้/วางบิล, ใบกำกับภาษี VAT 7%, และรายงาน ภ.พ.30"
-        action={
-          <div className="flex flex-wrap gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 rounded-xl text-xs font-semibold"
-              onClick={() => handleOpenCreate("QUOTATION")}
-            >
-              <Plus className="size-3.5 text-sky-600" /> + ใบเสนอราคา (QT)
-            </Button>
+      {/* Top Main Section Switcher */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-border/80 pb-3">
+        <div className="flex p-1 bg-muted/70 rounded-2xl border gap-1 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setDocSection("SALES")}
+            className={cn(
+              "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 flex-1 sm:flex-initial",
+              docSection === "SALES"
+                ? "bg-background text-foreground shadow-xs"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Receipt className="size-4 text-primary" /> เอกสารขาย & ภาษี (Sales Docs)
+          </button>
+          <button
+            type="button"
+            onClick={() => setDocSection("EXPENSES")}
+            className={cn(
+              "px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 flex-1 sm:flex-initial",
+              docSection === "EXPENSES"
+                ? "bg-background text-foreground shadow-xs"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            <Sparkles className="size-4 text-emerald-600" /> บิลซื้อ & รายจ่าย (OCR)
+          </button>
+        </div>
 
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5 rounded-xl text-xs font-semibold"
-              onClick={() => handleOpenCreate("BILLING_INVOICE")}
-            >
-              <Plus className="size-3.5 text-indigo-600" /> + ใบแจ้งหนี้ (INV)
-            </Button>
-
-            <Button
-              size="sm"
-              className="gap-1.5 rounded-xl text-xs font-semibold shadow-sm"
-              onClick={() => handleOpenCreate("TAX_INVOICE_RECEIPT")}
-            >
-              <Receipt className="size-3.5" /> + ออกใบกำกับภาษี (TAX)
-            </Button>
-          </div>
-        }
-      />
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Total Sales */}
-        <Card className="rounded-2xl border border-border shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-xs font-medium">
-              ยอดขายรับชำระแล้ว (Tax Invoices)
-            </CardDescription>
-            <CardTitle className="text-xl sm:text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
-              ฿{metrics.totalSales.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-              <TrendingUp className="size-3.5 text-emerald-500" /> จากใบเสร็จรับเงิน/ใบกำกับภาษี
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Pending Receivables */}
-        <Card className="rounded-2xl border border-border shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-xs font-medium">
-              ลูกหนี้ค้างรับ (Pending Invoices)
-            </CardDescription>
-            <CardTitle className="text-xl sm:text-2xl font-extrabold text-amber-600 dark:text-amber-400 font-mono">
-              ฿{metrics.pendingReceivable.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-              <Clock className="size-3.5 text-amber-500" /> จากใบแจ้งหนี้ที่รอครบกำหนดชำระ
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* VAT Collected */}
-        <Card className="rounded-2xl border border-border shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-xs font-medium">
-              ภาษีขายสะสม (Output VAT 7%)
-            </CardDescription>
-            <CardTitle className="text-xl sm:text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">
-              ฿{metrics.totalVatCollected.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-              <Building2 className="size-3.5 text-indigo-500" /> สำหรับยื่นแบบ ภ.พ.30 กรมสรรพากร
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Quotations pending */}
-        <Card className="rounded-2xl border border-border shadow-sm">
-          <CardHeader className="pb-2">
-            <CardDescription className="text-xs font-medium">ใบเสนอราคารออนุมัติ</CardDescription>
-            <CardTitle className="text-xl sm:text-2xl font-extrabold text-sky-600 dark:text-sky-400 font-mono">
-              {metrics.quotationPending}{" "}
-              <span className="text-sm font-normal text-muted-foreground">ฉบับ</span>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-              <FileCheck2 className="size-3.5 text-sky-500" /> รอแปลงเป็นใบแจ้งหนี้/ใบเสร็จ
-            </p>
-          </CardContent>
-        </Card>
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+          <Button
+            size="sm"
+            className="rounded-xl text-xs font-bold gap-1.5 h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+            onClick={() => setOcrModalOpen(true)}
+          >
+            <Sparkles className="size-3.5" /> + สแกนบิล OCR (AI Vision)
+          </Button>
+        </div>
       </div>
 
-      {/* Main Tabs & Table */}
-      <div className="space-y-4">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-border pb-3">
-            <TabsList className="bg-muted/60 p-1 rounded-xl h-auto flex-wrap">
-              <TabsTrigger value="ALL" className="rounded-lg text-xs py-1.5 px-3">
-                เอกสารทั้งหมด ({allDocuments.length})
-              </TabsTrigger>
-              <TabsTrigger value="QUOTATION" className="rounded-lg text-xs py-1.5 px-3">
-                ใบเสนอราคา (QT)
-              </TabsTrigger>
-              <TabsTrigger value="BILLING_INVOICE" className="rounded-lg text-xs py-1.5 px-3">
-                ใบแจ้งหนี้ / ใบวางบิล (INV)
-              </TabsTrigger>
-              <TabsTrigger value="TAX_INVOICE_RECEIPT" className="rounded-lg text-xs py-1.5 px-3">
-                ใบเสร็จ / ใบกำกับภาษี (TAX)
-              </TabsTrigger>
-            </TabsList>
+      {docSection === "EXPENSES" ? (
+        <ExpenseManagementTab />
+      ) : (
+        <>
+          {/* Page Header */}
+          <PageHeader
+            title="เอกสารขาย & ใบกำกับภาษี (Sales & Tax Invoices)"
+            description="ระบบบริหารเอกสารขายสไตล์ FlowAccount: ใบเสนอราคา, ใบแจ้งหนี้/วางบิล, ใบกำกับภาษี VAT 7%, และรายงาน ภ.พ.30"
+            action={
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 rounded-xl text-xs font-semibold"
+                  onClick={() => handleOpenCreate("QUOTATION")}
+                >
+                  <Plus className="size-3.5 text-sky-600" /> + ใบเสนอราคา (QT)
+                </Button>
 
-            {/* Search & Filters */}
-            <div className="flex items-center gap-2 w-full sm:w-auto">
-              <div className="relative flex-1 sm:w-64">
-                <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input
-                  placeholder="ค้นหาเลขที่, ลูกค้า, สินค้า..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-8 pl-8 text-xs rounded-xl"
-                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 rounded-xl text-xs font-semibold"
+                  onClick={() => handleOpenCreate("BILLING_INVOICE")}
+                >
+                  <Plus className="size-3.5 text-indigo-600" /> + ใบแจ้งหนี้ (INV)
+                </Button>
+
+                <Button
+                  size="sm"
+                  className="gap-1.5 rounded-xl text-xs font-semibold shadow-sm"
+                  onClick={() => handleOpenCreate("TAX_INVOICE_RECEIPT")}
+                >
+                  <Receipt className="size-3.5" /> + ออกใบกำกับภาษี (TAX)
+                </Button>
+              </div>
+            }
+          />
+
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Total Sales */}
+            <Card className="rounded-2xl border border-border shadow-sm">
+              <CardHeader className="pb-2">
+                <CardDescription className="text-xs font-medium">
+                  ยอดขายรับชำระแล้ว (Tax Invoices)
+                </CardDescription>
+                <CardTitle className="text-xl sm:text-2xl font-extrabold text-emerald-600 dark:text-emerald-400 font-mono">
+                  ฿{metrics.totalSales.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <TrendingUp className="size-3.5 text-emerald-500" /> จากใบเสร็จรับเงิน/ใบกำกับภาษี
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Pending Receivables */}
+            <Card className="rounded-2xl border border-border shadow-sm">
+              <CardHeader className="pb-2">
+                <CardDescription className="text-xs font-medium">
+                  ลูกหนี้ค้างรับ (Pending Invoices)
+                </CardDescription>
+                <CardTitle className="text-xl sm:text-2xl font-extrabold text-amber-600 dark:text-amber-400 font-mono">
+                  ฿{metrics.pendingReceivable.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <Clock className="size-3.5 text-amber-500" /> จากใบแจ้งหนี้ที่รอครบกำหนดชำระ
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* VAT Collected */}
+            <Card className="rounded-2xl border border-border shadow-sm">
+              <CardHeader className="pb-2">
+                <CardDescription className="text-xs font-medium">
+                  ภาษีขายสะสม (Output VAT 7%)
+                </CardDescription>
+                <CardTitle className="text-xl sm:text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">
+                  ฿{metrics.totalVatCollected.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <Building2 className="size-3.5 text-indigo-500" /> สำหรับยื่นแบบ ภ.พ.30 กรมสรรพากร
+                </p>
+              </CardContent>
+            </Card>
+
+            {/* Quotations pending */}
+            <Card className="rounded-2xl border border-border shadow-sm">
+              <CardHeader className="pb-2">
+                <CardDescription className="text-xs font-medium">
+                  ใบเสนอราคารออนุมัติ
+                </CardDescription>
+                <CardTitle className="text-xl sm:text-2xl font-extrabold text-sky-600 dark:text-sky-400 font-mono">
+                  {metrics.quotationPending}{" "}
+                  <span className="text-sm font-normal text-muted-foreground">ฉบับ</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                  <FileCheck2 className="size-3.5 text-sky-500" /> รอแปลงเป็นใบแจ้งหนี้/ใบเสร็จ
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Main Tabs & Table */}
+          <div className="space-y-4">
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-border pb-3">
+                <TabsList className="bg-muted/60 p-1 rounded-xl h-auto flex-wrap">
+                  <TabsTrigger value="ALL" className="rounded-lg text-xs py-1.5 px-3">
+                    เอกสารทั้งหมด ({allDocuments.length})
+                  </TabsTrigger>
+                  <TabsTrigger value="QUOTATION" className="rounded-lg text-xs py-1.5 px-3">
+                    ใบเสนอราคา (QT)
+                  </TabsTrigger>
+                  <TabsTrigger value="BILLING_INVOICE" className="rounded-lg text-xs py-1.5 px-3">
+                    ใบแจ้งหนี้ / ใบวางบิล (INV)
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="TAX_INVOICE_RECEIPT"
+                    className="rounded-lg text-xs py-1.5 px-3"
+                  >
+                    ใบเสร็จ / ใบกำกับภาษี (TAX)
+                  </TabsTrigger>
+                </TabsList>
+
+                {/* Search & Filters */}
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="relative flex-1 sm:w-64">
+                    <Search className="size-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      placeholder="ค้นหาเลขที่, ลูกค้า, สินค้า..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="h-8 pl-8 text-xs rounded-xl"
+                    />
+                  </div>
+
+                  <Select value={statusFilter} onValueChange={setStatusFilter}>
+                    <SelectTrigger className="h-8 w-32 text-xs rounded-xl">
+                      <SelectValue placeholder="สถานะ" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">ทุกสถานะ</SelectItem>
+                      <SelectItem value="PENDING">รอดำเนินการ</SelectItem>
+                      <SelectItem value="PAID">ชำระแล้ว</SelectItem>
+                      <SelectItem value="APPROVED">อนุมัติแล้ว</SelectItem>
+                      <SelectItem value="DRAFT">ร่าง</SelectItem>
+                      <SelectItem value="CANCELLED">ยกเลิก</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="h-8 w-32 text-xs rounded-xl">
-                  <SelectValue placeholder="สถานะ" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">ทุกสถานะ</SelectItem>
-                  <SelectItem value="PENDING">รอดำเนินการ</SelectItem>
-                  <SelectItem value="PAID">ชำระแล้ว</SelectItem>
-                  <SelectItem value="APPROVED">อนุมัติแล้ว</SelectItem>
-                  <SelectItem value="DRAFT">ร่าง</SelectItem>
-                  <SelectItem value="CANCELLED">ยกเลิก</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+              {/* Table Content */}
+              <div className="mt-4 bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-muted/50 text-muted-foreground border-b border-border font-semibold">
+                      <tr>
+                        <th className="py-3 px-4">เลขที่เอกสาร</th>
+                        <th className="py-3 px-4">ประเภท</th>
+                        <th className="py-3 px-4">ลูกค้า / ผู้ซื้อ</th>
+                        <th className="py-3 px-4">วันที่ออก / ครบกำหนด</th>
+                        <th className="py-3 px-4 text-right">ยอดรวมทั้งสิ้น</th>
+                        <th className="py-3 px-4 text-center">สถานะ</th>
+                        <th className="py-3 px-4 text-right">การกระทำ</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {filteredDocuments.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="py-12 text-center text-muted-foreground">
+                            <div className="flex flex-col items-center justify-center gap-2">
+                              <Receipt className="size-8 text-muted-foreground/50" />
+                              <p className="font-medium text-sm">ไม่พบเอกสารในหมวดหมู่นี้</p>
+                              <p className="text-xs text-muted-foreground">
+                                คลิกปุ่มด้านบนเพื่อสร้างใบเสนอราคา ใบแจ้งหนี้ หรือใบกำกับภาษีใหม่
+                              </p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredDocuments.map((doc) => (
+                          <tr key={doc.id} className="hover:bg-muted/30 transition-colors group">
+                            {/* Doc Number & Ref */}
+                            <td className="py-3 px-4">
+                              <div className="font-mono font-bold text-foreground text-xs flex items-center gap-1.5">
+                                {doc.docNumber}
+                              </div>
+                              {doc.referenceDocNumber && (
+                                <span className="text-[10px] text-muted-foreground">
+                                  อ้างอิง: {doc.referenceDocNumber}
+                                </span>
+                              )}
+                            </td>
 
-          {/* Table Content */}
-          <div className="mt-4 bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-muted/50 text-muted-foreground border-b border-border font-semibold">
-                  <tr>
-                    <th className="py-3 px-4">เลขที่เอกสาร</th>
-                    <th className="py-3 px-4">ประเภท</th>
-                    <th className="py-3 px-4">ลูกค้า / ผู้ซื้อ</th>
-                    <th className="py-3 px-4">วันที่ออก / ครบกำหนด</th>
-                    <th className="py-3 px-4 text-right">ยอดรวมทั้งสิ้น</th>
-                    <th className="py-3 px-4 text-center">สถานะ</th>
-                    <th className="py-3 px-4 text-right">การกระทำ</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {filteredDocuments.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="py-12 text-center text-muted-foreground">
-                        <div className="flex flex-col items-center justify-center gap-2">
-                          <Receipt className="size-8 text-muted-foreground/50" />
-                          <p className="font-medium text-sm">ไม่พบเอกสารในหมวดหมู่นี้</p>
-                          <p className="text-xs text-muted-foreground">
-                            คลิกปุ่มด้านบนเพื่อสร้างใบเสนอราคา ใบแจ้งหนี้ หรือใบกำกับภาษีใหม่
-                          </p>
-                        </div>
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredDocuments.map((doc) => (
-                      <tr key={doc.id} className="hover:bg-muted/30 transition-colors group">
-                        {/* Doc Number & Ref */}
-                        <td className="py-3 px-4">
-                          <div className="font-mono font-bold text-foreground text-xs flex items-center gap-1.5">
-                            {doc.docNumber}
-                          </div>
-                          {doc.referenceDocNumber && (
-                            <span className="text-[10px] text-muted-foreground">
-                              อ้างอิง: {doc.referenceDocNumber}
-                            </span>
-                          )}
-                        </td>
+                            {/* Type Badge */}
+                            <td className="py-3 px-4">{getTypeBadge(doc.type)}</td>
 
-                        {/* Type Badge */}
-                        <td className="py-3 px-4">{getTypeBadge(doc.type)}</td>
+                            {/* Customer */}
+                            <td className="py-3 px-4 max-w-[220px]">
+                              <div className="font-semibold text-foreground truncate">
+                                {doc.customer.name}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground font-mono">
+                                {doc.customer.taxId
+                                  ? `Tax ID: ${doc.customer.taxId}`
+                                  : "บุคคลธรรมดา"}
+                              </div>
+                            </td>
 
-                        {/* Customer */}
-                        <td className="py-3 px-4 max-w-[220px]">
-                          <div className="font-semibold text-foreground truncate">
-                            {doc.customer.name}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground font-mono">
-                            {doc.customer.taxId ? `Tax ID: ${doc.customer.taxId}` : "บุคคลธรรมดา"}
-                          </div>
-                        </td>
+                            {/* Dates */}
+                            <td className="py-3 px-4">
+                              <div className="text-foreground">{doc.issueDate}</div>
+                              <div className="text-[10px] text-muted-foreground">
+                                ครบกำหนด: {doc.dueDate}
+                              </div>
+                            </td>
 
-                        {/* Dates */}
-                        <td className="py-3 px-4">
-                          <div className="text-foreground">{doc.issueDate}</div>
-                          <div className="text-[10px] text-muted-foreground">
-                            ครบกำหนด: {doc.dueDate}
-                          </div>
-                        </td>
+                            {/* Grand Total */}
+                            <td className="py-3 px-4 text-right">
+                              <div className="font-mono font-bold text-foreground text-sm">
+                                ฿
+                                {doc.calculation.grandTotal.toLocaleString("th-TH", {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </div>
+                              <div className="text-[10px] text-muted-foreground">
+                                VAT: ฿
+                                {doc.calculation.vatAmount.toLocaleString("th-TH", {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </div>
+                            </td>
 
-                        {/* Grand Total */}
-                        <td className="py-3 px-4 text-right">
-                          <div className="font-mono font-bold text-foreground text-sm">
-                            ฿
-                            {doc.calculation.grandTotal.toLocaleString("th-TH", {
-                              minimumFractionDigits: 2,
-                            })}
-                          </div>
-                          <div className="text-[10px] text-muted-foreground">
-                            VAT: ฿
-                            {doc.calculation.vatAmount.toLocaleString("th-TH", {
-                              minimumFractionDigits: 2,
-                            })}
-                          </div>
-                        </td>
+                            {/* Status */}
+                            <td className="py-3 px-4 text-center">{getStatusBadge(doc.status)}</td>
 
-                        {/* Status */}
-                        <td className="py-3 px-4 text-center">{getStatusBadge(doc.status)}</td>
-
-                        {/* Actions */}
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 px-2.5 rounded-lg gap-1 text-xs font-semibold"
-                              onClick={() => setPreviewDoc(doc)}
-                              title="ดูและพิมพ์เอกสาร A4"
-                            >
-                              <Eye className="size-3.5 text-primary" /> พิมพ์ A4
-                            </Button>
-
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button size="icon" variant="ghost" className="size-8 rounded-lg">
-                                  <MoreHorizontal className="size-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end" className="w-48">
-                                <DropdownMenuLabel className="text-xs">
-                                  จัดการเอกสาร
-                                </DropdownMenuLabel>
-                                <DropdownMenuItem
-                                  className="gap-2 text-xs"
+                            {/* Actions */}
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 px-2.5 rounded-lg gap-1 text-xs font-semibold"
                                   onClick={() => setPreviewDoc(doc)}
+                                  title="ดูและพิมพ์เอกสาร A4"
                                 >
-                                  <Printer className="size-3.5" /> ดูตัวอย่าง & พิมพ์
-                                </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  className="gap-2 text-xs"
-                                  onClick={() => handleEdit(doc)}
-                                >
-                                  <Pencil className="size-3.5" /> แก้ไขเอกสาร
-                                </DropdownMenuItem>
+                                  <Eye className="size-3.5 text-primary" /> พิมพ์ A4
+                                </Button>
 
-                                <DropdownMenuSeparator />
-
-                                {/* Document Conversion Workflow (FlowAccount standard) */}
-                                {doc.type === "QUOTATION" && (
-                                  <DropdownMenuItem
-                                    className="gap-2 text-xs text-indigo-600 dark:text-indigo-400 font-medium"
-                                    onClick={() => handleConvert(doc, "BILLING_INVOICE")}
-                                  >
-                                    <ArrowRightLeft className="size-3.5" /> แปลงเป็นใบแจ้งหนี้ (INV)
-                                  </DropdownMenuItem>
-                                )}
-
-                                {doc.type === "BILLING_INVOICE" && (
-                                  <>
-                                    <DropdownMenuItem
-                                      className="gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium"
-                                      onClick={() => handleConvert(doc, "TAX_INVOICE_RECEIPT")}
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <Button
+                                      size="icon"
+                                      variant="ghost"
+                                      className="size-8 rounded-lg"
                                     >
-                                      <Receipt className="size-3.5" /> แปลงเป็นใบกำกับภาษี (TAX)
+                                      <MoreHorizontal className="size-4" />
+                                    </Button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent align="end" className="w-48">
+                                    <DropdownMenuLabel className="text-xs">
+                                      จัดการเอกสาร
+                                    </DropdownMenuLabel>
+                                    <DropdownMenuItem
+                                      className="gap-2 text-xs"
+                                      onClick={() => setPreviewDoc(doc)}
+                                    >
+                                      <Printer className="size-3.5" /> ดูตัวอย่าง & พิมพ์
                                     </DropdownMenuItem>
-                                    {doc.status !== "PAID" && (
+                                    <DropdownMenuItem
+                                      className="gap-2 text-xs"
+                                      onClick={() => handleEdit(doc)}
+                                    >
+                                      <Pencil className="size-3.5" /> แก้ไขเอกสาร
+                                    </DropdownMenuItem>
+
+                                    <DropdownMenuSeparator />
+
+                                    {/* Document Conversion Workflow (FlowAccount standard) */}
+                                    {doc.type === "QUOTATION" && (
                                       <DropdownMenuItem
-                                        className="gap-2 text-xs text-emerald-600 font-medium"
-                                        onClick={() => handleMarkPaid(doc)}
+                                        className="gap-2 text-xs text-indigo-600 dark:text-indigo-400 font-medium"
+                                        onClick={() => handleConvert(doc, "BILLING_INVOICE")}
                                       >
-                                        <CheckCircle2 className="size-3.5" /> บันทึกรับชำระเงิน
+                                        <ArrowRightLeft className="size-3.5" /> แปลงเป็นใบแจ้งหนี้
+                                        (INV)
                                       </DropdownMenuItem>
                                     )}
-                                  </>
-                                )}
 
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="gap-2 text-xs text-rose-600 dark:text-rose-400"
-                                  onClick={() => handleDelete(doc.id, doc.docNumber)}
-                                >
-                                  <Trash2 className="size-3.5" /> ลบเอกสาร
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                                    {doc.type === "BILLING_INVOICE" && (
+                                      <>
+                                        <DropdownMenuItem
+                                          className="gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-medium"
+                                          onClick={() => handleConvert(doc, "TAX_INVOICE_RECEIPT")}
+                                        >
+                                          <Receipt className="size-3.5" /> แปลงเป็นใบกำกับภาษี (TAX)
+                                        </DropdownMenuItem>
+                                        {doc.status !== "PAID" && (
+                                          <DropdownMenuItem
+                                            className="gap-2 text-xs text-emerald-600 font-medium"
+                                            onClick={() => handleMarkPaid(doc)}
+                                          >
+                                            <CheckCircle2 className="size-3.5" /> บันทึกรับชำระเงิน
+                                          </DropdownMenuItem>
+                                        )}
+                                      </>
+                                    )}
+
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="gap-2 text-xs text-rose-600 dark:text-rose-400"
+                                      onClick={() => handleDelete(doc.id, doc.docNumber)}
+                                    >
+                                      <Trash2 className="size-3.5" /> ลบเอกสาร
+                                    </DropdownMenuItem>
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </Tabs>
           </div>
-        </Tabs>
-      </div>
+        </>
+      )}
 
       {/* Modal for Creating / Editing */}
       {modalOpen && (
@@ -628,6 +700,19 @@ function DocumentsPage() {
 
       {/* A4 Printable Document Preview */}
       {previewDoc && <DocumentA4Print document={previewDoc} onClose={() => setPreviewDoc(null)} />}
+
+      {/* AI OCR Modal */}
+      {ocrModalOpen && (
+        <ReceiptOcrModal
+          open={ocrModalOpen}
+          initialType="PURCHASE_GOODS"
+          onClose={() => setOcrModalOpen(false)}
+          onSaved={() => {
+            setDocSection("EXPENSES");
+            setRefreshKey((k) => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 }

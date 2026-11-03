@@ -68,6 +68,61 @@ export default {
       );
     }
 
+    // AI Receipt & Expense OCR Endpoint (Gemini 3.8 Flash Vision)
+    if (url.pathname === "/api/ocr/receipt" && request.method === "POST") {
+      try {
+        const body = (await request.json().catch(() => ({}))) as {
+          imageBase64?: string;
+          mimeType?: string;
+        };
+
+        if (!body.imageBase64) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              error: "Missing imageBase64 data in request body",
+            }),
+            {
+              status: 400,
+              headers: { "content-type": "application/json; charset=utf-8" },
+            },
+          );
+        }
+
+        const { extractReceiptWithGemini } = await import("./lib/gemini-server");
+        const extracted = await extractReceiptWithGemini(
+          body.imageBase64,
+          body.mimeType || "image/jpeg",
+        );
+
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: extracted,
+          }),
+          {
+            status: 200,
+            headers: {
+              "content-type": "application/json; charset=utf-8",
+              "access-control-allow-origin": "*",
+            },
+          },
+        );
+      } catch (err) {
+        console.error("Receipt OCR processing error:", err);
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: err instanceof Error ? err.message : String(err),
+          }),
+          {
+            status: 500,
+            headers: { "content-type": "application/json; charset=utf-8" },
+          },
+        );
+      }
+    }
+
     // Direct Google Sheets Backup Trigger & Status Endpoints
     if (url.pathname === "/api/backup-sheets" || url.pathname === "/api/sheets/backup") {
       try {

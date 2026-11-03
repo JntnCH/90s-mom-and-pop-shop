@@ -189,9 +189,9 @@ export const getLineServerConfigFn = createServerFn({ method: "GET" }).handler(a
     configuredLiffId: validLiff,
     hasLineToId: Boolean(
       envGet("LINE_TO_ID") ||
-        envGet("LINE_TARGET_ID") ||
-        envGet("LINE_USER_ID") ||
-        envGet("LINE_RECEIVER_ID"),
+      envGet("LINE_TARGET_ID") ||
+      envGet("LINE_USER_ID") ||
+      envGet("LINE_RECEIVER_ID"),
     ),
   };
 });
@@ -290,8 +290,7 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
           }
           if (d1Result.followers?.length) {
             globalServerDatabase.followers = d1Result.followers as unknown as (
-              | ServerLineFollower
-              | LineUserFollower
+              ServerLineFollower | LineUserFollower
             )[];
           }
           globalServerDatabase.lastUpdated = new Date().toISOString();
@@ -341,8 +340,7 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
     if (data.purchaseOrders?.length) globalServerDatabase.purchaseOrders = data.purchaseOrders;
     if (data.followers?.length) {
       globalServerDatabase.followers = removeLegacySampleLineFollowers(data.followers) as (
-        | ServerLineFollower
-        | LineUserFollower
+        ServerLineFollower | LineUserFollower
       )[];
     }
     globalServerDatabase.lastUpdated = new Date().toISOString();

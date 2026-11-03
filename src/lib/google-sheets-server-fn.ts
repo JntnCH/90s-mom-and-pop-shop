@@ -282,7 +282,8 @@ export async function mintServiceAccountAccessToken(
   const header = { alg: "RS256", typ: "JWT" };
   const payload = {
     iss: credentials.clientEmail,
-    scope: "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
+    scope:
+      "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file",
     aud: "https://oauth2.googleapis.com/token",
     exp: now + 3600,
     iat: now,
@@ -304,11 +305,7 @@ export async function mintServiceAccountAccessToken(
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign(
-    "RSASSA-PKCS1-v1_5",
-    key,
-    new TextEncoder().encode(toSign),
-  );
+  const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", key, new TextEncoder().encode(toSign));
   const jwt = `${toSign}.${base64url(new Uint8Array(sig))}`;
 
   const res = await fetch("https://oauth2.googleapis.com/token", {

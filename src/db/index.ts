@@ -30,10 +30,7 @@ export function isPostgresConfigured(): boolean {
   if (readEnv("DATABASE_URL")) return true;
   const host = readEnv("SQL_HOST") || readEnv("PGHOST");
   const user =
-    readEnv("SQL_USER") ||
-    readEnv("SQL_ADMIN_USER") ||
-    readEnv("DB_USER") ||
-    readEnv("PGUSER");
+    readEnv("SQL_USER") || readEnv("SQL_ADMIN_USER") || readEnv("DB_USER") || readEnv("PGUSER");
   const password =
     readEnv("SQL_PASSWORD") ||
     readEnv("SQL_ADMIN_PASSWORD") ||
@@ -63,20 +60,14 @@ export const createPool = () => {
       const portRaw = readEnv("SQL_PORT") || readEnv("PGPORT");
       const port = portRaw ? Number(portRaw) : 5432;
       const user =
-        readEnv("SQL_USER") ||
-        readEnv("SQL_ADMIN_USER") ||
-        readEnv("DB_USER") ||
-        readEnv("PGUSER");
+        readEnv("SQL_USER") || readEnv("SQL_ADMIN_USER") || readEnv("DB_USER") || readEnv("PGUSER");
       const password =
         readEnv("SQL_PASSWORD") ||
         readEnv("SQL_ADMIN_PASSWORD") ||
         readEnv("DB_PASSWORD") ||
         readEnv("PGPASSWORD");
       const database =
-        readEnv("SQL_DB_NAME") ||
-        readEnv("DB_NAME") ||
-        readEnv("PGDATABASE") ||
-        "postgres";
+        readEnv("SQL_DB_NAME") || readEnv("DB_NAME") || readEnv("PGDATABASE") || "postgres";
 
       globalThis._postgresPool = new Pool({
         host,

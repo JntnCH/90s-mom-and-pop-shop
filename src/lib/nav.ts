@@ -23,7 +23,7 @@ export type NavItem = {
 /** เมนูหลักของระบบ */
 export const navItems: NavItem[] = [
   { to: "/", label: "แดชบอร์ด", icon: LayoutDashboard },
-  { to: "/documents", label: "เอกสารขาย & ภาษี", icon: Receipt },
+  { to: "/documents", label: "เอกสารขาย & บิลรายจ่าย", icon: Receipt },
   { to: "/products", label: "สินค้า", icon: Package },
   { to: "/stock", label: "สต็อกสินค้า", icon: Boxes },
   { to: "/receive", label: "รับสินค้าเข้า", icon: PackagePlus },

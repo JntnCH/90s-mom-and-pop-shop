@@ -24,6 +24,7 @@ import {
   Percent,
   PieChart,
   Printer,
+  Receipt,
   RefreshCw,
   Search,
   Sparkles,
@@ -369,6 +370,59 @@ export function AnalyticsPage() {
           </div>
         </div>
       </div>
+
+      {/* Operating Expense & Net Profit Overview */}
+      {(summary.totalExpenses || 0) > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 rounded-2xl bg-muted/40 border text-xs shadow-2xs">
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 shrink-0">
+              <Receipt className="size-4" />
+            </div>
+            <div>
+              <div className="text-muted-foreground text-[11px]">
+                ค่าใช้จ่ายดำเนินงานทั่วไป (ค่าน้ำ/ไฟ/เช่า)
+              </div>
+              <div className="font-bold text-foreground font-mono text-sm">
+                ฿
+                {(summary.totalOperatingExpenses || 0).toLocaleString("th-TH", {
+                  minimumFractionDigits: 2,
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 shrink-0">
+              <Package className="size-4" />
+            </div>
+            <div>
+              <div className="text-muted-foreground text-[11px]">
+                บิลซื้อสินค้าเข้าร้าน (ต้นทุนสต็อก)
+              </div>
+              <div className="font-bold text-emerald-600 font-mono text-sm">
+                ฿
+                {(summary.totalPurchaseExpenses || 0).toLocaleString("th-TH", {
+                  minimumFractionDigits: 2,
+                })}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
+              <Coins className="size-4" />
+            </div>
+            <div>
+              <div className="text-muted-foreground text-[11px]">
+                กำไรสุทธิโดยประมาณ (Net Profit)
+              </div>
+              <div className="font-bold text-primary font-mono text-sm">
+                {canViewCostPrice
+                  ? `฿${(summary.netProfit || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}`
+                  : "฿••••••"}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Analysis Section Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">

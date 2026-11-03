@@ -4,6 +4,7 @@
  */
 
 import { MasterStore, type CategoryItem, type ProductItem, type StockMovementLog } from "./store";
+import { expenseService } from "./expense-service";
 
 export type TimeRangeFilter = "ALL" | "TODAY" | "THIS_WEEK" | "THIS_MONTH";
 
@@ -48,6 +49,12 @@ export interface SalesAnalyticsSummary {
   totalUnitsSold: number;
   totalIssueTransactions: number;
   averageTransactionValue: number;
+
+  // Expenses & Net Profit
+  totalExpenses: number;
+  totalOperatingExpenses: number;
+  totalPurchaseExpenses: number;
+  netProfit: number;
 
   // Inventory Health
   totalInventoryUnits: number;
@@ -314,6 +321,25 @@ export const AnalyticsService = {
       .map(([date, val]) => ({ date, ...val }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
+    // Calculate Expenses & Net Profit
+    let totalExpenses = 0;
+    let totalOperatingExpenses = 0;
+    let totalPurchaseExpenses = 0;
+    try {
+      const allExpenses = expenseService.getExpenses();
+      allExpenses.forEach((exp) => {
+        totalExpenses += exp.grandTotal || 0;
+        if (exp.docType === "PURCHASE_GOODS") {
+          totalPurchaseExpenses += exp.grandTotal || 0;
+        } else {
+          totalOperatingExpenses += exp.grandTotal || 0;
+        }
+      });
+    } catch {
+      // ignore
+    }
+    const netProfit = grossProfit - totalOperatingExpenses;
+
     return {
       timeRange: range,
       startDate: "2026-09-01",
@@ -325,6 +351,10 @@ export const AnalyticsService = {
       totalUnitsSold,
       totalIssueTransactions,
       averageTransactionValue,
+      totalExpenses,
+      totalOperatingExpenses,
+      totalPurchaseExpenses,
+      netProfit,
       totalInventoryUnits,
       inventoryCostValue,
       inventoryRetailValue,

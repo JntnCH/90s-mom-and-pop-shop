@@ -144,26 +144,48 @@ export async function getD1Snapshot(): Promise<D1Snapshot | null> {
   const db = await getD1Binding();
   if (!db) return null;
   const [productsRes, catsRes, unitsRes, zonesRes] = await Promise.all([
-    db.prepare("SELECT * FROM products ORDER BY name COLLATE NOCASE").all<D1ProductRow>().catch(() => ({ results: [] })),
-    db.prepare("SELECT * FROM categories").all<{ id: string; code?: string; name: string }>().catch(() => ({ results: [] })),
-    db.prepare("SELECT * FROM units").all<{ id: string; name: string; short_name?: string }>().catch(() => ({ results: [] })),
-    db.prepare("SELECT * FROM zones").all<{ id: string; code?: string; name: string; description?: string }>().catch(() => ({ results: [] })),
+    db
+      .prepare("SELECT * FROM products ORDER BY name COLLATE NOCASE")
+      .all<D1ProductRow>()
+      .catch(() => ({ results: [] })),
+    db
+      .prepare("SELECT * FROM categories")
+      .all<{ id: string; code?: string; name: string }>()
+      .catch(() => ({ results: [] })),
+    db
+      .prepare("SELECT * FROM units")
+      .all<{ id: string; name: string; short_name?: string }>()
+      .catch(() => ({ results: [] })),
+    db
+      .prepare("SELECT * FROM zones")
+      .all<{ id: string; code?: string; name: string; description?: string }>()
+      .catch(() => ({ results: [] })),
   ]);
   let subResults: { id: string; category_id: string; code?: string; name: string }[] = [];
   try {
-    const subsRes = await db.prepare("SELECT * FROM sub_categories").all<{ id: string; category_id: string; code?: string; name: string }>();
+    const subsRes = await db
+      .prepare("SELECT * FROM sub_categories")
+      .all<{ id: string; category_id: string; code?: string; name: string }>();
     subResults = subsRes.results || [];
   } catch {
     subResults = [];
   }
   let purchaseOrders: unknown[] = [];
   try {
-    const posRes = await db.prepare("SELECT * FROM purchase_orders ORDER BY created_at DESC").all<Record<string, unknown>>();
+    const posRes = await db
+      .prepare("SELECT * FROM purchase_orders ORDER BY created_at DESC")
+      .all<Record<string, unknown>>();
     purchaseOrders = (posRes.results || []).map((row) => ({
       id: String(row["id"]),
       orderNumber: String(row["order_number"] || row["orderNumber"]),
       supplierName: row["supplier_name"] || row["supplierName"] || undefined,
-      items: (() => { try { return typeof row["items_json"] === "string" ? JSON.parse(row["items_json"]) : []; } catch { return []; } })(),
+      items: (() => {
+        try {
+          return typeof row["items_json"] === "string" ? JSON.parse(row["items_json"]) : [];
+        } catch {
+          return [];
+        }
+      })(),
       totalQuantity: Number(row["total_quantity"] || 0),
       totalCost: Number(row["total_cost"] || 0),
       status: String(row["status"] || "DRAFT"),
@@ -176,7 +198,9 @@ export async function getD1Snapshot(): Promise<D1Snapshot | null> {
   }
   let movements: unknown[] = [];
   try {
-    const movRes = await db.prepare("SELECT * FROM stock_movements ORDER BY timestamp DESC LIMIT 500").all<Record<string, unknown>>();
+    const movRes = await db
+      .prepare("SELECT * FROM stock_movements ORDER BY timestamp DESC LIMIT 500")
+      .all<Record<string, unknown>>();
     movements = (movRes.results || []).map((m) => ({
       id: String(m["id"]),
       timestamp: String(m["timestamp"]),
@@ -195,7 +219,9 @@ export async function getD1Snapshot(): Promise<D1Snapshot | null> {
   }
   let receives: unknown[] = [];
   try {
-    const recRes = await db.prepare("SELECT * FROM receives ORDER BY scanned_at DESC LIMIT 500").all<Record<string, unknown>>();
+    const recRes = await db
+      .prepare("SELECT * FROM receives ORDER BY scanned_at DESC LIMIT 500")
+      .all<Record<string, unknown>>();
     receives = (recRes.results || []).map((r) => ({
       id: String(r["id"]),
       barcode: String(r["barcode"]),
@@ -230,10 +256,34 @@ export async function getD1Snapshot(): Promise<D1Snapshot | null> {
     code: c.code || CAT_CODE[c.id] || c.id.replace(/^cat-/, "").slice(0, 3).toUpperCase() || "GEN",
     name: c.name,
   }));
-  const units = (unitsRes.results || []).map((u) => ({ id: u.id, name: u.name, shortName: u.short_name || u.name }));
-  const zones = (zonesRes.results || []).map((z) => ({ id: z.id, code: z.code || z.id, name: z.name, description: z.description }));
-  const subCategories = subResults.map((s) => ({ id: s.id, categoryId: s.category_id, code: s.code || s.id, name: s.name }));
-  return { products, categories, units, zones, subCategories, purchaseOrders, movements, receives, followers };
+  const units = (unitsRes.results || []).map((u) => ({
+    id: u.id,
+    name: u.name,
+    shortName: u.short_name || u.name,
+  }));
+  const zones = (zonesRes.results || []).map((z) => ({
+    id: z.id,
+    code: z.code || z.id,
+    name: z.name,
+    description: z.description,
+  }));
+  const subCategories = subResults.map((s) => ({
+    id: s.id,
+    categoryId: s.category_id,
+    code: s.code || s.id,
+    name: s.name,
+  }));
+  return {
+    products,
+    categories,
+    units,
+    zones,
+    subCategories,
+    purchaseOrders,
+    movements,
+    receives,
+    followers,
+  };
 }
 
 export async function isD1Available(): Promise<boolean> {
@@ -340,7 +390,10 @@ CREATE TABLE IF NOT EXISTS line_followers (user_id TEXT PRIMARY KEY, display_nam
   if (Array.isArray(payload.zones) && payload.zones.length > 0) {
     for (const z of payload.zones) {
       try {
-        await db.prepare("INSERT OR REPLACE INTO zones (id, code, name, description) VALUES (?, ?, ?, ?)").bind(z.id, z.code || z.id, z.name, z.description ?? null).run();
+        await db
+          .prepare("INSERT OR REPLACE INTO zones (id, code, name, description) VALUES (?, ?, ?, ?)")
+          .bind(z.id, z.code || z.id, z.name, z.description ?? null)
+          .run();
       } catch (err) {
         console.warn("[D1 Sync] Failed to upsert zone", z.id, err);
       }
@@ -348,13 +401,20 @@ CREATE TABLE IF NOT EXISTS line_followers (user_id TEXT PRIMARY KEY, display_nam
   }
   if (Array.isArray(payload.deletedZoneIds) && payload.deletedZoneIds.length > 0) {
     for (const id of payload.deletedZoneIds) {
-      try { await db.prepare("DELETE FROM zones WHERE id = ?").bind(id).run(); } catch { /* ignore */ }
+      try {
+        await db.prepare("DELETE FROM zones WHERE id = ?").bind(id).run();
+      } catch {
+        /* ignore */
+      }
     }
   }
   if (Array.isArray(payload.categories) && payload.categories.length > 0) {
     for (const c of payload.categories) {
       try {
-        await db.prepare("INSERT OR REPLACE INTO categories (id, code, name) VALUES (?, ?, ?)").bind(c.id, c.code, c.name).run();
+        await db
+          .prepare("INSERT OR REPLACE INTO categories (id, code, name) VALUES (?, ?, ?)")
+          .bind(c.id, c.code, c.name)
+          .run();
       } catch (err) {
         console.warn("[D1 Sync] Failed to upsert category", c.id, err);
       }
@@ -363,7 +423,12 @@ CREATE TABLE IF NOT EXISTS line_followers (user_id TEXT PRIMARY KEY, display_nam
   if (Array.isArray(payload.subCategories) && payload.subCategories.length > 0) {
     for (const sc of payload.subCategories) {
       try {
-        await db.prepare("INSERT OR REPLACE INTO sub_categories (id, category_id, code, name) VALUES (?, ?, ?, ?)").bind(sc.id, sc.categoryId, sc.code, sc.name).run();
+        await db
+          .prepare(
+            "INSERT OR REPLACE INTO sub_categories (id, category_id, code, name) VALUES (?, ?, ?, ?)",
+          )
+          .bind(sc.id, sc.categoryId, sc.code, sc.name)
+          .run();
       } catch (err) {
         console.warn("[D1 Sync] Failed to upsert subcategory", sc.id, err);
       }
@@ -371,13 +436,20 @@ CREATE TABLE IF NOT EXISTS line_followers (user_id TEXT PRIMARY KEY, display_nam
   }
   if (Array.isArray(payload.deletedSubCategoryIds) && payload.deletedSubCategoryIds.length > 0) {
     for (const id of payload.deletedSubCategoryIds) {
-      try { await db.prepare("DELETE FROM sub_categories WHERE id = ?").bind(id).run(); } catch { /* ignore */ }
+      try {
+        await db.prepare("DELETE FROM sub_categories WHERE id = ?").bind(id).run();
+      } catch {
+        /* ignore */
+      }
     }
   }
   if (Array.isArray(payload.units) && payload.units.length > 0) {
     for (const u of payload.units) {
       try {
-        await db.prepare("INSERT OR REPLACE INTO units (id, name, short_name) VALUES (?, ?, ?)").bind(u.id, u.name, u.shortName || u.name).run();
+        await db
+          .prepare("INSERT OR REPLACE INTO units (id, name, short_name) VALUES (?, ?, ?)")
+          .bind(u.id, u.name, u.shortName || u.name)
+          .run();
       } catch (err) {
         console.warn("[D1 Sync] Failed to upsert unit", u.id, err);
       }
@@ -388,7 +460,33 @@ CREATE TABLE IF NOT EXISTS line_followers (user_id TEXT PRIMARY KEY, display_nam
       try {
         const activeNum = p.isActive === false ? 0 : 1;
         const nowIso = new Date().toISOString();
-        await db.prepare(`INSERT OR REPLACE INTO products (id, sku, barcode, code_type, format, name, image_url, category_id, sub_category_id, zone_id, unit_id, cost_price, sell_price, stock, min_stock, target_stock, reorder_quantity, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(p.id, p.sku || p.barcode || "SKU", p.barcode, p.codeType || "Barcode", p.format || "EAN_13", p.name, p.imageUrl ?? null, p.categoryId, p.subCategoryId ?? null, p.zoneId ?? null, p.unitId, p.costPrice ?? 0, p.sellPrice ?? 0, p.stock ?? 0, p.minStock ?? 5, p.targetStock ?? 15, p.reorderQuantity ?? 15, activeNum, p.createdAt || nowIso, p.updatedAt || nowIso).run();
+        await db
+          .prepare(
+            `INSERT OR REPLACE INTO products (id, sku, barcode, code_type, format, name, image_url, category_id, sub_category_id, zone_id, unit_id, cost_price, sell_price, stock, min_stock, target_stock, reorder_quantity, is_active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            p.id,
+            p.sku || p.barcode || "SKU",
+            p.barcode,
+            p.codeType || "Barcode",
+            p.format || "EAN_13",
+            p.name,
+            p.imageUrl ?? null,
+            p.categoryId,
+            p.subCategoryId ?? null,
+            p.zoneId ?? null,
+            p.unitId,
+            p.costPrice ?? 0,
+            p.sellPrice ?? 0,
+            p.stock ?? 0,
+            p.minStock ?? 5,
+            p.targetStock ?? 15,
+            p.reorderQuantity ?? 15,
+            activeNum,
+            p.createdAt || nowIso,
+            p.updatedAt || nowIso,
+          )
+          .run();
       } catch (err) {
         console.warn("[D1 Sync] Failed to upsert product", p.id, err);
       }
@@ -406,15 +504,38 @@ CREATE TABLE IF NOT EXISTS line_followers (user_id TEXT PRIMARY KEY, display_nam
   if (Array.isArray(payload.purchaseOrders) && payload.purchaseOrders.length > 0) {
     for (const po of payload.purchaseOrders) {
       try {
-        await db.prepare(`INSERT OR REPLACE INTO purchase_orders (id, order_number, supplier_name, items_json, total_quantity, total_cost, status, sent_via_line_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(po.id, po.orderNumber, po.supplierName ?? null, JSON.stringify(po.items || []), po.totalQuantity ?? 0, po.totalCost ?? 0, po.status ?? "DRAFT", po.sentViaLineAt ?? null, po.createdAt ?? new Date().toISOString(), po.updatedAt ?? new Date().toISOString()).run();
+        await db
+          .prepare(
+            `INSERT OR REPLACE INTO purchase_orders (id, order_number, supplier_name, items_json, total_quantity, total_cost, status, sent_via_line_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .bind(
+            po.id,
+            po.orderNumber,
+            po.supplierName ?? null,
+            JSON.stringify(po.items || []),
+            po.totalQuantity ?? 0,
+            po.totalCost ?? 0,
+            po.status ?? "DRAFT",
+            po.sentViaLineAt ?? null,
+            po.createdAt ?? new Date().toISOString(),
+            po.updatedAt ?? new Date().toISOString(),
+          )
+          .run();
       } catch (err) {
         console.warn("[D1 Sync] Failed to upsert purchase order", po.id, err);
       }
     }
   }
-  if (Array.isArray(payload.deletedPurchaseOrderIds) && payload.deletedPurchaseOrderIds.length > 0) {
+  if (
+    Array.isArray(payload.deletedPurchaseOrderIds) &&
+    payload.deletedPurchaseOrderIds.length > 0
+  ) {
     for (const poId of payload.deletedPurchaseOrderIds) {
-      try { await db.prepare("DELETE FROM purchase_orders WHERE id = ?").bind(poId).run(); } catch (err) { console.warn("[D1 Sync] Failed to delete purchase order", poId, err); }
+      try {
+        await db.prepare("DELETE FROM purchase_orders WHERE id = ?").bind(poId).run();
+      } catch (err) {
+        console.warn("[D1 Sync] Failed to delete purchase order", poId, err);
+      }
     }
   }
   return await getD1Snapshot();

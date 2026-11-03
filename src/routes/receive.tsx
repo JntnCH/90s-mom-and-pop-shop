@@ -75,6 +75,7 @@ import {
   type UnitItem,
 } from "@/lib/store";
 import { cn } from "@/lib/utils";
+import { ReceiptOcrModal } from "@/components/documents/ReceiptOcrModal";
 
 export const Route = createFileRoute("/receive")({
   head: () => ({
@@ -125,6 +126,7 @@ function ReceiveCheckPage() {
   const [poListModalOpen, setPoListModalOpen] = useState(false);
 
   const [manualCode, setManualCode] = useState("");
+  const [ocrModalOpen, setOcrModalOpen] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState("");
   const [operatorName, setOperatorName] = useState("พนักงานตรวจรับสินค้า");
   const [lastCompletedBatch, setLastCompletedBatch] = useState<{
@@ -525,6 +527,15 @@ function ReceiveCheckPage() {
       <PageHeader
         title="ตรวจรับสินค้าเข้าสต็อก (Goods Receipt - GRN)"
         description="ตรวจเช็คสินค้าเป็นรายการ ตรวจสอบการได้รับสินค้า จำนวนที่ได้มา ส่วนต่างขาด/เกิน และเลือกหน่วยนับ พร้อมตัดยอดสต็อกเรียลไทม์"
+        action={
+          <Button
+            size="sm"
+            className="rounded-xl text-xs font-bold gap-1.5 h-9 bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+            onClick={() => setOcrModalOpen(true)}
+          >
+            <Sparkles className="size-3.5" /> สแกนบิลซื้อสินค้า (AI OCR)
+          </Button>
+        }
       />
 
       {lastCompletedBatch && (
@@ -1843,6 +1854,19 @@ function ReceiveCheckPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* AI Receipt OCR Modal */}
+      {ocrModalOpen && (
+        <ReceiptOcrModal
+          open={ocrModalOpen}
+          initialType="PURCHASE_GOODS"
+          onClose={() => setOcrModalOpen(false)}
+          onSaved={() => {
+            reloadData();
+            toast.success("อัปเดตสต็อกสินค้าจากบิลซื้อเรียบร้อยแล้ว");
+          }}
+        />
+      )}
     </div>
   );
 }

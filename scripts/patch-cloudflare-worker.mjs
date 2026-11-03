@@ -71,7 +71,9 @@ function walkDir(dir) {
 
 if (fs.existsSync(serverDir)) {
   const patched = walkDir(serverDir);
-  console.log(`[patch-cloudflare-worker] Patched ${patched} chunk(s) for cyclic ES module hoisting.`);
+  console.log(
+    `[patch-cloudflare-worker] Patched ${patched} chunk(s) for cyclic ES module hoisting.`,
+  );
 } else {
   console.warn("[patch-cloudflare-worker] .output/server does not exist, skipping.");
 }

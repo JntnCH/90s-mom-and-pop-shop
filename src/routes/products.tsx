@@ -1037,7 +1037,10 @@ function ProductsPage() {
 
                         {/* Sell Price */}
                         <TableCell className="text-right font-mono text-sm font-semibold text-foreground">
-                          ฿{Number(product.sellPrice ?? 0).toLocaleString("th-TH", { minimumFractionDigits: 2 })}
+                          ฿
+                          {Number(product.sellPrice ?? 0).toLocaleString("th-TH", {
+                            minimumFractionDigits: 2,
+                          })}
                         </TableCell>
 
                         {/* Stock Quantity */}

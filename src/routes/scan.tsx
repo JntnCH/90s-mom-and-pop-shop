@@ -275,11 +275,12 @@ function ScanPage() {
               <AlertTitle className="text-sm font-semibold">กำลังใช้งานผ่าน LINE LIFF</AlertTitle>
               <AlertDescription className="text-xs space-y-1">
                 <p>
-                  กล้องสแกนและบางสคริปต์อาจถูกจำกัดใน WebView ของ LINE
-                  (อาจเห็นข้อความ Cross-origin / CORS)
+                  กล้องสแกนและบางสคริปต์อาจถูกจำกัดใน WebView ของ LINE (อาจเห็นข้อความ Cross-origin
+                  / CORS)
                 </p>
                 <p className="font-medium">
-                  แนะนำ: ใช้ช่องพิมพ์บาร์โค้ดด้านล่าง หรือเปิดหน้านี้นอก LINE (เบราว์เซอร์ภายนอก) เพื่อใช้กล้องเต็มรูปแบบ
+                  แนะนำ: ใช้ช่องพิมพ์บาร์โค้ดด้านล่าง หรือเปิดหน้านี้นอก LINE (เบราว์เซอร์ภายนอก)
+                  เพื่อใช้กล้องเต็มรูปแบบ
                 </p>
               </AlertDescription>
             </Alert>
@@ -418,7 +419,8 @@ function ScanPage() {
           </Card>
 
           <div className="text-center text-xs text-muted-foreground py-4">
-            รายละเอียดสินค้าหลังสแกนและ Generator tab ยังคงทำงานตามเดิม (Minimal Change — เพิ่มเฉพาะคำเตือน LIFF)
+            รายละเอียดสินค้าหลังสแกนและ Generator tab ยังคงทำงานตามเดิม (Minimal Change —
+            เพิ่มเฉพาะคำเตือน LIFF)
           </div>
         </TabsContent>
 

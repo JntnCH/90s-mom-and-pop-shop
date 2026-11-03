@@ -118,11 +118,36 @@ export interface PurchaseOrderRecord {
 }
 
 export const DEFAULT_ZONES: ZoneItem[] = [
-  { id: "zone-a", code: "Z-A", name: "โซน A (หน้าร้าน/เคาน์เตอร์)", description: "สินค้าขายดี ขนม บุหรี่" },
-  { id: "zone-b", code: "Z-B", name: "โซน B (ชั้นกลาง อาหารแห้ง)", description: "บะหมี่สำเร็จรูป เครื่องปรุงรส" },
-  { id: "zone-c", code: "Z-C", name: "โซน C (ตู้แช่ เครื่องดื่ม)", description: "น้ำอัดลม นม น้ำดื่ม เบียร์" },
-  { id: "zone-d", code: "Z-D", name: "โซน D (ของใช้ในบ้าน/ซักล้าง)", description: "ผงซักฟอก ยาสระผม สบู่" },
-  { id: "zone-e", code: "Z-E", name: "โซน E (หลังร้าน/สต็อกสำรอง)", description: "กล่องสต็อกสำรอง" },
+  {
+    id: "zone-a",
+    code: "Z-A",
+    name: "โซน A (หน้าร้าน/เคาน์เตอร์)",
+    description: "สินค้าขายดี ขนม บุหรี่",
+  },
+  {
+    id: "zone-b",
+    code: "Z-B",
+    name: "โซน B (ชั้นกลาง อาหารแห้ง)",
+    description: "บะหมี่สำเร็จรูป เครื่องปรุงรส",
+  },
+  {
+    id: "zone-c",
+    code: "Z-C",
+    name: "โซน C (ตู้แช่ เครื่องดื่ม)",
+    description: "น้ำอัดลม นม น้ำดื่ม เบียร์",
+  },
+  {
+    id: "zone-d",
+    code: "Z-D",
+    name: "โซน D (ของใช้ในบ้าน/ซักล้าง)",
+    description: "ผงซักฟอก ยาสระผม สบู่",
+  },
+  {
+    id: "zone-e",
+    code: "Z-E",
+    name: "โซน E (หลังร้าน/สต็อกสำรอง)",
+    description: "กล่องสต็อกสำรอง",
+  },
 ];
 
 export const DEFAULT_CATEGORIES: CategoryItem[] = [
@@ -143,8 +168,18 @@ export const DEFAULT_SUBCATEGORIES: SubCategoryItem[] = [
   { id: "sub-fod-nood", categoryId: "cat-food", code: "NOOD", name: "บะหมี่และโจ๊กกึ่งสำเร็จรูป" },
   { id: "sub-fod-canned", categoryId: "cat-food", code: "CAND", name: "ปลากระป๋องและอาหารกระป๋อง" },
   { id: "sub-fod-season", categoryId: "cat-food", code: "SEAS", name: "เครื่องปรุงรสและซอส" },
-  { id: "sub-hsh-deter", categoryId: "cat-household", code: "DETR", name: "ผงซักฟอกและน้ำยาทำความสะอาด" },
-  { id: "sub-hsh-tissue", categoryId: "cat-household", code: "TISS", name: "กระดาษทิชชู่และถุงขยะ" },
+  {
+    id: "sub-hsh-deter",
+    categoryId: "cat-household",
+    code: "DETR",
+    name: "ผงซักฟอกและน้ำยาทำความสะอาด",
+  },
+  {
+    id: "sub-hsh-tissue",
+    categoryId: "cat-household",
+    code: "TISS",
+    name: "กระดาษทิชชู่และถุงขยะ",
+  },
   { id: "sub-per-bath", categoryId: "cat-personal", code: "BATH", name: "สบู่ แชมพู และยาสีฟัน" },
   { id: "sub-gen-misc", categoryId: "cat-general", code: "MISC", name: "ของใช้เบ็ดเตล็ดทั่วไป" },
 ];
@@ -556,9 +591,7 @@ function getPurchaseOrderSortTimestamp(po: PurchaseOrderRecord): number {
   return Math.max(updatedMs, createdMs, idMs);
 }
 
-export function sortPurchaseOrdersNewestFirst(
-  items: PurchaseOrderRecord[],
-): PurchaseOrderRecord[] {
+export function sortPurchaseOrdersNewestFirst(items: PurchaseOrderRecord[]): PurchaseOrderRecord[] {
   if (!Array.isArray(items) || items.length <= 1) return Array.isArray(items) ? [...items] : [];
   return items
     .map((item, idx) => ({ item, idx, ts: getPurchaseOrderSortTimestamp(item) }))
@@ -622,7 +655,10 @@ export const MasterStore = {
         updated.code =
           cleanCode && cleanCode !== "-" && cleanCode !== "—"
             ? cleanCode.toUpperCase()
-            : generateCategoryCode(updated.name, this.getCategories().filter((x) => x.id !== id));
+            : generateCategoryCode(
+                updated.name,
+                this.getCategories().filter((x) => x.id !== id),
+              );
       }
       return updated;
     });

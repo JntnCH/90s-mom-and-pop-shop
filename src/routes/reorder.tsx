@@ -478,16 +478,16 @@ function ReorderPage() {
               unitId:
                 i.unitId ||
                 (i.unitName
-                  ? MasterStore.getUnits().find((u) => u.name === i.unitName || u.shortName === i.unitName)?.id
+                  ? MasterStore.getUnits().find(
+                      (u) => u.name === i.unitName || u.shortName === i.unitName,
+                    )?.id
                   : undefined) ||
                 matchedProd?.unitId ||
                 "unit-piece",
               unitName:
                 (i.unitId ? MasterStore.getUnitName(i.unitId) : undefined) ||
                 i.unitName ||
-                MasterStore.getUnitName(
-                  i.unitId || matchedProd?.unitId || "unit-piece",
-                ) ||
+                MasterStore.getUnitName(i.unitId || matchedProd?.unitId || "unit-piece") ||
                 (matchedProd ? MasterStore.getUnitName(matchedProd.unitId) : undefined),
               costPrice: i.costPrice !== undefined ? i.costPrice : matchedProd?.costPrice || 0,
               note: i.note,
@@ -634,7 +634,9 @@ function ReorderPage() {
             categoryId: item.categoryId || prod?.categoryId,
             subCategoryId: item.subCategoryId || prod?.subCategoryId,
             zoneId: item.zoneId || prod?.zoneId,
-            total: (item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0) * item.quantity,
+            total:
+              (item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0) *
+              item.quantity,
           };
         });
         const totalQty = updatedItems.reduce((sum, i) => sum + i.quantity, 0);
@@ -910,15 +912,13 @@ function ReorderPage() {
     );
   };
 
-    const handleUpdateUnit = (productId: string, unitId: string) => {
-  setOrderList((prev) =>
-    prev.map((item) =>
-      item.productId === productId
-        ? { ...item, unitId, unitName: getUnitName(unitId) }
-        : item,
-    ),
-  );
-};
+  const handleUpdateUnit = (productId: string, unitId: string) => {
+    setOrderList((prev) =>
+      prev.map((item) =>
+        item.productId === productId ? { ...item, unitId, unitName: getUnitName(unitId) } : item,
+      ),
+    );
+  };
 
   const handleUpdateCostPrice = (productId: string, costPrice: number) => {
     setOrderList((prev) =>
@@ -967,7 +967,9 @@ function ReorderPage() {
         unitName:
           (i.unitId ? getUnitName(i.unitId) : undefined) ||
           i.unitName ||
-          getUnitName(i.unitId || matchedUnit?.id || matchedProd?.unitId || units[0]?.id || "unit-piece") ||
+          getUnitName(
+            i.unitId || matchedUnit?.id || matchedProd?.unitId || units[0]?.id || "unit-piece",
+          ) ||
           (matchedProd ? getUnitName(matchedProd.unitId) : undefined),
         costPrice: i.costPrice !== undefined ? i.costPrice : matchedProd?.costPrice || 0,
         note: i.note,
@@ -1248,7 +1250,10 @@ function ReorderPage() {
           categoryName: p ? getCatName(p.categoryId) : "-",
           zoneName: p ? zones.find((z) => z.id === p.zoneId)?.name || "-" : "-",
           quantity: i.quantity,
-          unitName: (i.unitId ? getUnitName(i.unitId) : undefined) || i.unitName || (p ? getUnitName(p.unitId) : "-"),
+          unitName:
+            (i.unitId ? getUnitName(i.unitId) : undefined) ||
+            i.unitName ||
+            (p ? getUnitName(p.unitId) : "-"),
           costPrice: i.costPrice,
           total: i.total,
           ...(i.note !== undefined ? { note: i.note } : {}),
@@ -1492,8 +1497,8 @@ function ReorderPage() {
   const fullItems: FullOrderItem[] = orderList.map((item): FullOrderItem => {
     const product = products.find((p) => p.id === item.productId);
     const effectiveUnitId = item.unitId || product?.unitId || units[0]?.id || "unit-piece";
-  // unitId is source of truth (inline dropdown); always resolve name so export/preview stay in sync
-  const effectiveUnitName = getUnitName(effectiveUnitId) || item.unitName || "-";
+    // unitId is source of truth (inline dropdown); always resolve name so export/preview stay in sync
+    const effectiveUnitName = getUnitName(effectiveUnitId) || item.unitName || "-";
     const effectiveCostPrice =
       item.costPrice !== undefined && item.costPrice >= 0
         ? item.costPrice
@@ -1631,7 +1636,9 @@ function ReorderPage() {
         total: f.priceEstimate,
         ...(f.note !== undefined ? { note: f.note } : {}),
         categoryId: f.product.categoryId,
-        ...(f.product.subCategoryId !== undefined ? { subCategoryId: f.product.subCategoryId } : {}),
+        ...(f.product.subCategoryId !== undefined
+          ? { subCategoryId: f.product.subCategoryId }
+          : {}),
         ...(f.product.zoneId !== undefined ? { zoneId: f.product.zoneId } : {}),
       })),
       totalQuantity,
@@ -2537,7 +2544,8 @@ function ReorderPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <ClipboardList className="size-6 text-primary" /> ระบบใบสั่งซื้อสินค้า & สั่งซื้อประจำวัน
+            <ClipboardList className="size-6 text-primary" /> ระบบใบสั่งซื้อสินค้า &
+            สั่งซื้อประจำวัน
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
             คำนวณจำนวนสั่งซื้อ, จัดการใบสั่งซื้อ (PO Lifecycle), ตรวจรับเข้าสต็อก และพิมพ์เอกสาร A4
@@ -2648,25 +2656,27 @@ function ReorderPage() {
           if (editingPOId && orderList.length > 0) {
             const allProds = MasterStore.getProducts();
             const updatedItems = orderList.map((item) => {
-          const prod = allProds.find((p) => p.id === item.productId);
-          return {
-            productId: item.productId,
-            productName: item.productName || prod?.name || "",
-            barcode: item.barcode || prod?.barcode || "",
-            quantity: item.quantity,
-            unitId: item.unitId,
-            unitName:
-              MasterStore.getUnitName(item.unitId) ||
-              item.unitName ||
-              (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
-            costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
-            note: item.note,
-            categoryId: item.categoryId || prod?.categoryId,
-            subCategoryId: item.subCategoryId || prod?.subCategoryId,
-            zoneId: item.zoneId || prod?.zoneId,
-            total: (item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0) * item.quantity,
-          };
-        });
+              const prod = allProds.find((p) => p.id === item.productId);
+              return {
+                productId: item.productId,
+                productName: item.productName || prod?.name || "",
+                barcode: item.barcode || prod?.barcode || "",
+                quantity: item.quantity,
+                unitId: item.unitId,
+                unitName:
+                  MasterStore.getUnitName(item.unitId) ||
+                  item.unitName ||
+                  (prod ? MasterStore.getUnitName(prod.unitId) : undefined),
+                costPrice: item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0,
+                note: item.note,
+                categoryId: item.categoryId || prod?.categoryId,
+                subCategoryId: item.subCategoryId || prod?.subCategoryId,
+                zoneId: item.zoneId || prod?.zoneId,
+                total:
+                  (item.costPrice !== undefined ? item.costPrice : prod?.costPrice || 0) *
+                  item.quantity,
+              };
+            });
             const totalQty = updatedItems.reduce((sum, i) => sum + i.quantity, 0);
             const totalCst = updatedItems.reduce(
               (sum, i) => sum + i.quantity * (i.costPrice || 0),
@@ -4503,11 +4513,7 @@ function ReorderPage() {
                                 calculationStrategy,
                                 customMultiplier,
                               )
-                            : calculateSuggestedQuantity(
-                                p,
-                                calculationStrategy,
-                                customMultiplier,
-                              );
+                            : calculateSuggestedQuantity(p, calculationStrategy, customMultiplier);
                         const isAdded = orderList.some((item) => item.productId === p.id);
 
                         return (
