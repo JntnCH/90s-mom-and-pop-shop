@@ -766,21 +766,17 @@ export const backupMasterDataToSheetsFn = createServerFn({ method: "POST" }).han
   }
 });
 
-export const triggerServerBackupToGoogleSheetsFn = createServerFn({ method: "POST" }).handler(
-  async () => {
+export const triggerServerBackupToGoogleSheetsFn = createServerFn({ method: "POST" })
+  .validator((data: { spreadsheetId?: string | undefined }) => data)
+  .handler(async ({ data }) => {
     try {
-      const d1 = await getD1Snapshot();
-      return {
-        success: true,
-        message: d1
-          ? `D1 snapshot ready (${d1.products?.length || 0} products)`
-          : "No D1 binding — backup skipped on Workers",
-      };
+      return await backupDatabaseToGoogleSheetsServer({
+        spreadsheetId: data?.spreadsheetId,
+      });
     } catch (err) {
       return {
         success: false,
         error: err instanceof Error ? err.message : String(err),
       };
     }
-  },
-);
+  });
