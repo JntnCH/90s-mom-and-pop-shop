@@ -6,7 +6,9 @@ import {
   Barcode as BarcodeIcon,
   Camera,
   CameraOff,
+  Check,
   CheckCircle2,
+  Clock,
   Copy,
   DollarSign,
   ExternalLink,
@@ -19,6 +21,7 @@ import {
   PackageCheck,
   PackageMinus,
   PackagePlus,
+  Plus,
   Printer,
   QrCode,
   RotateCcw,
@@ -36,6 +39,7 @@ import { toast } from "sonner";
 import { BarcodeDisplay } from "@/components/barcode/BarcodeDisplay";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { FormatBadge } from "@/components/master/MasterSelects";
+import { BarcodeLabelSheet } from "@/components/printer/BarcodeLabelSheet";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -123,7 +127,8 @@ function ScanPage() {
     try {
       const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
       const inLine = /Line\//i.test(ua) || /LIFF/i.test(ua);
-      const hasLiff = typeof window !== "undefined" && !!(window as any).liff;
+      const hasLiff =
+        typeof window !== "undefined" && Boolean((window as unknown as { liff?: unknown }).liff);
       setIsLiffEnv(Boolean(inLine || hasLiff));
     } catch {
       setIsLiffEnv(false);
@@ -237,6 +242,79 @@ function ScanPage() {
   const getUnitName = (unitId?: string) => units.find((u) => u.id === unitId)?.name || "ชิ้น";
 
   const inspection = inspectBarcode(genCode);
+  const activeScannedInspection = activeScannedItem ? inspectBarcode(activeScannedItem.code) : null;
+
+  // Quick Register Modal state
+  const [registerModalOpen, setRegisterModalOpen] = useState(false);
+  const [regBarcode, setRegBarcode] = useState("");
+  const [regName, setRegName] = useState("");
+  const [regCostPrice, setRegCostPrice] = useState<number>(0);
+  const [regSellPrice, setRegSellPrice] = useState<number>(0);
+  const [regStock, setRegStock] = useState<number>(10);
+  const [regMinStock, setRegMinStock] = useState<number>(5);
+  const [regUnitId, setRegUnitId] = useState<string>("");
+  const [regCategoryId, setRegCategoryId] = useState<string>("");
+  const [regZoneId, setRegZoneId] = useState<string>("");
+  const [regFormat, setRegFormat] = useState<BarcodeFormatType>("EAN_13");
+  const [regCodeType, setRegCodeType] = useState<CodeType>("Barcode");
+
+  // Generator Mode (single vs sheet)
+  const [generatorMode, setGeneratorMode] = useState<"single" | "sheet">("single");
+
+  const handleOpenQuickRegister = (code: string, format?: BarcodeFormatType, type?: CodeType) => {
+    setRegBarcode(code);
+    setRegName("");
+    setRegCostPrice(0);
+    setRegSellPrice(0);
+    setRegStock(10);
+    setRegMinStock(5);
+    setRegCategoryId(categories[0]?.id || "");
+    setRegZoneId(zones[0]?.id || "");
+    setRegUnitId(units[0]?.id || "");
+    setRegFormat(format || "EAN_13");
+    setRegCodeType(type || (code.startsWith("QR") ? "QR" : "Barcode"));
+    setRegisterModalOpen(true);
+  };
+
+  const handleSaveQuickRegister = (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = regName.trim();
+    if (!cleanName) {
+      toast.error("กรุณาระบุชื่อสินค้า");
+      return;
+    }
+    if (MasterStore.checkDuplicateBarcode(regBarcode)) {
+      toast.error("รหัสบาร์โค้ดนี้มีอยู่ในระบบแล้ว");
+      return;
+    }
+    const newProduct = MasterStore.addProduct({
+      name: cleanName,
+      barcode: regBarcode.trim(),
+      costPrice: Number(regCostPrice) || 0,
+      sellPrice: Number(regSellPrice) || 0,
+      stock: Number(regStock) || 0,
+      minStock: Number(regMinStock) || 0,
+      categoryId: regCategoryId || categories[0]?.id || "cat-food",
+      unitId: regUnitId || units[0]?.id || "unit-pcs",
+      zoneId: regZoneId || zones[0]?.id || "zone-a",
+      codeType: regCodeType,
+      format: regFormat,
+      isActive: true,
+    });
+    reloadData();
+    toast.success(`ลงทะเบียนสินค้า "${newProduct.name}" สำเร็จ`);
+    setRegisterModalOpen(false);
+
+    const updatedItem: ScannedItem = {
+      code: newProduct.barcode,
+      format: newProduct.format,
+      type: newProduct.codeType === "QR" ? "QR" : "Barcode",
+      at: new Date().toLocaleTimeString("th-TH"),
+      matchedProduct: newProduct,
+    };
+    setActiveScannedItem(updatedItem);
+    setItems((prev) => [updatedItem, ...prev.filter((i) => i.code !== newProduct.barcode)]);
+  };
 
   return (
     <div className="mx-auto max-w-4xl space-y-4 sm:space-y-6 pb-12">
@@ -418,26 +496,797 @@ function ScanPage() {
             </CardContent>
           </Card>
 
-          <div className="text-center text-xs text-muted-foreground py-4">
-            รายละเอียดสินค้าหลังสแกนและ Generator tab ยังคงทำงานตามเดิม (Minimal Change —
-            เพิ่มเฉพาะคำเตือน LIFF)
-          </div>
+          {/* Scanned Product Details / Unregistered Product Card */}
+          {activeScannedItem?.matchedProduct ? (
+            <Card className="rounded-2xl border-emerald-500/40 bg-card shadow-md overflow-hidden">
+              <div className="bg-emerald-500/10 border-b border-emerald-500/20 px-4 sm:px-6 py-3 flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="size-5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-sm sm:text-base text-foreground">
+                      พบข้อมูลสินค้าในระบบ (Product Found)
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-2">
+                      สแกนเมื่อ {activeScannedItem.at}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Badge className="bg-emerald-600 text-white hover:bg-emerald-700">
+                    {activeScannedItem.matchedProduct.isActive ? "พร้อมขาย" : "ปิดการขาย"}
+                  </Badge>
+                  <FormatBadge
+                    format={
+                      activeScannedItem.matchedProduct.format ||
+                      activeScannedItem.format ||
+                      "EAN_13"
+                    }
+                  />
+                </div>
+              </div>
+
+              <CardContent className="p-4 sm:p-6 space-y-5">
+                {/* Product Main Title & Visual Barcode */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-muted/40 border">
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge variant="outline" className="text-xs">
+                        {getCatName(activeScannedItem.matchedProduct.categoryId)}
+                      </Badge>
+                      {activeScannedItem.matchedProduct.subCategory && (
+                        <Badge variant="secondary" className="text-xs">
+                          {activeScannedItem.matchedProduct.subCategory}
+                        </Badge>
+                      )}
+                      <Badge
+                        variant="outline"
+                        className="text-xs text-muted-foreground flex items-center gap-1"
+                      >
+                        <MapPin className="size-3 text-primary" />
+                        {getZoneName(activeScannedItem.matchedProduct.zoneId)}
+                      </Badge>
+                    </div>
+                    <h3 className="text-xl sm:text-2xl font-black tracking-tight text-foreground break-words">
+                      {activeScannedItem.matchedProduct.name}
+                    </h3>
+                    <p className="text-xs text-muted-foreground flex items-center gap-1.5 font-mono">
+                      <span>รหัสบาร์โค้ด: {activeScannedItem.matchedProduct.barcode}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (typeof navigator !== "undefined" && navigator.clipboard) {
+                            navigator.clipboard.writeText(
+                              activeScannedItem.matchedProduct!.barcode,
+                            );
+                            toast.success("คัดลอกรหัสบาร์โค้ดแล้ว");
+                          }
+                        }}
+                        className="hover:text-primary transition-colors p-1"
+                        title="คัดลอกรหัส"
+                      >
+                        <Copy className="size-3.5" />
+                      </button>
+                    </p>
+                  </div>
+
+                  {/* Visual Barcode Display */}
+                  <div className="bg-white p-3 rounded-xl border shadow-xs flex flex-col items-center justify-center shrink-0 min-w-[180px]">
+                    <BarcodeDisplay
+                      value={activeScannedItem.matchedProduct.barcode}
+                      format={
+                        activeScannedItem.matchedProduct.codeType === "QR"
+                          ? "QR_CODE"
+                          : (activeScannedItem.matchedProduct.format as BarcodeFormatType) ||
+                            "EAN_13"
+                      }
+                      showText={true}
+                      className="max-h-16"
+                    />
+                  </div>
+                </div>
+
+                {/* Metric / Specs Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {/* Price */}
+                  <div className="p-3.5 rounded-xl border bg-card space-y-1">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <DollarSign className="size-3.5 text-emerald-500" /> ราคาขายหน้าร้าน
+                    </span>
+                    <div className="text-lg sm:text-xl font-black text-emerald-600 dark:text-emerald-400">
+                      ฿
+                      {activeScannedItem.matchedProduct.sellPrice.toLocaleString("th-TH", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      ต่อ 1 {getUnitName(activeScannedItem.matchedProduct.unitId)}
+                    </div>
+                  </div>
+
+                  {/* Cost & Margin */}
+                  <div className="p-3.5 rounded-xl border bg-card space-y-1">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <TrendingUp className="size-3.5 text-blue-500" /> ราคาทุน / กำไร
+                    </span>
+                    <div className="text-lg sm:text-xl font-black text-foreground">
+                      ฿
+                      {activeScannedItem.matchedProduct.costPrice.toLocaleString("th-TH", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </div>
+                    <div className="text-[11px] text-emerald-600 font-semibold">
+                      กำไร +฿
+                      {(
+                        activeScannedItem.matchedProduct.sellPrice -
+                        activeScannedItem.matchedProduct.costPrice
+                      ).toFixed(2)}{" "}
+                      (
+                      {(
+                        ((activeScannedItem.matchedProduct.sellPrice -
+                          activeScannedItem.matchedProduct.costPrice) /
+                          (activeScannedItem.matchedProduct.sellPrice || 1)) *
+                        100
+                      ).toFixed(0)}
+                      %)
+                    </div>
+                  </div>
+
+                  {/* Stock */}
+                  <div className="p-3.5 rounded-xl border bg-card space-y-1">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Package className="size-3.5 text-amber-500" /> คงเหลือในสต็อก
+                    </span>
+                    <div className="text-lg sm:text-xl font-black text-foreground">
+                      {activeScannedItem.matchedProduct.stock}{" "}
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {getUnitName(activeScannedItem.matchedProduct.unitId)}
+                      </span>
+                    </div>
+                    <div>
+                      {activeScannedItem.matchedProduct.stock <= 0 ? (
+                        <Badge variant="destructive" className="text-[10px] h-4.5 px-1.5">
+                          สินค้าหมด
+                        </Badge>
+                      ) : activeScannedItem.matchedProduct.stock <=
+                        activeScannedItem.matchedProduct.minStock ? (
+                        <Badge className="bg-amber-500 text-white text-[10px] h-4.5 px-1.5">
+                          สต็อกใกล้หมด (ต่ำกว่า {activeScannedItem.matchedProduct.minStock})
+                        </Badge>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground">
+                          เตือนสั่งซื้อเมื่อ &le; {activeScannedItem.matchedProduct.minStock}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Location / Zone */}
+                  <div className="p-3.5 rounded-xl border bg-card space-y-1">
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <MapPin className="size-3.5 text-violet-500" /> ตำแหน่งจัดวาง
+                    </span>
+                    <div
+                      className="text-sm sm:text-base font-bold text-foreground truncate"
+                      title={getZoneName(activeScannedItem.matchedProduct.zoneId)}
+                    >
+                      {getZoneName(activeScannedItem.matchedProduct.zoneId)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground">
+                      หน่วยนับ: {getUnitName(activeScannedItem.matchedProduct.unitId)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Action Buttons */}
+                <div className="flex flex-wrap gap-2 pt-2 border-t">
+                  <Button
+                    size="default"
+                    className="gap-2 rounded-xl font-bold bg-primary hover:bg-primary/95 text-primary-foreground shadow-xs active:scale-98"
+                    onClick={() =>
+                      navigate({
+                        to: "/issue",
+                        search: {
+                          addBarcode: activeScannedItem.matchedProduct!.barcode,
+                        } as unknown as Record<string, unknown>,
+                      })
+                    }
+                  >
+                    <ShoppingCart className="size-4" /> ขายสินค้านี้ / เปิดบิลขาย
+                  </Button>
+                  <Button
+                    size="default"
+                    variant="secondary"
+                    className="gap-2 rounded-xl font-semibold active:scale-98"
+                    onClick={() =>
+                      navigate({
+                        to: "/receive",
+                        search: {
+                          barcode: activeScannedItem.matchedProduct!.barcode,
+                        } as unknown as Record<string, unknown>,
+                      })
+                    }
+                  >
+                    <PackagePlus className="size-4 text-emerald-600" /> รับเข้าสต็อก
+                  </Button>
+                  <Button
+                    size="default"
+                    variant="outline"
+                    className="gap-2 rounded-xl font-semibold active:scale-98"
+                    onClick={() =>
+                      handleOpenGeneratorWithProduct(activeScannedItem.matchedProduct!)
+                    }
+                  >
+                    <Printer className="size-4 text-primary" /> พิมพ์ป้ายบาร์โค้ด
+                  </Button>
+                  <Button
+                    size="default"
+                    variant="outline"
+                    className="gap-2 rounded-xl font-semibold active:scale-98"
+                    onClick={() =>
+                      navigate({
+                        to: "/products",
+                        search: {
+                          search: activeScannedItem.matchedProduct!.barcode,
+                        } as unknown as Record<string, unknown>,
+                      })
+                    }
+                  >
+                    <Tag className="size-4 text-muted-foreground" /> แก้ไขข้อมูลสินค้า
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : activeScannedItem ? (
+            /* Unregistered Scanned Barcode Card */
+            <Card className="rounded-2xl border-amber-500/40 bg-card shadow-md overflow-hidden">
+              <div className="bg-amber-500/10 border-b border-amber-500/20 px-4 sm:px-6 py-3 flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="size-5 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <div>
+                    <span className="font-bold text-sm sm:text-base text-amber-950 dark:text-amber-100">
+                      ยังไม่พบสินค้านี้ในระบบ (Unregistered Product)
+                    </span>
+                    <span className="text-xs text-muted-foreground ml-2">
+                      สแกนเมื่อ {activeScannedItem.at}
+                    </span>
+                  </div>
+                </div>
+                <Badge
+                  variant="outline"
+                  className="border-amber-500 text-amber-700 dark:text-amber-300 font-semibold"
+                >
+                  รหัสสินค้าใหม่
+                </Badge>
+              </div>
+
+              <CardContent className="p-4 sm:p-6 space-y-5">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-4 rounded-xl bg-amber-50/50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50">
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <h4 className="text-base sm:text-lg font-bold text-foreground">
+                      รหัสบาร์โค้ด:{" "}
+                      <span className="font-mono text-primary font-black">
+                        {activeScannedItem.code}
+                      </span>
+                    </h4>
+                    <p className="text-xs text-muted-foreground">
+                      ระบบตรวจจับรหัสสำเร็จ แต่ยังไม่มีข้อมูลสินค้านี้ในฐานข้อมูลของร้านค้า
+                      คุณสามารถคลิกลงทะเบียนเพื่อบันทึกชื่อ ราคา และสต็อกได้ทันที
+                    </p>
+                    <div className="flex items-center gap-2 pt-1 text-xs">
+                      <Badge variant="secondary" className="font-mono text-[11px]">
+                        {activeScannedItem.format ||
+                          activeScannedInspection?.inferredFormat ||
+                          "Barcode 1D"}
+                      </Badge>
+                      <span className="text-muted-foreground">
+                        {activeScannedInspection?.isValid
+                          ? "✓ มาตรฐาน GS1 ถูกต้อง"
+                          : activeScannedInspection?.notes}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-xl border shadow-xs flex flex-col items-center justify-center shrink-0 min-w-[180px]">
+                    <BarcodeDisplay
+                      value={activeScannedItem.code}
+                      format={activeScannedInspection?.inferredFormat || "EAN_13"}
+                      showText={true}
+                      className="max-h-16"
+                    />
+                  </div>
+                </div>
+
+                {/* Primary Action to register product */}
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <Button
+                    size="lg"
+                    className="flex-1 sm:flex-initial gap-2 rounded-xl h-12 px-6 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm active:scale-98"
+                    onClick={() =>
+                      handleOpenQuickRegister(
+                        activeScannedItem.code,
+                        activeScannedInspection?.inferredFormat,
+                        activeScannedItem.type,
+                      )
+                    }
+                  >
+                    <PackagePlus className="size-5" /> ลงทะเบียนสินค้านี้ทันที (+ เพิ่มสินค้าใหม่)
+                  </Button>
+
+                  <Button
+                    size="lg"
+                    variant="outline"
+                    className="rounded-xl h-12 px-4 font-semibold gap-2 active:scale-98"
+                    onClick={() => {
+                      setGenCode(activeScannedItem.code);
+                      setGenFormat(activeScannedInspection?.inferredFormat || "EAN_13");
+                      setActiveTab("generator");
+                    }}
+                  >
+                    <Printer className="size-4.5 text-primary" /> สร้างป้ายบาร์โค้ดนี้
+                  </Button>
+
+                  <Button
+                    size="lg"
+                    variant="ghost"
+                    className="rounded-xl h-12 px-3 font-semibold text-muted-foreground hover:text-foreground gap-1.5"
+                    onClick={() => {
+                      if (typeof navigator !== "undefined" && navigator.clipboard) {
+                        navigator.clipboard.writeText(activeScannedItem.code);
+                        toast.success("คัดลอกรหัสบาร์โค้ดแล้ว");
+                      }
+                    }}
+                  >
+                    <Copy className="size-4" /> คัดลอกรหัส
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ) : (
+            /* Guide Placeholder when nothing has been scanned yet */
+            <Card className="rounded-2xl border-dashed border-border bg-muted/20 text-center p-6 sm:p-8 space-y-2">
+              <ScanLine className="size-10 mx-auto text-muted-foreground/60" />
+              <p className="text-sm font-semibold text-foreground">ยังไม่มีรายการสแกนในรอบนี้</p>
+              <p className="text-xs text-muted-foreground max-w-sm mx-auto">
+                เล็งกล้องไปที่บาร์โค้ดสินค้า พิมพ์รหัสในช่องค้นหา
+                หรือเชื่อมต่อเครื่องสแกนบาร์โค้ดเพื่อดูรายละเอียดสินค้าและจัดการสต็อกทันที
+              </p>
+            </Card>
+          )}
+
+          {/* Session Scan History */}
+          {items.length > 0 && (
+            <Card className="rounded-2xl border-border/80 shadow-xs">
+              <CardHeader className="py-3 px-4 sm:px-6 flex flex-row items-center justify-between border-b">
+                <div>
+                  <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+                    <Clock className="size-4 text-primary" /> ประวัติการสแกนในรอบนี้ ({items.length}
+                    )
+                  </CardTitle>
+                  <CardDescription className="text-xs">
+                    แตะที่รายการเพื่อดูรายละเอียดสินค้าทั้งหมดอีกครั้ง
+                  </CardDescription>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs text-muted-foreground hover:text-destructive h-8 px-2 gap-1"
+                  onClick={() => {
+                    setItems([]);
+                    setActiveScannedItem(null);
+                    resetDeduplication();
+                    toast.info("ล้างประวัติการสแกนแล้ว");
+                  }}
+                >
+                  <Trash2 className="size-3.5" /> ล้างประวัติ
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0 divide-y max-h-80 overflow-y-auto">
+                {items.map((item, idx) => (
+                  <div
+                    key={`${item.code}-${idx}`}
+                    onClick={() => setActiveScannedItem(item)}
+                    className={`flex items-center justify-between p-3 sm:px-6 cursor-pointer hover:bg-muted/50 transition-colors ${
+                      activeScannedItem?.code === item.code ? "bg-muted/60" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={`size-8 rounded-lg flex items-center justify-center shrink-0 ${
+                          item.matchedProduct
+                            ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300"
+                            : "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
+                        }`}
+                      >
+                        {item.matchedProduct ? (
+                          <CheckCircle2 className="size-4" />
+                        ) : (
+                          <PackagePlus className="size-4" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="font-semibold text-xs sm:text-sm text-foreground truncate">
+                          {item.matchedProduct?.name || "ยังไม่ได้ลงทะเบียนสินค้า"}
+                        </div>
+                        <div className="text-[11px] text-muted-foreground font-mono flex items-center gap-2">
+                          <span>{item.code}</span>
+                          <span>•</span>
+                          <span>{item.at}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 text-right">
+                      {item.matchedProduct ? (
+                        <div className="text-xs">
+                          <span className="font-bold text-emerald-600 block">
+                            ฿{item.matchedProduct.sellPrice.toFixed(2)}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            คงเหลือ {item.matchedProduct.stock}{" "}
+                            {getUnitName(item.matchedProduct.unitId)}
+                          </span>
+                        </div>
+                      ) : (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] text-amber-600 border-amber-300"
+                        >
+                          + ลงทะเบียน
+                        </Badge>
+                      )}
+                      <ArrowRight className="size-3.5 text-muted-foreground/60" />
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="generator" className="space-y-4">
-          <Card className="rounded-2xl">
-            <CardHeader>
-              <CardTitle className="text-base">สร้าง & พิมพ์บาร์โค้ด</CardTitle>
-              <CardDescription>ส่วน Generator ยังใช้ได้ตามปกติ</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                เปิดแท็บนี้เพื่อสร้างบาร์โค้ดใหม่ หรือเลือกสินค้าที่มีอยู่
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="space-y-0.5">
+              <h3 className="text-base font-bold text-foreground">พิมพ์ป้าย & บาร์โค้ด</h3>
+              <p className="text-xs text-muted-foreground">
+                เลือกรูปแบบป้ายราคาเดี่ยว หรือพิมพ์สติกเกอร์บาร์โค้ดหลายดวง
               </p>
-            </CardContent>
-          </Card>
+            </div>
+            <div className="flex items-center gap-1.5 p-1 bg-muted rounded-xl">
+              <Button
+                size="sm"
+                variant={generatorMode === "single" ? "default" : "ghost"}
+                className="h-8 text-xs rounded-lg font-semibold"
+                onClick={() => setGeneratorMode("single")}
+              >
+                ป้ายราคาเดี่ยว
+              </Button>
+              <Button
+                size="sm"
+                variant={generatorMode === "sheet" ? "default" : "ghost"}
+                className="h-8 text-xs rounded-lg font-semibold"
+                onClick={() => setGeneratorMode("sheet")}
+              >
+                ชุดพิมพ์สติกเกอร์เต็มแผ่น
+              </Button>
+            </div>
+          </div>
+
+          {generatorMode === "sheet" ? (
+            <BarcodeLabelSheet initialProductId={selectedProductId} />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Generator Configuration Form */}
+              <Card className="rounded-2xl border-border/80">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">ตั้งค่าป้ายบาร์โค้ด</CardTitle>
+                  <CardDescription className="text-xs">
+                    ดึงข้อมูลจากสินค้าในระบบ หรือระบุรหัสเพื่อสร้างป้ายใหม่
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3.5">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">เลือกสินค้าจากระบบ (ถ้ามี)</Label>
+                    <Select value={selectedProductId} onValueChange={handleSelectProduct}>
+                      <SelectTrigger className="h-10 text-xs rounded-xl">
+                        <SelectValue placeholder="-- เลือกสินค้าเพื่อดึงข้อมูล --" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {products.map((p) => (
+                          <SelectItem key={p.id} value={p.id} className="text-xs">
+                            {p.name} ({p.barcode})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">รูปแบบบาร์โค้ด</Label>
+                      <Select
+                        value={genFormat}
+                        onValueChange={(v) => setGenFormat(v as BarcodeFormatType)}
+                      >
+                        <SelectTrigger className="h-10 text-xs rounded-xl">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="EAN_13">EAN-13 (มาตรฐานสินค้า 13 หลัก)</SelectItem>
+                          <SelectItem value="CODE_128">Code 128 (ตัวเลข/อักษรทั่วไป)</SelectItem>
+                          <SelectItem value="QR_CODE">QR Code (2 มิติ)</SelectItem>
+                          <SelectItem value="UPC_A">UPC-A (12 หลัก)</SelectItem>
+                          <SelectItem value="EAN_8">EAN-8 (8 หลัก)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <Label className="text-xs font-semibold">สุ่มรหัสมาตรฐานร้าน</Label>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="w-full h-10 text-xs rounded-xl font-semibold gap-1"
+                        onClick={() => handleGenerateNewCode(genFormat)}
+                      >
+                        <Sparkles className="size-3.5 text-primary" /> สุ่มรหัส {genFormat}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">รหัสบาร์โค้ด</Label>
+                    <Input
+                      value={genCode}
+                      onChange={(e) => setGenCode(e.target.value)}
+                      className="h-10 font-mono text-xs rounded-xl"
+                      placeholder="เช่น 8850124001153"
+                    />
+                    {inspection && (
+                      <p
+                        className={`text-[11px] ${inspection.isValid ? "text-emerald-600" : "text-amber-600"}`}
+                      >
+                        {inspection.notes}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">ชื่อสินค้าบนป้าย</Label>
+                    <Input
+                      value={genTitle}
+                      onChange={(e) => setGenTitle(e.target.value)}
+                      className="h-10 text-xs rounded-xl"
+                      placeholder="ชื่อสินค้า เช่น มาม่า ต้มยำกุ้ง"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">ราคาขาย (บาท)</Label>
+                    <Input
+                      type="number"
+                      step="0.25"
+                      value={genPrice}
+                      onChange={(e) => setGenPrice(parseFloat(e.target.value) || 0)}
+                      className="h-10 text-xs rounded-xl"
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Preview Card */}
+              <Card className="rounded-2xl border-border/80 flex flex-col justify-between">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">ตัวอย่างป้ายสินค้า (Label Preview)</CardTitle>
+                  <CardDescription className="text-xs">
+                    แสดงขนาดและรูปแบบป้ายราคาสำหรับพิมพ์ติดชั้นวางหรือตัวสินค้า
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col items-center justify-center p-6 space-y-4">
+                  {/* 90s Vintage Style Shelf Label Box */}
+                  <div className="w-full max-w-xs border-2 border-primary/40 rounded-xl p-4 bg-amber-50/20 dark:bg-card shadow-xs text-center space-y-2">
+                    <div className="text-[10px] uppercase font-bold tracking-wider text-muted-foreground border-b pb-1">
+                      โชห่วยยุค 90s
+                    </div>
+                    <div className="font-bold text-sm text-foreground line-clamp-1">{genTitle}</div>
+                    <div className="bg-white p-2 rounded-lg border flex items-center justify-center">
+                      <BarcodeDisplay
+                        value={genCode}
+                        format={genFormat}
+                        showText={true}
+                        className="max-h-20"
+                      />
+                    </div>
+                    <div className="pt-1">
+                      <span className="text-2xl font-black text-primary">
+                        ฿{genPrice.toFixed(2)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2 w-full max-w-xs pt-2">
+                    <Button
+                      className="flex-1 rounded-xl h-11 font-bold gap-1.5"
+                      onClick={() => window.print()}
+                    >
+                      <Printer className="size-4" /> พิมพ์ป้ายนี้
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="rounded-xl h-11 px-3"
+                      onClick={() => {
+                        if (typeof navigator !== "undefined" && navigator.clipboard) {
+                          navigator.clipboard.writeText(genCode);
+                          toast.success("คัดลอกรหัสบาร์โค้ดแล้ว");
+                        }
+                      }}
+                      title="คัดลอกรหัส"
+                    >
+                      <Copy className="size-4" />
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
+
+      {/* Quick Product Registration Modal */}
+      <Dialog open={registerModalOpen} onOpenChange={setRegisterModalOpen}>
+        <DialogContent className="sm:max-w-md rounded-2xl">
+          <form onSubmit={handleSaveQuickRegister} className="space-y-4">
+            <DialogHeader>
+              <DialogTitle className="text-lg flex items-center gap-2">
+                <PackagePlus className="size-5 text-emerald-600" /> ลงทะเบียนสินค้าใหม่ทันที
+              </DialogTitle>
+              <DialogDescription className="text-xs">
+                เพิ่มสินค้าเข้าระบบร้านค้าด้วยรหัสบาร์โค้ดที่เพิ่งสแกน
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-3 py-1">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">รหัสบาร์โค้ด (Barcode)</Label>
+                <Input
+                  value={regBarcode}
+                  onChange={(e) => setRegBarcode(e.target.value)}
+                  className="font-mono text-xs rounded-xl h-10"
+                  required
+                />
+              </div>
+
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold">
+                  ชื่อสินค้า <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={regName}
+                  onChange={(e) => setRegName(e.target.value)}
+                  placeholder="เช่น บะหมี่กึ่งสำเร็จรูป, ปลากระป๋อง..."
+                  className="text-xs rounded-xl h-10"
+                  required
+                  autoFocus
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">ราคาทุน (บาท)</Label>
+                  <Input
+                    type="number"
+                    step="0.25"
+                    value={regCostPrice}
+                    onChange={(e) => setRegCostPrice(parseFloat(e.target.value) || 0)}
+                    className="text-xs rounded-xl h-10"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">
+                    ราคาขาย (บาท) <span className="text-destructive">*</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    step="0.25"
+                    value={regSellPrice}
+                    onChange={(e) => setRegSellPrice(parseFloat(e.target.value) || 0)}
+                    className="text-xs rounded-xl h-10 font-bold"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">จำนวนเริ่มต้นในสต็อก</Label>
+                  <Input
+                    type="number"
+                    value={regStock}
+                    onChange={(e) => setRegStock(parseInt(e.target.value, 10) || 0)}
+                    className="text-xs rounded-xl h-10"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">เตือนสั่งซื้อขั้นต่ำ</Label>
+                  <Input
+                    type="number"
+                    value={regMinStock}
+                    onChange={(e) => setRegMinStock(parseInt(e.target.value, 10) || 0)}
+                    className="text-xs rounded-xl h-10"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold">หมวดหมู่</Label>
+                  <Select value={regCategoryId} onValueChange={setRegCategoryId}>
+                    <SelectTrigger className="h-9 text-xs rounded-lg">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories.map((c) => (
+                        <SelectItem key={c.id} value={c.id} className="text-xs">
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold">โซนจัดเก็บ</Label>
+                  <Select value={regZoneId} onValueChange={setRegZoneId}>
+                    <SelectTrigger className="h-9 text-xs rounded-lg">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {zones.map((z) => (
+                        <SelectItem key={z.id} value={z.id} className="text-xs">
+                          {z.code}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-semibold">หน่วยนับ</Label>
+                  <Select value={regUnitId} onValueChange={setRegUnitId}>
+                    <SelectTrigger className="h-9 text-xs rounded-lg">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {units.map((u) => (
+                        <SelectItem key={u.id} value={u.id} className="text-xs">
+                          {u.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="gap-2 sm:gap-0 pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="rounded-xl text-xs h-10"
+                onClick={() => setRegisterModalOpen(false)}
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                type="submit"
+                className="rounded-xl text-xs h-10 font-bold bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                บันทึกสินค้าใหม่ทันที
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

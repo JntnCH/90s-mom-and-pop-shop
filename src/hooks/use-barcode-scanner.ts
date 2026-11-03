@@ -1,5 +1,7 @@
 import { BrowserMultiFormatReader, type IScannerControls } from "@zxing/browser";
-import { BarcodeFormat, DecodeHintType } from "@zxing/library";
+import * as ZXing from "@zxing/library";
+const zxingPkg = (ZXing as unknown as { default?: typeof ZXing }).default || ZXing;
+const { BarcodeFormat, DecodeHintType } = zxingPkg;
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { playScanSuccessSound } from "@/lib/scanner-audio";

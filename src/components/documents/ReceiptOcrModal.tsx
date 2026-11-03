@@ -23,6 +23,7 @@ import {
   AlertCircle,
   ShieldCheck,
   Zap,
+  ScanLine,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -79,9 +80,11 @@ export function ReceiptOcrModal({
 
   // Camera stream state
   const [isCameraActive, setIsCameraActive] = useState<boolean>(false);
+  const [isCameraStarting, setIsCameraStarting] = useState<boolean>(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
 
   // Extracted Data / Editing State
   const [docType, setDocType] = useState<ExpenseDocType>(initialType);
@@ -158,7 +161,11 @@ export function ReceiptOcrModal({
       mediaStreamRef.current.getTracks().forEach((track) => track.stop());
       mediaStreamRef.current = null;
     }
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
     setIsCameraActive(false);
+    setIsCameraStarting(false);
   }, []);
 
   useEffect(() => {
@@ -167,34 +174,98 @@ export function ReceiptOcrModal({
     }
   }, [open, stopCamera]);
 
+  // Callback ref for <video> element to immediately attach active stream when mounted in DOM
+  const bindVideoRef = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    if (node && mediaStreamRef.current) {
+      node.srcObject = mediaStreamRef.current;
+      node.setAttribute("playsinline", "true");
+      node.setAttribute("webkit-playsinline", "true");
+      node.muted = true;
+      node.play().catch((err) => {
+        console.warn("Camera video play on attach warning:", err);
+      });
+    }
+  }, []);
+
+  // Extra safeguard effect when isCameraActive changes
+  useEffect(() => {
+    if (isCameraActive && videoRef.current && mediaStreamRef.current) {
+      const video = videoRef.current;
+      if (video.srcObject !== mediaStreamRef.current) {
+        video.srcObject = mediaStreamRef.current;
+      }
+      video.setAttribute("playsinline", "true");
+      video.setAttribute("webkit-playsinline", "true");
+      video.muted = true;
+      video.play().catch((err) => {
+        console.warn("Camera video play on effect warning:", err);
+      });
+    }
+  }, [isCameraActive]);
+
   const startCamera = async () => {
     try {
+      setIsCameraStarting(true);
       stopCamera();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: false,
-      });
-      mediaStreamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
+
+      if (!navigator?.mediaDevices?.getUserMedia) {
+        toast.error("อุปกรณ์นี้ไม่รองรับ WebRTC Camera กรุณาใช้ปุ่ม 'ถ่ายรูปด้วยกล้องมือถือ' แทน");
+        setIsCameraStarting(false);
+        return;
       }
+
+      let stream: MediaStream;
+      try {
+        // Preferred: rear environment camera
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
+      } catch {
+        // Fallback: any available video device
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+      }
+
+      mediaStreamRef.current = stream;
       setIsCameraActive(true);
-    } catch (err) {
+      setIsCameraStarting(false);
+      toast.info("เปิดกล้องสำเร็จ จัดใบเสร็จให้อยู่ในกรอบแล้วกดถ่ายภาพ");
+    } catch (err: unknown) {
       console.error("Camera access error:", err);
-      toast.error("ไม่สามารถเข้าถึงกล้องได้ กรุณาตรวจสอบสิทธิ์การใช้งานหรือใช้วิธีอัปโหลดรูปภาพ");
       setIsCameraActive(false);
+      setIsCameraStarting(false);
+      const isPermissionDenied =
+        err instanceof Error &&
+        (err.name === "NotAllowedError" || err.name === "PermissionDeniedError");
+      if (isPermissionDenied) {
+        toast.error(
+          "ไม่ได้รับอนุญาตให้ใช้กล้อง กรุณาเปิดสิทธิ์ในตั้งค่าเบราว์เซอร์ หรือกด 'ถ่ายภาพด้วยกล้องมือถือ'",
+        );
+      } else {
+        toast.error("ไม่สามารถเปิดกล้องสดได้ กรุณาใช้ปุ่ม 'ถ่ายภาพด้วยกล้องมือถือ' แทน");
+      }
     }
   };
 
   const capturePhoto = () => {
     if (!videoRef.current) return;
+    const video = videoRef.current;
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
     const canvas = document.createElement("canvas");
-    canvas.width = videoRef.current.videoWidth || 1280;
-    canvas.height = videoRef.current.videoHeight || 720;
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(video, 0, 0, width, height);
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
     setPreviewUrl(dataUrl);
     stopCamera();
@@ -478,27 +549,37 @@ export function ReceiptOcrModal({
           {/* TOP SECTION: PHOTO CAPTURE & UPLOAD */}
           <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-2xl bg-muted/60 border">
             <div className="flex flex-wrap items-center gap-2">
-              {/* File Upload Input */}
+              {/* 1. Native Mobile Camera Direct Input (100% reliable on iOS & Android) */}
               <input
                 type="file"
-                ref={fileInputRef}
-                accept="image/*,application/pdf"
+                ref={cameraInputRef}
+                accept="image/*"
                 capture="environment"
                 className="hidden"
                 onChange={handleFileUpload}
               />
 
+              {/* 2. Photo Library / PDF File Upload Input (No capture) */}
+              <input
+                type="file"
+                ref={fileInputRef}
+                accept="image/*,application/pdf"
+                className="hidden"
+                onChange={handleFileUpload}
+              />
+
+              {/* Native Mobile Camera Button (Recommended for iPhone / Mobile) */}
               <Button
                 type="button"
                 size="sm"
-                variant="outline"
-                className="h-9 rounded-xl text-xs gap-1.5 font-semibold bg-background"
-                onClick={() => fileInputRef.current?.click()}
+                className="h-9 rounded-xl text-xs gap-1.5 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs"
+                onClick={() => cameraInputRef.current?.click()}
                 disabled={isProcessing}
               >
-                <Upload className="size-3.5 text-primary" /> เลือกรูปภาพ / PDF บิล
+                <Camera className="size-3.5" /> ถ่ายภาพด้วยกล้องมือถือ
               </Button>
 
+              {/* Live WebRTC Camera Toggle */}
               {isCameraActive ? (
                 <Button
                   type="button"
@@ -507,20 +588,33 @@ export function ReceiptOcrModal({
                   className="h-9 rounded-xl text-xs gap-1.5 font-semibold"
                   onClick={stopCamera}
                 >
-                  <CameraOff className="size-3.5" /> ปิดกล้อง
+                  <CameraOff className="size-3.5" /> ปิดกล้องสด
                 </Button>
               ) : (
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="h-9 rounded-xl text-xs gap-1.5 font-semibold bg-background"
+                  className="h-9 rounded-xl text-xs gap-1.5 font-semibold bg-background border-sky-300 dark:border-sky-800 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/40"
                   onClick={startCamera}
-                  disabled={isProcessing}
+                  disabled={isProcessing || isCameraStarting}
                 >
-                  <Camera className="size-3.5 text-sky-600" /> เปิดกล้องถ่ายภาพบิล
+                  <ScanLine className="size-3.5 text-sky-600" />{" "}
+                  {isCameraStarting ? "กำลังต่อกล้อง..." : "เปิดกล้องสด (Live View)"}
                 </Button>
               )}
+
+              {/* Pick from Album / PDF */}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-9 rounded-xl text-xs gap-1.5 font-semibold bg-background"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isProcessing}
+              >
+                <Upload className="size-3.5 text-primary" /> เลือกรูปจากอัลบั้ม / PDF
+              </Button>
 
               {previewUrl && (
                 <Button
@@ -576,29 +670,48 @@ export function ReceiptOcrModal({
             </div>
           )}
 
-          {/* LIVE CAMERA VIEWFINDER */}
+          {/* LIVE CAMERA VIEWFINDER (FIXED: Binds active stream to video element immediately) */}
           {isCameraActive && (
-            <div className="relative rounded-2xl overflow-hidden border border-primary/50 bg-black aspect-video max-h-72 flex items-center justify-center">
-              <video ref={videoRef} className="size-full object-cover" playsInline muted autoPlay />
-              <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-primary/60 m-4 rounded-xl flex items-center justify-center">
-                <span className="bg-black/60 text-white text-[11px] px-3 py-1 rounded-full backdrop-blur-xs">
-                  จัดตำแหน่งใบเสร็จให้อยู่ในกรอบแล้วกดถ่ายภาพ
+            <div className="relative rounded-2xl overflow-hidden border-2 border-emerald-500/80 bg-black aspect-[4/3] sm:aspect-video max-h-80 flex items-center justify-center shadow-lg">
+              <video
+                ref={bindVideoRef}
+                className="size-full object-cover"
+                playsInline
+                muted
+                autoPlay
+                onLoadedMetadata={() => {
+                  if (videoRef.current) {
+                    videoRef.current.play().catch(() => {});
+                  }
+                }}
+              />
+              {/* Framing Guide */}
+              <div className="absolute inset-0 pointer-events-none border-2 border-dashed border-emerald-400/80 m-3 sm:m-5 rounded-xl flex flex-col items-center justify-between p-2.5">
+                <div className="flex items-center gap-1.5 bg-black/75 text-emerald-300 text-[11px] px-3 py-1 rounded-full backdrop-blur-xs font-medium border border-emerald-500/40 shadow-sm">
+                  <span className="size-2 rounded-full bg-emerald-400 animate-pulse" />
+                  กล้องกำลังทำงาน • จัดใบเสร็จให้อยู่ในกรอบ
+                </div>
+                <span className="bg-black/60 text-white text-[10px] sm:text-[11px] px-3 py-1 rounded-full backdrop-blur-xs">
+                  ถือกล้องให้นิ่งแล้วกดปุ่มถ่ายภาพด้านล่าง
                 </span>
               </div>
-              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3">
+
+              {/* Shutter & Cancel Controls */}
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-4 z-10">
                 <Button
                   type="button"
                   size="default"
-                  className="rounded-full size-12 p-0 bg-primary text-primary-foreground shadow-lg font-bold"
+                  className="rounded-full size-14 p-0 bg-emerald-600 hover:bg-emerald-500 text-white shadow-2xl ring-4 ring-white/30 font-bold active:scale-95 transition-transform"
                   onClick={capturePhoto}
+                  title="กดเพื่อถ่ายภาพใบเสร็จ"
                 >
-                  <Camera className="size-6" />
+                  <Camera className="size-7" />
                 </Button>
                 <Button
                   type="button"
                   size="sm"
                   variant="secondary"
-                  className="rounded-xl h-9 text-xs"
+                  className="rounded-xl h-10 px-4 text-xs font-semibold bg-background/90 hover:bg-background text-foreground shadow-md backdrop-blur-xs"
                   onClick={stopCamera}
                 >
                   ยกเลิก
