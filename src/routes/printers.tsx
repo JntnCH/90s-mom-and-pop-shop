@@ -77,7 +77,7 @@ import {
 export const Route = createFileRoute("/printers")({
   head: () => ({
     meta: [
-      { title: "จัดการเครื่องพิมพ์, สลิป & คิวพิมพ์ (Phase 10) | โชห่วยยุค90s" },
+      { title: "จัดการเครื่องพิมพ์, สลิป & คิวพิมพ์ | โชห่วยยุค90s" },
       {
         name: "description",
         content:
@@ -85,7 +85,7 @@ export const Route = createFileRoute("/printers")({
       },
       {
         property: "og:title",
-        content: "จัดการเครื่องพิมพ์, สลิป & คิวพิมพ์ (Phase 10) | โชห่วยยุค90s",
+        content: "จัดการเครื่องพิมพ์, สลิป & คิวพิมพ์ | โชห่วยยุค90s",
       },
       {
         property: "og:description",
@@ -250,7 +250,7 @@ function PrintersPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-4 sm:space-y-6 pb-12">
       <PageHeader
-        title="จัดการเครื่องพิมพ์ & สลิปความร้อน (Phase 8)"
+        title="จัดการเครื่องพิมพ์ & สลิปความร้อน"
         description="ระบบจัดการเครื่องพิมพ์สลิปความร้อน Thermal 58mm / 80mm, A4 และเครื่องมือออกแบบสลิปใบเสร็จ ESC/POS"
       />
 

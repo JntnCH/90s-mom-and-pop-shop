@@ -212,7 +212,7 @@ function StockPage() {
   return (
     <div className="space-y-4 sm:space-y-6 pb-12">
       <PageHeader
-        title="สต็อกสินค้า & ความเคลื่อนไหว (Phase 3)"
+        title="สต็อกสินค้า & ความเคลื่อนไหว"
         description="ตรวจสอบจำนวนคงเหลือ ปรับปรุงยอดสต็อก และดูประวัติ Stock Movement บันทึกทุกรายการรับ-จ่าย"
       />
 

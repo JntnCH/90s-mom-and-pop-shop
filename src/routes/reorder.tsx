@@ -2506,8 +2506,7 @@ function ReorderPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <ClipboardList className="size-6 text-primary" /> ระบบใบสั่งซื้อสินค้า &
-            สั่งซื้อประจำวัน (Phase 6)
+            <ClipboardList className="size-6 text-primary" /> ระบบใบสั่งซื้อสินค้า & สั่งซื้อประจำวัน
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
             คำนวณจำนวนสั่งซื้อ, จัดการใบสั่งซื้อ (PO Lifecycle), ตรวจรับเข้าสต็อก และพิมพ์เอกสาร A4

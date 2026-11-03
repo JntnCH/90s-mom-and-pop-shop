@@ -503,7 +503,7 @@ function ProductsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <Package className="size-6 text-primary" /> ระบบจัดการสินค้า (Phase 2)
+            <Package className="size-6 text-primary" /> ระบบจัดการสินค้า
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
             บันทึก SKU, บาร์โค้ด, ถ่ายรูปสินค้า, ราคา, หมวดหมู่, สต็อก และตั้งค่าเปิด/ปิดการขาย
@@ -1592,7 +1592,7 @@ function ProductsPage() {
               className="w-full sm:w-auto rounded-xl text-xs gap-1.5 font-semibold bg-primary text-primary-foreground"
             >
               <Link to="/printers">
-                <Tag className="size-3.5" /> พิมพ์ป้ายราคา & สติกเกอร์ (Phase 9)
+                <Tag className="size-3.5" /> พิมพ์ป้ายราคา & สติกเกอร์
               </Link>
             </Button>
             <Button

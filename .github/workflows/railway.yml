@@ -1,0 +1,289 @@
+name: Sync Keys & Deploy to Railway
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: railway-sync-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync-railway-keys:
+    name: Sync GitHub Secrets to Railway Service
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Sync Environment Variables (KEYs) to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
+          RAILWAY_ENVIRONMENT: ${{ secrets.RAILWAY_ENVIRONMENT || 'production' }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+          RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE || '90s-mom-and-pop-shop' }}
+          # Application Keys & Secrets (with fallback aliases)
+          LINE_LIFF_ID: ${{ secrets.LINE_LIFF_ID || secrets.VITE_LINE_LIFF_ID }}
+          VITE_LINE_LIFF_ID: ${{ secrets.VITE_LINE_LIFF_ID || secrets.LINE_LIFF_ID }}
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          LINE_CHANNEL_SECRET: ${{ secrets.LINE_CHANNEL_SECRET }}
+          LINE_CHANNEL_ID: ${{ secrets.LINE_CHANNEL_ID }}
+          LINE_TO_ID: ${{ secrets.LINE_TO_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON || secrets.GCP_SA_KEY || secrets.GCP_CREDENTIALS || secrets.SERVICE_ACCOUNT_JSON || secrets.GOOGLE_CREDENTIALS }}
+          GOOGLE_SERVICE_ACCOUNT_EMAIL: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_EMAIL || secrets.SERVICE_ACCOUNT_EMAIL || secrets.GCP_SERVICE_ACCOUNT }}
+          GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY || secrets.SERVICE_ACCOUNT_PRIVATE_KEY || secrets.GOOGLE_PRIVATE_KEY }}
+          GOOGLE_SPREADSHEET_ID: ${{ secrets.GOOGLE_SPREADSHEET_ID || secrets.SPREADSHEET_ID || secrets.GOOGLE_SHEET_ID || secrets.SHEET_ID }}
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SQL_HOST: ${{ secrets.SQL_HOST }}
+          SQL_PORT: ${{ secrets.SQL_PORT }}
+          SQL_USER: ${{ secrets.SQL_USER }}
+          SQL_PASSWORD: ${{ secrets.SQL_PASSWORD }}
+          SQL_DB_NAME: ${{ secrets.SQL_DB_NAME }}
+        run: |
+          node << 'EOF'
+          const { execFileSync } = require("node:child_process");
+
+          const KEYS_TO_SYNC = [
+            "LINE_LIFF_ID",
+            "VITE_LINE_LIFF_ID",
+            "LINE_CHANNEL_ACCESS_TOKEN",
+            "LINE_CHANNEL_SECRET",
+            "LINE_CHANNEL_ID",
+            "LINE_TO_ID",
+            "GOOGLE_SERVICE_ACCOUNT_JSON",
+            "GOOGLE_SERVICE_ACCOUNT_EMAIL",
+            "GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY",
+            "GOOGLE_SPREADSHEET_ID",
+            "VITE_FIREBASE_API_KEY",
+            "VITE_FIREBASE_AUTH_DOMAIN",
+            "VITE_FIREBASE_PROJECT_ID",
+            "VITE_FIREBASE_APP_ID",
+            "DATABASE_URL",
+            "SQL_HOST",
+            "SQL_PORT",
+            "SQL_USER",
+            "SQL_PASSWORD",
+            "SQL_DB_NAME",
+          ];
+
+          const variables = {};
+          for (const key of KEYS_TO_SYNC) {
+            const val = process.env[key];
+            if (typeof val === "string" && val.trim().length > 0) {
+              variables[key] = val.trim();
+            }
+          }
+
+          const keyNames = Object.keys(variables);
+          if (keyNames.length === 0) {
+            console.log("No non-empty application secrets found to sync.");
+            process.exit(0);
+          }
+
+          console.log(`Prepared ${keyNames.length} key(s) to sync to Railway: ${keyNames.join(", ")}`);
+
+          const projectToken = (process.env.RAILWAY_TOKEN || "").trim();
+          const apiToken = (process.env.RAILWAY_API_TOKEN || "").trim();
+
+          if (!projectToken && !apiToken) {
+            console.error("::error::Missing RAILWAY_TOKEN or RAILWAY_API_TOKEN in GitHub Secrets.");
+            process.exit(1);
+          }
+
+          const GQL_ENDPOINT = "https://backboard.railway.com/graphql/v2";
+
+          async function gqlRequest(query, variablesObj = {}, useProjectToken = false) {
+            const headers = { "Content-Type": "application/json" };
+            if (useProjectToken && projectToken) {
+              headers["Project-Access-Token"] = projectToken;
+            } else {
+              headers["Authorization"] = `Bearer ${apiToken || projectToken}`;
+            }
+
+            const res = await fetch(GQL_ENDPOINT, {
+              method: "POST",
+              headers,
+              body: JSON.stringify({ query, variables: variablesObj }),
+            });
+
+            const json = await res.json();
+            if (!res.ok || json.errors) {
+              const msg = json.errors ? JSON.stringify(json.errors) : `HTTP ${res.status}`;
+              throw new Error(msg);
+            }
+            return json.data;
+          }
+
+          async function resolveTargetIds() {
+            let projectId = (process.env.RAILWAY_PROJECT_ID || "").trim();
+            let environmentId = (process.env.RAILWAY_ENVIRONMENT_ID || "").trim();
+            let serviceId = (process.env.RAILWAY_SERVICE_ID || "").trim();
+            const preferredServiceName = (process.env.RAILWAY_SERVICE || "90s-mom-and-pop-shop").trim().toLowerCase();
+            const preferredEnvName = (process.env.RAILWAY_ENVIRONMENT || "production").trim().toLowerCase();
+
+            // 1. Try Project Token introspection first if RAILWAY_TOKEN is set
+            if (projectToken && (!projectId || !environmentId)) {
+              try {
+                const tokenData = await gqlRequest(
+                  `query { projectToken { projectId environmentId } }`,
+                  {},
+                  true
+                );
+                if (tokenData?.projectToken) {
+                  projectId = projectId || tokenData.projectToken.projectId;
+                  environmentId = environmentId || tokenData.projectToken.environmentId;
+                }
+              } catch {
+                // Token might be an account/workspace Bearer token stored in RAILWAY_TOKEN
+              }
+            }
+
+            // 1b. If projectId is still empty, search accessible projects for 90s-mom-and-pop-shop
+            if (!projectId) {
+              try {
+                const listData = await gqlRequest(
+                  `query {
+                    projects {
+                      edges {
+                        node {
+                          id
+                          name
+                          environments { edges { node { id name } } }
+                          services { edges { node { id name } } }
+                        }
+                      }
+                    }
+                  }`,
+                  {},
+                  false
+                );
+                const projects = (listData?.projects?.edges || []).map((e) => e.node);
+                const matchedProject =
+                  projects.find((p) => p.name.toLowerCase().includes("90s-mom-and-pop-shop")) ||
+                  projects[0];
+                if (matchedProject) {
+                  projectId = matchedProject.id;
+                }
+              } catch {
+                // Ignore if token does not support listing projects
+              }
+            }
+
+            // 2. If projectId is known, inspect its environments and services
+            if (projectId && (!environmentId || !serviceId)) {
+              for (const useProjHeader of [true, false]) {
+                try {
+                  const projData = await gqlRequest(
+                    `query($id: String!) {
+                      project(id: $id) {
+                        id
+                        name
+                        environments { edges { node { id name } } }
+                        services { edges { node { id name } } }
+                      }
+                    }`,
+                    { id: projectId },
+                    useProjHeader
+                  );
+                  const proj = projData?.project;
+                  if (proj) {
+                    if (!environmentId && proj.environments?.edges?.length) {
+                      const envMatch =
+                        proj.environments.edges.find(
+                          (e) => e.node.name.toLowerCase() === preferredEnvName
+                        ) || proj.environments.edges[0];
+                      environmentId = envMatch?.node?.id || "";
+                    }
+                    if (!serviceId && proj.services?.edges?.length) {
+                      const appServices = proj.services.edges.map((e) => e.node);
+                      const exact = appServices.find(
+                        (s) => s.name.toLowerCase() === preferredServiceName
+                      );
+                      const nonDb = appServices.find(
+                        (s) => !/postgres|redis|mysql|mongo/i.test(s.name)
+                      );
+                      serviceId = (exact || nonDb || appServices[0])?.id || "";
+                    }
+                    break;
+                  }
+                } catch {
+                  // Try next auth mode
+                }
+              }
+            }
+
+            return { projectId, environmentId, serviceId };
+          }
+
+          async function main() {
+            const { projectId, environmentId, serviceId } = await resolveTargetIds();
+
+            if (projectId && environmentId && serviceId) {
+              const mutation = `
+                mutation UpsertVariables($input: VariableCollectionUpsertInput!) {
+                  variableCollectionUpsert(input: $input)
+                }
+              `;
+              const input = {
+                projectId,
+                environmentId,
+                serviceId,
+                replace: false,
+                variables,
+              };
+
+              for (const useProjHeader of [Boolean(projectToken), false]) {
+                try {
+                  await gqlRequest(mutation, { input }, useProjHeader);
+                  console.log(
+                    `Successfully synced ${keyNames.length} variable(s) to existing Railway service (${serviceId}) via GraphQL API.`
+                  );
+                  return;
+                } catch (err) {
+                  console.warn(`GraphQL sync attempt notice: ${err.message}`);
+                }
+              }
+            }
+
+            // Fallback: Use official @railway/cli with batched --set arguments
+            console.log("Falling back to @railway/cli batch variable sync...");
+            execFileSync("npm", ["install", "-g", "@railway/cli"], { stdio: "inherit" });
+
+            const args = ["variables"];
+            if (serviceId || process.env.RAILWAY_SERVICE) {
+              args.push("--service", serviceId || process.env.RAILWAY_SERVICE);
+            }
+            if (environmentId || process.env.RAILWAY_ENVIRONMENT) {
+              args.push("--environment", environmentId || process.env.RAILWAY_ENVIRONMENT);
+            }
+            for (const [k, v] of Object.entries(variables)) {
+              args.push("--set", `${k}=${v}`);
+            }
+
+            execFileSync("railway", args, { stdio: "inherit" });
+            console.log(`Successfully synced ${keyNames.length} variable(s) via Railway CLI.`);
+          }
+
+          main().catch((err) => {
+            console.error("::error::Failed to sync variables to Railway:", err.message || err);
+            process.exit(1);
+          });
+          EOF

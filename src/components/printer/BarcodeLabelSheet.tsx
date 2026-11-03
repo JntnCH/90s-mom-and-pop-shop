@@ -263,7 +263,6 @@ export function BarcodeLabelSheet({ initialProductId }: BarcodeLabelSheetProps) 
           <div>
             <h3 className="font-bold text-base text-foreground flex items-center gap-2">
               <Tag className="size-5 text-primary" /> พิมพ์สติกเกอร์บาร์โค้ด & ป้ายราคาติดชั้นวาง
-              (Phase 9)
             </h3>
             <p className="text-xs text-muted-foreground mt-0.5">
               รองรับทั้งเครื่องพิมพ์สติกเกอร์ความร้อนม้วนเดี่ยว (Thermal Label 50x30 / 30x20 mm)

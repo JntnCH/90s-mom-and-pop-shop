@@ -112,7 +112,7 @@ function HistoryPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
-            <History className="size-6 text-primary" /> ประวัติรายการ & Stock Movement (Phase 3)
+            <History className="size-6 text-primary" /> ประวัติรายการ & Stock Movement
           </h1>
           <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
             บันทึกประวัติความเคลื่อนไหวสต็อกสินค้าทุกครั้งที่มีการรับเข้า, จ่ายออก หรือปรับปรุงยอด

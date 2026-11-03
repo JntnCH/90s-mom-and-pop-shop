@@ -200,7 +200,6 @@ export function StaffManagementTab() {
           <div>
             <CardTitle className="text-base flex items-center gap-2">
               <Users className="size-5 text-primary" /> พนักงาน & ผู้ใช้งานในระบบ โชห่วยยุค90s
-              (Phase 11)
             </CardTitle>
             <CardDescription className="text-xs">
               กำหนดบทบาทและสิทธิ์การเข้าถึงฟังก์ชันต่างๆ ของพนักงานแต่ละคนด้วยรหัส PIN 4 หลัก
