@@ -44,6 +44,33 @@ function isH3SwallowedErrorBody(body: string): boolean {
   }
 }
 
+function authorizeBackupRequest(request: Request, env: unknown): Response | null {
+  let expectedSecret = "";
+  if (env && typeof env === "object") {
+    const value = (env as Record<string, unknown>)["BACKUP_API_SECRET"];
+    if (typeof value === "string") expectedSecret = value.trim();
+  }
+  if (!expectedSecret) {
+    const processEnv = (globalThis as unknown as {
+      process?: { env?: Record<string, string | undefined> };
+    }).process?.env;
+    expectedSecret = processEnv?.["BACKUP_API_SECRET"]?.trim() || "";
+  }
+  if (!expectedSecret) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Backup API is disabled: BACKUP_API_SECRET is not configured" }),
+      { status: 503, headers: { "content-type": "application/json; charset=utf-8" } },
+    );
+  }
+  if (request.headers.get("x-backup-api-key") !== expectedSecret) {
+    return new Response(
+      JSON.stringify({ success: false, error: "Unauthorized" }),
+      { status: 401, headers: { "content-type": "application/json; charset=utf-8" } },
+    );
+  }
+  return null;
+}
+
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
     if (env && typeof env === "object") {
@@ -125,6 +152,11 @@ export default {
 
     // Direct Google Sheets Backup Trigger & Status Endpoints
     if (url.pathname === "/api/backup-sheets" || url.pathname === "/api/sheets/backup") {
+      const denied = authorizeBackupRequest(request, env);
+      if (denied) return denied;
+      if (request.method !== "POST") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "POST" } });
+      }
       try {
         const { backupDatabaseToGoogleSheetsServer } =
           await import("./lib/google-sheets-server-fn");
@@ -162,6 +194,11 @@ export default {
     }
 
     if (url.pathname === "/api/sheets-status") {
+      const denied = authorizeBackupRequest(request, env);
+      if (denied) return denied;
+      if (request.method !== "GET") {
+        return new Response("Method Not Allowed", { status: 405, headers: { Allow: "GET" } });
+      }
       try {
         const { getGoogleSheetsConfigStatus, getLastServerBackupStatus } =
           await import("./lib/google-sheets-server-fn");

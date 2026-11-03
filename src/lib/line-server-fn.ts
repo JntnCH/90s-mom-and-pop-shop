@@ -236,7 +236,8 @@ export const syncMasterDatabaseFn = createServerFn({ method: "POST" })
           source: "postgres" as const,
         };
       } catch (pgErr) {
-        console.warn("[Database Sync] Postgres sync notice:", pgErr);
+        console.error("[Database Sync] Postgres sync failed; refusing non-durable fallback:", pgErr);
+        throw new Error("PostgreSQL sync failed. Data was not confirmed as saved.", { cause: pgErr });
       }
     }
 
@@ -370,7 +371,8 @@ export const fetchCloudSqlSnapshotFn = createServerFn({ method: "GET" }).handler
       applySnapshotToMemory(snap);
       return { success: true, source: "postgres" as const, data: snap };
     } catch (e) {
-      console.warn("[fetchDatabaseSnapshotFn] Postgres:", e);
+      console.error("[fetchDatabaseSnapshotFn] PostgreSQL snapshot failed:", e);
+      throw new Error("PostgreSQL snapshot failed; refusing to report a memory snapshot as durable data.", { cause: e });
     }
   }
   try {
