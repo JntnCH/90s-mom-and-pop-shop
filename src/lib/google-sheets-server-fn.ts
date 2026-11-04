@@ -549,19 +549,43 @@ function cell(value: unknown): string | number {
   return JSON.stringify(value) ?? String(value);
 }
 
+function splitTextIntoChunks(value: string, maxLength = 40000): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  let currentLength = 0;
+  for (const character of value) {
+    if (currentLength + character.length > maxLength) {
+      chunks.push(current);
+      current = "";
+      currentLength = 0;
+    }
+    current += character;
+    currentLength += character.length;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 function buildServerBackupTabs(snapshot: Awaited<ReturnType<typeof getDatabaseSnapshot>>): ServerBackupTab[] {
   const products = snapshot.products ?? [];
   const movements = snapshot.movements ?? [];
   const orders = snapshot.purchaseOrders ?? [];
   const categories = snapshot.categories ?? [];
-  const raw = JSON.stringify(snapshot);
+  const backupAt = new Date().toISOString();
+  const raw = JSON.stringify({
+    format: "MINIMARK_BACKUP_V1",
+    exportedAt: backupAt,
+    source: "PostgreSQL",
+    data: snapshot,
+  });
+  const rawChunks = splitTextIntoChunks(raw);
 
   return [
     {
       title: "📊 สรุปภาพรวม",
       rows: [
         ["ฐานข้อมูลสำรองร้านค้า - 90s Mom-and-Pop Shop"],
-        ["สำรองเมื่อ", new Date().toISOString()],
+        ["สำรองเมื่อ", backupAt],
         ["จำนวนสินค้า", products.length],
         ["ประวัติสต็อก", movements.length],
         ["ใบสั่งซื้อ", orders.length],
@@ -571,33 +595,34 @@ function buildServerBackupTabs(snapshot: Awaited<ReturnType<typeof getDatabaseSn
     {
       title: "📦 สินค้า",
       rows: [
-        ["ID", "SKU", "Barcode", "ชื่อสินค้า", "หมวดหมู่", "หมวดย่อย", "โซน", "หน่วย", "ต้นทุน", "ราคาขาย", "คงเหลือ", "ขั้นต่ำ", "เป้าหมาย", "สถานะ", "อัปเดตล่าสุด"],
+        ["ID", "SKU", "Barcode", "ชื่อสินค้า", "หมวดหมู่", "หมวดย่อย", "โซน", "หน่วย", "ต้นทุน", "ราคาขาย", "คงเหลือ", "ขั้นต่ำ", "เป้าหมาย", "จำนวนที่ควรสั่ง", "สถานะ", "สร้างเมื่อ", "อัปเดตล่าสุด"],
         ...products.map((p) => [
           cell(p.id), cell(p.sku), cell(p.barcode), cell(p.name), cell(p.categoryId),
           cell(p.subCategoryId), cell(p.zoneId), cell(p.unitId), cell(p.costPrice),
           cell(p.sellPrice), cell(p.stock), cell(p.minStock), cell(p.targetStock),
-          p.isActive === false ? "ระงับ" : "ใช้งาน", cell(p.updatedAt),
+          cell(p.reorderQuantity), p.isActive === false ? "ระงับ" : "ใช้งาน",
+          cell(p.createdAt), cell(p.updatedAt),
         ]),
       ],
     },
     {
       title: "📝 การเคลื่อนไหวสต็อก",
       rows: [
-        ["ID", "วันที่", "Product ID", "สินค้า", "Barcode", "ประเภท", "จำนวน", "ก่อนหน้า", "คงเหลือใหม่", "ผู้ทำรายการ", "หมายเหตุ"],
+        ["Log ID", "Timestamp", "ประเภทธุรกรรม", "Barcode", "สินค้า", "จำนวน", "Previous Stock", "New Stock", "ผู้ทำรายการ", "หมายเหตุ", "Product ID"],
         ...movements.map((m) => [
-          cell(m.id), cell(m.timestamp), cell(m.productId), cell(m.productName), cell(m.barcode),
-          cell(m.type), cell(m.quantity), cell(m.previousStock), cell(m.newStock),
-          cell(m.operator), cell(m.note),
+          cell(m.id), cell(m.timestamp), cell(m.type), cell(m.barcode), cell(m.productName),
+          cell(m.quantity), cell(m.previousStock), cell(m.newStock), cell(m.operator),
+          cell(m.note), cell(m.productId),
         ]),
       ],
     },
     {
       title: "📋 ใบสั่งซื้อ",
       rows: [
-        ["ID", "เลขที่ PO", "วันที่", "ผู้ขาย", "สถานะ", "จำนวนรวม", "มูลค่ารวม", "รายการสินค้า"],
+        ["เลขที่ PO", "วันที่", "Supplier", "สถานะ", "จำนวนรวม", "มูลค่ารวม", "รายการสินค้า", "ID", "อัปเดตล่าสุด"],
         ...orders.map((o) => [
-          cell(o.id), cell(o.orderNumber), cell(o.createdAt), cell(o.supplierName),
-          cell(o.status), cell(o.totalQuantity), cell(o.totalCost), cell(o.items),
+          cell(o.orderNumber), cell(o.createdAt), cell(o.supplierName), cell(o.status),
+          cell(o.totalQuantity), cell(o.totalCost), cell(o.items), cell(o.id), cell(o.updatedAt),
         ]),
       ],
     },
@@ -612,8 +637,17 @@ function buildServerBackupTabs(snapshot: Awaited<ReturnType<typeof getDatabaseSn
       ],
     },
     {
-      title: "⚙️ สำรองดิบ_JSON",
-      rows: [["ข้อมูล JSON สำรองฉบับเต็ม"], [raw]],
+      title: "PostgreSQL JSON Backup",
+      rows: [
+        ["Format", "Exported At", "Source", "Part", "JSON Chunk"],
+        ...rawChunks.map((chunk, index) => [
+          "MINIMARK_BACKUP_V1",
+          backupAt,
+          "PostgreSQL",
+          index + 1,
+          chunk,
+        ]),
+      ],
     },
   ];
 }
@@ -691,12 +725,18 @@ export async function backupDatabaseToGoogleSheetsServer(options?: {
         },
       );
     }
+    // Clear values only in managed tabs so shorter exports cannot leave stale rows.
+    // The legacy "⚙️ สำรองดิบ_JSON" tab is intentionally excluded from this list.
     await googleSheetsRequest(
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchClear`,
       token,
-      { method: "POST", body: JSON.stringify({ ranges: tabs.map((tab) => `'${tab.title}'!A:Z`) }) },
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ranges: tabs.map((tab) => `'${tab.title}'!A:Z`),
+        }),
+      },
     );
-
     await googleSheetsRequest(
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`,
       token,
@@ -704,7 +744,10 @@ export async function backupDatabaseToGoogleSheetsServer(options?: {
         method: "POST",
         body: JSON.stringify({
           valueInputOption: "RAW",
-          data: tabs.map((tab) => ({ range: `'${tab.title}'!A1`, values: tab.rows })),
+          data: tabs.map((tab) => ({
+            range: `'${tab.title}'!A1`,
+            values: tab.rows,
+          })),
         }),
       },
     );
