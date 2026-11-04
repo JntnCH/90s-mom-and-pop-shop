@@ -51,22 +51,27 @@ function authorizeBackupRequest(request: Request, env: unknown): Response | null
     if (typeof value === "string") expectedSecret = value.trim();
   }
   if (!expectedSecret) {
-    const processEnv = (globalThis as unknown as {
-      process?: { env?: Record<string, string | undefined> };
-    }).process?.env;
+    const processEnv = (
+      globalThis as unknown as {
+        process?: { env?: Record<string, string | undefined> };
+      }
+    ).process?.env;
     expectedSecret = processEnv?.["BACKUP_API_SECRET"]?.trim() || "";
   }
   if (!expectedSecret) {
     return new Response(
-      JSON.stringify({ success: false, error: "Backup API is disabled: BACKUP_API_SECRET is not configured" }),
+      JSON.stringify({
+        success: false,
+        error: "Backup API is disabled: BACKUP_API_SECRET is not configured",
+      }),
       { status: 503, headers: { "content-type": "application/json; charset=utf-8" } },
     );
   }
   if (request.headers.get("x-backup-api-key") !== expectedSecret) {
-    return new Response(
-      JSON.stringify({ success: false, error: "Unauthorized" }),
-      { status: 401, headers: { "content-type": "application/json; charset=utf-8" } },
-    );
+    return new Response(JSON.stringify({ success: false, error: "Unauthorized" }), {
+      status: 401,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    });
   }
   return null;
 }
@@ -170,9 +175,9 @@ export default {
             // ignore
           }
         }
-        const result = await backupDatabaseToGoogleSheetsServer({
-          spreadsheetId: customSpreadsheetId,
-        });
+        const result = await backupDatabaseToGoogleSheetsServer(
+          customSpreadsheetId ? { spreadsheetId: customSpreadsheetId } : undefined,
+        );
         return new Response(JSON.stringify(result, null, 2), {
           status: result.success ? 200 : 400,
           headers: {
