@@ -549,6 +549,23 @@ function cell(value: unknown): string | number {
   return JSON.stringify(value) ?? String(value);
 }
 
+function splitTextIntoChunks(value: string, maxLength = 40000): string[] {
+  const chunks: string[] = [];
+  let current = "";
+  let currentLength = 0;
+  for (const character of value) {
+    if (currentLength + character.length > maxLength) {
+      chunks.push(current);
+      current = "";
+      currentLength = 0;
+    }
+    current += character;
+    currentLength += character.length;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 function buildServerBackupTabs(snapshot: Awaited<ReturnType<typeof getDatabaseSnapshot>>): ServerBackupTab[] {
   const products = snapshot.products ?? [];
   const movements = snapshot.movements ?? [];
@@ -561,6 +578,7 @@ function buildServerBackupTabs(snapshot: Awaited<ReturnType<typeof getDatabaseSn
     source: "PostgreSQL",
     data: snapshot,
   });
+  const rawChunks = splitTextIntoChunks(raw);
 
   return [
     {
@@ -621,8 +639,14 @@ function buildServerBackupTabs(snapshot: Awaited<ReturnType<typeof getDatabaseSn
     {
       title: "PostgreSQL JSON Backup",
       rows: [
-        ["Format", "Exported At", "Source", "JSON Payload"],
-        ["MINIMARK_BACKUP_V1", backupAt, "PostgreSQL", raw],
+        ["Format", "Exported At", "Source", "Part", "JSON Chunk"],
+        ...rawChunks.map((chunk, index) => [
+          "MINIMARK_BACKUP_V1",
+          backupAt,
+          "PostgreSQL",
+          index + 1,
+          chunk,
+        ]),
       ],
     },
   ];
@@ -701,6 +725,18 @@ export async function backupDatabaseToGoogleSheetsServer(options?: {
         },
       );
     }
+    // Clear values only in managed tabs so shorter exports cannot leave stale rows.
+    // The legacy "⚙️ สำรองดิบ_JSON" tab is intentionally excluded from this list.
+    await googleSheetsRequest(
+      `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchClear`,
+      token,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          ranges: tabs.map((tab) => `'${tab.title}'!A:Z`),
+        }),
+      },
+    );
     await googleSheetsRequest(
       `https://sheets.googleapis.com/v4/spreadsheets/${encodeURIComponent(spreadsheetId)}/values:batchUpdate`,
       token,
