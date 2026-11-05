@@ -1,0 +1,178 @@
+name: patch-reorder-category-sort
+on:
+  push:
+    paths:
+      - ".github/PATCH_REORDER_MARKER"
+    branches:
+      - main
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch reorder.tsx
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          import re
+          path = Path("src/routes/reorder.tsx")
+          text = path.read_text()
+
+          m = re.search(r'import\s*\{([^}]+)\}\s*from\s*"@/lib/store";', text, re.DOTALL)
+          if not m:
+              raise SystemExit("store import not found")
+          names = m.group(1)
+          if "sortPOItemsByCategory" not in names:
+              new_names = names.rstrip() + ",\n  sortPOItemsByCategory,\n  generateNextOrderNumber"
+              text = text[: m.start(1)] + new_names + text[m.end(1) :]
+              print("imports added")
+          else:
+              print("imports already present")
+
+          old_fn = '''function getPurchaseOrderFlexItems(po: PurchaseOrderRecord): OrderFlexItem[] {
+  const products = MasterStore.getProducts();
+  return po.items.map((item) => {
+    const product = products.find((candidate) => candidate.id === item.productId);
+    return {
+      name: item.productName,
+      quantity: item.quantity,
+      unitName:
+        (item.unitId ? MasterStore.getUnitName(item.unitId) : "") ||
+        item.unitName ||
+        (product ? MasterStore.getUnitName(product.unitId) : "-"),
+      barcode: item.barcode,
+      costPrice: item.costPrice,
+      priceEstimate: item.total,
+      categoryId: product?.categoryId ?? "",
+      categoryName: product ? MasterStore.getCategoryName(product.categoryId) : "หมวดหมู่ทั่วไป",
+      zoneId: product?.zoneId ?? "",
+      zoneName: product?.zoneId ? MasterStore.getZoneName(product.zoneId) : "-",
+      note: item.note,
+    };
+  });
+}'''
+
+          new_fn = '''function getPurchaseOrderFlexItems(po: PurchaseOrderRecord): OrderFlexItem[] {
+  const products = MasterStore.getProducts();
+  const mapped = po.items.map((item) => {
+    const product = products.find((candidate) => candidate.id === item.productId);
+    const categoryId = item.categoryId || product?.categoryId || "";
+    const zoneId = item.zoneId || product?.zoneId || "";
+    return {
+      name: item.productName,
+      quantity: item.quantity,
+      unitName:
+        (item.unitId ? MasterStore.getUnitName(item.unitId) : "") ||
+        item.unitName ||
+        (product ? MasterStore.getUnitName(product.unitId) : "-"),
+      barcode: item.barcode,
+      costPrice: item.costPrice,
+      priceEstimate: item.total,
+      categoryId,
+      categoryName: categoryId
+        ? MasterStore.getCategoryName(categoryId)
+        : "หมวดหมู่ทั่วไป",
+      zoneId,
+      zoneName: zoneId ? MasterStore.getZoneName(zoneId) : "-",
+      note: item.note,
+    };
+  });
+  return sortPOItemsByCategory(mapped, (id) => MasterStore.getCategoryName(id));
+}'''
+
+          if old_fn not in text:
+              raise SystemExit("getPurchaseOrderFlexItems not found")
+          text = text.replace(old_fn, new_fn, 1)
+          print("patched getPurchaseOrderFlexItems")
+
+          old_export_current = '''      items: fullItems.map((f) => ({
+        productName: f.product.name,
+        barcode: f.product.barcode,
+        categoryName: getCatName(f.product.categoryId),
+        zoneName: zones.find((z) => z.id === f.product.zoneId)?.name || "-",
+        quantity: f.quantity,
+        unitName: f.unitName,
+        costPrice: f.costPrice,
+        total: f.priceEstimate,
+        ...(f.note !== undefined ? { note: f.note } : {}),
+      })),'''
+
+          new_export_current = '''      items: sortPOItemsByCategory(
+        fullItems.map((f) => ({
+          productName: f.product.name,
+          barcode: f.product.barcode,
+          categoryId: f.product.categoryId,
+          categoryName: getCatName(f.product.categoryId),
+          zoneName: zones.find((z) => z.id === f.product.zoneId)?.name || "-",
+          quantity: f.quantity,
+          unitName: f.unitName,
+          costPrice: f.costPrice,
+          total: f.priceEstimate,
+          ...(f.note !== undefined ? { note: f.note } : {}),
+        })),
+        (id) => getCatName(id || ""),
+      ),'''
+
+          if old_export_current not in text:
+              raise SystemExit("export current items not found")
+          text = text.replace(old_export_current, new_export_current, 1)
+          print("patched export current")
+
+          old_export_po = '''      items: po.items.map((i) => {
+        const p = products.find((prod) => prod.id === i.productId);
+        return {
+          productName: i.productName,
+          barcode: i.barcode,
+          categoryName: p ? getCatName(p.categoryId) : "-",
+          zoneName: p ? zones.find((z) => z.id === p.zoneId)?.name || "-" : "-",
+          quantity: i.quantity,
+          unitName:
+            (i.unitId ? getUnitName(i.unitId) : undefined) ||
+            i.unitName ||
+            (p ? getUnitName(p.unitId) : "-"),
+          costPrice: i.costPrice,
+          total: i.total,
+          ...(i.note !== undefined ? { note: i.note } : {}),
+        };
+      }),'''
+
+          new_export_po = '''      items: sortPOItemsByCategory(
+        po.items.map((i) => {
+          const p = products.find((prod) => prod.id === i.productId);
+          const categoryId = i.categoryId || p?.categoryId || "";
+          return {
+            productName: i.productName,
+            barcode: i.barcode,
+            categoryId,
+            categoryName: categoryId ? getCatName(categoryId) : "-",
+            zoneName: p ? zones.find((z) => z.id === p.zoneId)?.name || "-" : "-",
+            quantity: i.quantity,
+            unitName:
+              (i.unitId ? getUnitName(i.unitId) : undefined) ||
+              i.unitName ||
+              (p ? getUnitName(p.unitId) : "-"),
+            costPrice: i.costPrice,
+            total: i.total,
+            ...(i.note !== undefined ? { note: i.note } : {}),
+          };
+        }),
+        (id) => getCatName(id || ""),
+      ),'''
+
+          if old_export_po not in text:
+              raise SystemExit("export PO items not found")
+          text = text.replace(old_export_po, new_export_po, 1)
+          print("patched export PO")
+
+          path.write_text(text)
+          print("reorder.tsx done")
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/routes/reorder.tsx
+          git commit -m "fix: sort PO items by main category on export and LINE flex" || true
+          git push
