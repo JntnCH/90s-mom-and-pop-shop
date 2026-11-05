@@ -1,0 +1,152 @@
+name: restore-and-patch-po-format
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Restore store.ts from last known good commit
+        run: |
+          git show e4988f0aeb06874246a5ffe2b659c1664a60783a:src/lib/store.ts > src/lib/store.ts
+          wc -l src/lib/store.ts
+          grep -n "slice(-6)" src/lib/store.ts || true
+      - name: Apply PO number + category sort patch
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          path = Path("src/lib/store.ts")
+          text = path.read_text()
+          helper = r'''
+          /**
+           * Generate sequential PO number in format PO-YYYYMMDD-NNN (e.g. PO-20261106-001).
+           * Counts existing POs with the same date prefix so numbers stay unique per day.
+           */
+          export function generateNextOrderNumber(
+            existingOrders?: PurchaseOrderRecord[],
+            date: Date = new Date(),
+          ): string {
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, "0");
+            const d = String(date.getDate()).padStart(2, "0");
+            const datePart = `${y}${m}${d}`;
+            const prefix = `PO-${datePart}-`;
+
+            const list =
+              existingOrders ??
+              (typeof window !== "undefined"
+                ? safeGet<PurchaseOrderRecord[]>(STORAGE_KEYS.PURCHASE_ORDERS, DEFAULT_PURCHASE_ORDERS)
+                : DEFAULT_PURCHASE_ORDERS);
+
+            let maxSeq = 0;
+            for (const po of list) {
+              const on = po?.orderNumber;
+              if (!on || typeof on !== "string" || !on.startsWith(prefix)) continue;
+              const seqStr = on.slice(prefix.length);
+              const seq = parseInt(seqStr, 10);
+              if (!Number.isNaN(seq) && seq > maxSeq) maxSeq = seq;
+            }
+            return `${prefix}${String(maxSeq + 1).padStart(3, "0")}`;
+          }
+
+          /**
+           * Sort PO line items by main category name (then product name) for consistent export / LINE order.
+           */
+          export function sortPOItemsByCategory<
+            T extends { categoryId?: string; productName?: string; name?: string },
+          >(items: T[], getCategoryName?: (categoryId?: string) => string): T[] {
+            if (!Array.isArray(items) || items.length <= 1) return Array.isArray(items) ? [...items] : [];
+            const resolveName =
+              getCategoryName ||
+              ((id?: string) => {
+                try {
+                  return MasterStore.getCategoryName(id);
+                } catch {
+                  return id || "ไม่ระบุ";
+                }
+              });
+            return items
+              .map((item, idx) => ({ item, idx, cat: resolveName(item.categoryId) || "ไม่ระบุ" }))
+              .sort((a, b) => {
+                const c = a.cat.localeCompare(b.cat, "th");
+                if (c !== 0) return c;
+                const nameA = (a.item.productName || a.item.name || "").toString();
+                const nameB = (b.item.productName || b.item.name || "").toString();
+                const n = nameA.localeCompare(nameB, "th");
+                if (n !== 0) return n;
+                return a.idx - b.idx;
+              })
+              .map((e) => e.item);
+          }
+
+          '''
+          helper_lines = []
+          for line in helper.splitlines(True):
+              if line.startswith("          "):
+                  helper_lines.append(line[10:])
+              else:
+                  helper_lines.append(line)
+          helper = "".join(helper_lines)
+
+          anchor = '''export function sortPurchaseOrdersNewestFirst(items: PurchaseOrderRecord[]): PurchaseOrderRecord[] {
+  if (!Array.isArray(items) || items.length <= 1) return Array.isArray(items) ? [...items] : [];
+  return items
+    .map((item, idx) => ({ item, idx, ts: getPurchaseOrderSortTimestamp(item) }))
+    .sort((a, b) => {
+      if (b.ts !== a.ts) return b.ts - a.ts;
+      return a.idx - b.idx;
+    })
+    .map((entry) => entry.item);
+}
+
+export const MasterStore = {'''
+          if anchor not in text:
+              raise SystemExit("anchor not found")
+          text = text.replace(anchor, anchor.replace("export const MasterStore = {", helper + "\nexport const MasterStore = {"), 1)
+
+          old_on = "orderNumber: record.orderNumber || `PO-${Date.now().toString().slice(-6)}`,"
+          new_on = "orderNumber: record.orderNumber || generateNextOrderNumber(list),"
+          if old_on not in text:
+              raise SystemExit("orderNumber line not found")
+          text = text.replace(old_on, new_on, 1)
+
+          old_items = '''    const newPO: PurchaseOrderRecord = {
+      ...record,
+      id: record.id || `po-${Date.now()}`,
+      orderNumber: record.orderNumber || generateNextOrderNumber(list),
+      createdAt: record.createdAt || nowIso,
+      updatedAt: nowIso,
+      status: (record.status as PurchaseOrderRecord["status"]) || "DRAFT",
+      items: record.items || [],'''
+          new_items = '''    const sortedItems = sortPOItemsByCategory(record.items || [], (id) =>
+      this.getCategoryName(id),
+    );
+    const newPO: PurchaseOrderRecord = {
+      ...record,
+      id: record.id || `po-${Date.now()}`,
+      orderNumber: record.orderNumber || generateNextOrderNumber(list),
+      createdAt: record.createdAt || nowIso,
+      updatedAt: nowIso,
+      status: (record.status as PurchaseOrderRecord["status"]) || "DRAFT",
+      items: sortedItems,'''
+          if old_items not in text:
+              raise SystemExit("newPO block not found")
+          text = text.replace(old_items, new_items, 1)
+
+          path.write_text(text)
+          print("OK generateNextOrderNumber", "generateNextOrderNumber" in text)
+          print("OK sort", "sortPOItemsByCategory" in text)
+          print("OK no slice", "`PO-${Date.now().toString().slice(-6)}`" not in text)
+          PY
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/store.ts
+          git status
+          git commit -m "fix: restore store.ts + PO-YYYYMMDD-NNN + sort items by category" || echo "no change"
+          git push
