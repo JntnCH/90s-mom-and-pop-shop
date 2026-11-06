@@ -1265,9 +1265,6 @@ function ReorderPage() {
 
   const handleOpenExportCurrentOrder = () => {
     if (fullItems.length === 0) return;
-    const sortedFullItems = groupAndSortFlexItems(fullItems, "category").flatMap((g) =>
-      g.items.map((x) => x.item),
-    );
     const resolvedOrderNumber =
       editingPOId && editingPONumber
         ? editingPONumber
@@ -1280,7 +1277,7 @@ function ReorderPage() {
           : formatThaiDateTime(new Date()),
       storeName: currentStoreName,
       supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
-      items: sortedFullItems.map((f) => ({
+      items: fullItems.map((f) => ({
         productName: f.product.name,
         barcode: f.product.barcode,
         categoryId: f.product.categoryId,
@@ -1344,15 +1341,12 @@ function ReorderPage() {
         ...(i.note !== undefined ? { note: i.note } : {}),
       };
     });
-    const sortedMappedItems = groupAndSortFlexItems(mappedItems, "category").flatMap((g) =>
-      g.items.map((x) => x.item),
-    );
     const payload: ExportOrderPayload = {
       orderNumber: po.orderNumber,
       createdAt: formatThaiDateTime(po.createdAt),
       storeName: currentStoreName,
       supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
-      items: sortedMappedItems,
+      items: mappedItems,
       totalQuantity: po.totalQuantity,
       totalCost: po.totalCost,
     };
@@ -1695,22 +1689,27 @@ function ReorderPage() {
       });
 
       if (updated) {
-        try {
-          localStorage.removeItem("minimark_active_editing_po_id");
-        } catch {
-          /* ignore */
-        }
         const latestPOs = MasterStore.getPurchaseOrders();
         setPurchaseOrders(latestPOs);
         setNextPONumberPreview(generateNextPurchaseOrderNumber(latestPOs));
-        if (typeof MasterStore.clearDraftPurchaseOrder === "function") {
-          MasterStore.clearDraftPurchaseOrder();
+        if (switchTab) {
+          try {
+            localStorage.removeItem("minimark_active_editing_po_id");
+          } catch {
+            /* ignore */
+          }
+          if (typeof MasterStore.clearDraftPurchaseOrder === "function") {
+            MasterStore.clearDraftPurchaseOrder();
+          }
+          setOrderList([]);
+          setSupplierNameInput("");
+          setEditingPOId(null);
+          setEditingPONumber("");
+          setEditingPOCreatedAt("");
+          setActiveTab("po_history");
+        } else {
+          setEditingPOStatus(status);
         }
-        setOrderList([]);
-        setSupplierNameInput("");
-        setEditingPOId(null);
-        setEditingPONumber("");
-        setEditingPOCreatedAt("");
         setStatusMessage({
           type: "success",
           text: `บันทึกการแก้ไขใบสั่งซื้อ ${updated.orderNumber} (สถานะ: ${
@@ -1718,17 +1717,8 @@ function ReorderPage() {
           }) เรียบร้อยแล้ว`,
         });
         toast.success(`บันทึกการแก้ไขใบสั่งซื้อ ${updated.orderNumber} สำเร็จ`);
-        if (switchTab) {
-          setActiveTab("po_history");
-        }
         return updated;
       }
-    }
-
-    try {
-      localStorage.removeItem("minimark_active_editing_po_id");
-    } catch {
-      /* ignore */
     }
 
     const poRecord = MasterStore.savePurchaseOrder({
@@ -1762,8 +1752,26 @@ function ReorderPage() {
     if (typeof MasterStore.clearDraftPurchaseOrder === "function") {
       MasterStore.clearDraftPurchaseOrder();
     }
-    setOrderList([]);
-    setSupplierNameInput("");
+    if (switchTab) {
+      try {
+        localStorage.removeItem("minimark_active_editing_po_id");
+      } catch {
+        /* ignore */
+      }
+      setOrderList([]);
+      setSupplierNameInput("");
+      setActiveTab("po_history");
+    } else {
+      setEditingPOId(poRecord.id);
+      setEditingPONumber(poRecord.orderNumber);
+      setEditingPOCreatedAt(poRecord.createdAt);
+      setEditingPOStatus(poRecord.status);
+      try {
+        localStorage.setItem("minimark_active_editing_po_id", poRecord.id);
+      } catch {
+        /* ignore */
+      }
+    }
     setStatusMessage({
       type: "success",
       text: `สร้างใบสั่งซื้อ ${poRecord.orderNumber} (สถานะ: ${
@@ -1771,9 +1779,6 @@ function ReorderPage() {
       }) เรียบร้อยแล้ว`,
     });
     toast.success(`บันทึกใบสั่งซื้อ ${poRecord.orderNumber} สำเร็จ`);
-    if (switchTab) {
-      setActiveTab("po_history");
-    }
     return poRecord;
   };
 
@@ -2326,9 +2331,11 @@ function ReorderPage() {
       let plainText = "";
       if (msgType === "STOCK_ALERT") {
         const alertPayload = createStockAlertItems();
-        flexMsg = createStockAlertFlexBubble(alertPayload, {
+        flexMsg = createStockAlertFlex(alertPayload, {
           storeName: currentStoreName,
           groupBy: flexGroupBy,
+          showGroupHeaders: flexShowHeader,
+          containerType: flexContainerType,
         });
         plainText = `⚠️ แจ้งเตือนสินค้าต้องสั่งซื้อ ${allReorderNeeded.length} รายการ (${currentStoreName})`;
       } else {
@@ -2455,7 +2462,7 @@ function ReorderPage() {
     document.body.removeChild(link);
 
     if (pushMessageType === "PURCHASE_ORDER") {
-      handleSavePO("ORDERED");
+      handleSavePO("ORDERED", false);
     }
     setStatusMessage({
       type: "success",
@@ -2520,9 +2527,11 @@ function ReorderPage() {
     try {
       if (pushMessageType === "STOCK_ALERT") {
         const alertPayload = createStockAlertItems();
-        const flexMsg = createStockAlertFlexBubble(alertPayload, {
+        const flexMsg = createStockAlertFlex(alertPayload, {
           storeName: currentStoreName,
           groupBy: flexGroupBy,
+          showGroupHeaders: flexShowHeader,
+          containerType: flexContainerType,
         });
         const plainText = `⚠️ แจ้งเตือนสินค้าต้องสั่งซื้อ ${allReorderNeeded.length} รายการ (${currentStoreName})`;
 
@@ -2598,7 +2607,7 @@ function ReorderPage() {
 
           if (res.success) {
             playScanSuccessSound({ force: true });
-            handleSavePO("ORDERED");
+            handleSavePO("ORDERED", false);
             setStatusMessage({
               type: "success",
               text: isBroadcastMode
@@ -2620,7 +2629,7 @@ function ReorderPage() {
 
         // Live delivery confirmation (เมื่อไม่ได้ตั้งค่า Token ไว้)
         playScanSuccessSound({ force: true });
-        handleSavePO("ORDERED");
+        handleSavePO("ORDERED", false);
         setStatusMessage({
           type: "success",
           text: isBroadcastMode

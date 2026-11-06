@@ -15,7 +15,7 @@ import {
   SlidersHorizontal,
   Sparkles,
 } from "lucide-react";
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   createNewSpreadsheet,
@@ -91,26 +91,38 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   const [copiedText, setCopiedText] = useState(false);
   const [isGeneratingImage, setIsGeneratingImage] = useState(false);
   const [imageBlobUrl, setImageBlobUrl] = useState<string | null>(null);
+  const [imageDataUrl, setImageDataUrl] = useState<string | null>(null);
   const [imagePreviewMode, setImagePreviewMode] = useState<"full" | "mockup">("full");
   const [isLightboxOpen, setIsLightboxOpen] = useState(false);
   const printDocRef = useRef<HTMLDivElement>(null);
   const [isExportingGoogleSheets, setIsExportingGoogleSheets] = useState(false);
   const [googleSheetsUrl, setGoogleSheetsUrl] = useState<string | null>(null);
   const [isSendingLineImage, setIsSendingLineImage] = useState(false);
+  const [isSendingLineFlex, setIsSendingLineFlex] = useState(false);
   const [exportSlipStyle, setExportSlipStyle] = useState<SlipDesignStyle>("full_bleed_rich");
 
   const [flexContainerType, setFlexContainerType] = useState<FlexContainerType>("carousel");
   const [flexGroupBy, setFlexGroupBy] = useState<FlexItemGroupBy>("category_no_header");
   const [copiedFlexJson, setCopiedFlexJson] = useState(false);
 
-  const sortedItems = useMemo(() => {
+  useEffect(() => {
+    setImageBlobUrl(null);
+    setImageDataUrl(null);
+  }, [payload?.orderNumber, payload?.items.length]);
+
+  const rawItemsWithDefaults = useMemo(() => {
     if (!payload?.items) return [];
-    return getCategorySortedExportItems(payload.items).map((it) => ({
+    return payload.items.map((it) => ({
       ...it,
       categoryName: it.categoryName || "หมวดหมู่ทั่วไป",
       zoneName: it.zoneName || "-",
     }));
   }, [payload]);
+
+  const sortedItems = useMemo(() => {
+    if (!rawItemsWithDefaults.length) return [];
+    return getCategorySortedExportItems(rawItemsWithDefaults);
+  }, [rawItemsWithDefaults]);
 
   const formattedCreatedAt = useMemo(
     () => (payload?.createdAt ? formatThaiDateTime(payload.createdAt) : "-"),
@@ -126,9 +138,25 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
     };
   }, [payload, formattedCreatedAt, sortedItems]);
 
+  const rawPayloadForFlex = useMemo<ExportOrderPayload | null>(() => {
+    if (!payload) return null;
+    return {
+      ...payload,
+      createdAt: formattedCreatedAt,
+      items: rawItemsWithDefaults,
+    };
+  }, [payload, formattedCreatedAt, rawItemsWithDefaults]);
+
   const currentFlexMessage = useMemo(() => {
-    if (!sortedPayload) return null;
-    return buildOrderFlexMessageFromPayload(sortedPayload, {
+    const basePayload =
+      flexGroupBy === "none" ||
+      flexGroupBy === "zone" ||
+      flexGroupBy === "zone_no_header" ||
+      flexGroupBy === "zone_then_category"
+        ? rawPayloadForFlex
+        : sortedPayload;
+    if (!basePayload) return null;
+    return buildOrderFlexMessageFromPayload(basePayload, {
       groupBy: flexGroupBy,
       showGroupHeaders:
         flexGroupBy !== "none" &&
@@ -136,7 +164,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         flexGroupBy !== "zone_no_header",
       containerType: flexContainerType,
     });
-  }, [sortedPayload, flexGroupBy, flexContainerType]);
+  }, [rawPayloadForFlex, sortedPayload, flexGroupBy, flexContainerType]);
 
   const handleDownloadFlexJSON = () => {
     if (!payload || !currentFlexMessage) return;
@@ -165,6 +193,50 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
       setTimeout(() => setCopiedFlexJson(false), 2000);
     } else {
       toast.error("ไม่สามารถคัดลอกได้ กรุณาใช้ปุ่มดาวน์โหลด .json");
+    }
+  };
+
+  const handleShareFlexToLine = async () => {
+    if (!payload || !currentFlexMessage) return;
+    try {
+      setIsSendingLineFlex(true);
+      const res = await shareFlexViaLiffPicker(currentFlexMessage, {
+        format: "FLEX",
+        altSummary: `📦 ใบสั่งซื้อ ${payload.orderNumber} (${payload.items.length} รายการ, รวม ${payload.totalQuantity} หน่วย)`,
+      });
+      if (res.success) {
+        toast.success("ส่ง LINE Flex Message ไปยังห้องแชทสำเร็จแล้ว");
+      } else if (res.needLiffId) {
+        toast.error("กรุณาระบุ LINE LIFF ID ในการตั้งค่า LINE ก่อนเปิดแผ่นเลือกเพื่อน");
+      } else if (res.needLogin) {
+        const isMobile =
+          typeof navigator !== "undefined" &&
+          /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "");
+        if ((res.isLineBrowser || isMobile || res.isMobileDevice) && res.liffUrl) {
+          toast.info("กำลังเปิดแอป LINE เพื่อเลือกเพื่อนส่ง Flex Message...");
+          window.location.href = res.liffUrl;
+          return;
+        }
+        toast.info("กรุณาเข้าสู่ระบบ LINE ก่อนส่ง Flex Message", {
+          action: {
+            label: "เข้าสู่ระบบ",
+            onClick: () => loginToLine(),
+          },
+        });
+      } else {
+        const isCancel =
+          res.message &&
+          (res.message.includes("ยกเลิก") || res.message.toLowerCase().includes("cancel"));
+        if (isCancel) {
+          toast.info("ยกเลิกการเลือกห้องแชทใน LINE");
+        } else {
+          toast.error(res.message || "ส่ง Flex Message เข้า LINE ไม่สำเร็จ");
+        }
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsSendingLineFlex(false);
     }
   };
 
@@ -380,26 +452,31 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
 
       const url = URL.createObjectURL(res.blob);
       setImageBlobUrl(url);
+      setImageDataUrl(res.dataUrl);
       setIsGeneratingImage(false);
       toast.success(
         chosenStyle === "full_bleed_rich"
           ? "สร้างภาพแบนเนอร์เต็มจอ 1040px สำเร็จ (สไตล์ตัวอย่างรูปภาพ ttb)"
           : "สร้างภาพสลิปใบเสร็จสำเร็จ",
       );
+      return { url, dataUrl: res.dataUrl, blob: res.blob };
     } catch (err) {
       console.error("Failed generating export slip:", err);
       setIsGeneratingImage(false);
       toast.error("สร้างภาพสลิปไม่สำเร็จ");
+      return null;
     }
   };
 
-  const handleDownloadImage = () => {
-    if (!imageBlobUrl) {
-      handleGenerateImage();
-      return;
+  const handleDownloadImage = async () => {
+    let targetUrl = imageBlobUrl;
+    if (!targetUrl) {
+      const generated = await handleGenerateImage();
+      targetUrl = generated?.url ?? null;
     }
+    if (!targetUrl) return;
     const link = document.createElement("a");
-    link.href = imageBlobUrl;
+    link.href = targetUrl;
     link.download = `PO-${payload.orderNumber}-slip.png`;
     document.body.appendChild(link);
     link.click();
@@ -408,9 +485,14 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   };
 
   const handleCopyImageToClipboard = async () => {
-    if (!imageBlobUrl) return;
+    let targetUrl = imageBlobUrl;
+    if (!targetUrl) {
+      const generated = await handleGenerateImage();
+      targetUrl = generated?.url ?? null;
+    }
+    if (!targetUrl) return;
     try {
-      const response = await fetch(imageBlobUrl);
+      const response = await fetch(targetUrl);
       const blob = await response.blob();
       await navigator.clipboard.write([
         new ClipboardItem({
@@ -426,19 +508,13 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   const handleShareImageToLine = async () => {
     try {
       setIsSendingLineImage(true);
-      let dataUrl = "";
-      if (imageCanvasRef.current) {
-        dataUrl = imageCanvasRef.current.toDataURL("image/png");
+      let dataUrl = imageDataUrl || "";
+      if (!dataUrl) {
+        const generated = await handleGenerateImage();
+        dataUrl = generated?.dataUrl || "";
       }
       if (!dataUrl) {
-        handleGenerateImage();
-        await new Promise((r) => setTimeout(r, 200));
-        if (imageCanvasRef.current) {
-          dataUrl = imageCanvasRef.current.toDataURL("image/png");
-        }
-      }
-      if (!dataUrl) {
-        toast.error("กรุณากดสร้างรูปภาพสลิปก่อนส่งเข้า LINE");
+        toast.error("ไม่สามารถสร้างรูปภาพสลิปสำหรับส่งเข้า LINE ได้");
         return;
       }
 
@@ -491,12 +567,14 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   };
 
   const handleWebShareImage = async () => {
-    if (!imageBlobUrl) {
-      handleGenerateImage();
-      return;
-    }
     try {
-      const response = await fetch(imageBlobUrl);
+      let targetUrl = imageBlobUrl;
+      if (!targetUrl) {
+        const generated = await handleGenerateImage();
+        targetUrl = generated?.url ?? null;
+      }
+      if (!targetUrl) return;
+      const response = await fetch(targetUrl);
       const blob = await response.blob();
       const ok = await shareImageFileViaNavigator(
         blob,
@@ -1077,6 +1155,19 @@ ${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity}
               <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
+                  className="h-8.5 text-xs rounded-xl font-bold gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white shadow-xs"
+                  onClick={handleShareFlexToLine}
+                  disabled={isSendingLineFlex}
+                >
+                  {isSendingLineFlex ? (
+                    <Loader2 className="size-3.5 animate-spin" />
+                  ) : (
+                    <MessageCircle className="size-3.5" />
+                  )}
+                  {isSendingLineFlex ? "กำลังเปิด LINE..." : "ส่ง Flex เข้า LINE"}
+                </Button>
+                <Button
+                  size="sm"
                   variant="outline"
                   className="h-8.5 text-xs rounded-xl gap-1.5 font-semibold text-emerald-700 dark:text-emerald-300 border-emerald-500/40 hover:bg-emerald-50 dark:hover:bg-emerald-950/20"
                   onClick={handleCopyFlexJSON}
@@ -1090,7 +1181,8 @@ ${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity}
                 </Button>
                 <Button
                   size="sm"
-                  className="h-8.5 text-xs rounded-xl font-bold gap-1.5 bg-[#06C755] hover:bg-[#05b34c] text-white shadow-xs"
+                  variant="outline"
+                  className="h-8.5 text-xs rounded-xl font-bold gap-1.5 border-[#06C755]/50 text-[#06C755] hover:bg-[#06C755]/10"
                   onClick={handleDownloadFlexJSON}
                 >
                   <Download className="size-3.5" />

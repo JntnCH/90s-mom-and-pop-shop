@@ -516,6 +516,84 @@ export const registerLineFollowerFn = createServerFn({ method: "POST" })
     return { success: true, follower: data };
   });
 
+function isRecordObj(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function getUtf8Bytes(v: unknown): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(v), "utf8");
+  } catch {
+    return 0;
+  }
+}
+
+function buildServerFlexMessages(
+  rawFlex: unknown,
+  fallbackSummary: string | undefined,
+  maxMessages: number,
+): Array<{ type: "flex"; altText: string; contents: unknown }> {
+  let parsed = rawFlex;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [];
+    }
+  }
+  if (!isRecordObj(parsed)) return [];
+
+  const contents =
+    parsed["type"] === "flex" && isRecordObj(parsed["contents"])
+      ? parsed["contents"]
+      : parsed["type"] === "bubble" || parsed["type"] === "carousel"
+        ? parsed
+        : isRecordObj(parsed["contents"])
+          ? parsed["contents"]
+          : null;
+
+  if (!contents) return [];
+
+  const rawAlt =
+    (typeof parsed["altText"] === "string" && parsed["altText"].trim()) ||
+    (fallbackSummary && fallbackSummary.trim()) ||
+    "Order";
+  const baseAlt = rawAlt.length > 390 ? `${rawAlt.slice(0, 387)}...` : rawAlt;
+
+  if (
+    contents["type"] === "carousel" &&
+    Array.isArray(contents["contents"]) &&
+    contents["contents"].length > 1 &&
+    maxMessages > 1 &&
+    getUtf8Bytes(contents) > 42000
+  ) {
+    const bubbles = contents["contents"];
+    const chunks: unknown[][] = [];
+    let current: unknown[] = [];
+    for (const b of bubbles) {
+      const candidate = [...current, b];
+      if (current.length > 0 && getUtf8Bytes({ type: "carousel", contents: candidate }) > 42000) {
+        chunks.push(current);
+        if (chunks.length >= maxMessages) break;
+        current = [b];
+      } else {
+        current = candidate;
+      }
+    }
+    if (current.length > 0 && chunks.length < maxMessages) {
+      chunks.push(current);
+    }
+    return chunks.map((chunk, idx) => ({
+      type: "flex" as const,
+      altText:
+        chunks.length > 1 ? `${baseAlt.slice(0, 375)} (${idx + 1}/${chunks.length})` : baseAlt,
+      contents: { type: "carousel", contents: chunk },
+    }));
+  }
+
+  return [{ type: "flex", altText: baseAlt, contents }];
+}
+
 export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
   .validator((data: SendLineOrderPayload) => data)
   .handler(async ({ data }) => {
@@ -533,14 +611,13 @@ export const sendLineMessagingApiFn = createServerFn({ method: "POST" })
       return { success: false, error: "No LINE target user/group id" };
     }
     const messages: unknown[] = [];
-    if (data.flexMessage) {
-      messages.push({
-        type: "flex",
-        altText: data.orderSummary?.slice(0, 400) || "Order",
-        contents: data.flexMessage,
-      });
+    const format = data.format || "FLEX";
+    const maxFlexCount = format === "BOTH" && data.imageUrl ? 4 : 5;
+    if (data.flexMessage && format !== "IMAGE_PNG") {
+      const flexMsgs = buildServerFlexMessages(data.flexMessage, data.orderSummary, maxFlexCount);
+      messages.push(...flexMsgs);
     }
-    if (data.imageUrl) {
+    if (data.imageUrl && (format === "IMAGE_PNG" || format === "BOTH" || !data.flexMessage)) {
       messages.push({
         type: "image",
         originalContentUrl: data.imageUrl,
@@ -625,7 +702,7 @@ export const sendMiniAppPortalCardFn = createServerFn({ method: "POST" })
             {
               type: "flex",
               altText: `${storeName} Mini App`,
-              contents: portalMessage,
+              contents: portalMessage.contents,
             },
           ],
         }),

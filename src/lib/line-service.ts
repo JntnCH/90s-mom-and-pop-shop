@@ -54,7 +54,176 @@ function isFlexContents(value: unknown): value is LiffFlexMessage["contents"] {
   );
 }
 
-function toLiffMessage(value: unknown, fallbackText: string): LiffMessage {
+const LINE_MAX_CAROUSEL_UTF8_BYTES = 42000; // Safe margin under LINE's 50 KB carousel limit
+const LINE_MAX_BUBBLE_UTF8_BYTES = 24000; // Safe margin under LINE's 30 KB bubble limit
+const LINE_MAX_ALT_TEXT_LENGTH = 390; // Safe margin under LINE's 400 char altText limit
+
+export function getJsonUtf8ByteLength(value: unknown): number {
+  try {
+    const json = JSON.stringify(value);
+    if (!json) return 0;
+    if (typeof TextEncoder !== "undefined") {
+      return new TextEncoder().encode(json).length;
+    }
+    return unescape(encodeURIComponent(json)).length;
+  } catch {
+    return 0;
+  }
+}
+
+function sanitizeAltText(altText: string, fallback = "รายการสั่งซื้อสินค้า"): string {
+  const base = (altText || fallback).trim() || fallback;
+  return base.length > LINE_MAX_ALT_TEXT_LENGTH
+    ? `${base.slice(0, LINE_MAX_ALT_TEXT_LENGTH - 3)}...`
+    : base;
+}
+
+function splitBubbleContentsByByteLimit(
+  bubble: Record<string, unknown>,
+  maxMessages: number,
+): LiffFlexMessage["contents"][] {
+  if (getJsonUtf8ByteLength(bubble) <= LINE_MAX_BUBBLE_UTF8_BYTES || maxMessages <= 1) {
+    return [bubble as LiffFlexMessage["contents"]];
+  }
+
+  const body = isRecord(bubble["body"]) ? bubble["body"] : null;
+  const bodyContents = body && Array.isArray(body["contents"]) ? body["contents"] : null;
+  if (!body || !bodyContents || bodyContents.length === 0) {
+    return [bubble as LiffFlexMessage["contents"]];
+  }
+
+  // Locate the inner vertical box holding the item rows (usually index 2 in bubbleContents)
+  let rowsContainerIdx = -1;
+  let maxLen = 0;
+  for (let i = 0; i < bodyContents.length; i++) {
+    const child = bodyContents[i];
+    if (isRecord(child) && Array.isArray(child["contents"]) && child["contents"].length > maxLen) {
+      maxLen = child["contents"].length;
+      rowsContainerIdx = i;
+    }
+  }
+
+  if (rowsContainerIdx === -1 || maxLen <= 1) {
+    return [bubble as LiffFlexMessage["contents"]];
+  }
+
+  const rowsBox = bodyContents[rowsContainerIdx] as Record<string, unknown>;
+  const allRows = rowsBox["contents"] as unknown[];
+
+  const buildBubbleWithRows = (
+    sliceRows: unknown[],
+    includeFooterAndTotals: boolean,
+  ): LiffFlexMessage["contents"] => {
+    const nextBodyContents = bodyContents
+      .map((item, idx) => {
+        if (idx === rowsContainerIdx) {
+          return { ...rowsBox, contents: sliceRows };
+        }
+        return item;
+      })
+      .filter((_, idx) => includeFooterAndTotals || idx <= rowsContainerIdx);
+
+    const nextBubble: Record<string, unknown> = {
+      ...bubble,
+      body: {
+        ...body,
+        contents: nextBodyContents,
+      },
+    };
+    if (!includeFooterAndTotals) {
+      delete nextBubble["footer"];
+    }
+    return nextBubble as LiffFlexMessage["contents"];
+  };
+
+  const chunks: unknown[][] = [];
+  let currentChunk: unknown[] = [];
+
+  for (const row of allRows) {
+    const candidate = [...currentChunk, row];
+    const testBubble = buildBubbleWithRows(candidate, true);
+    if (currentChunk.length > 0 && getJsonUtf8ByteLength(testBubble) > LINE_MAX_BUBBLE_UTF8_BYTES) {
+      chunks.push(currentChunk);
+      if (chunks.length >= maxMessages) {
+        break;
+      }
+      currentChunk = [row];
+    } else {
+      currentChunk = candidate;
+    }
+  }
+
+  if (currentChunk.length > 0 && chunks.length < maxMessages) {
+    chunks.push(currentChunk);
+  }
+
+  const coveredCount = chunks.reduce((acc, c) => acc + c.length, 0);
+  if (coveredCount < allRows.length && chunks.length > 0) {
+    const lastChunk = chunks[chunks.length - 1];
+    if (lastChunk) {
+      lastChunk.push({
+        type: "text",
+        text: `... และอีก ${allRows.length - coveredCount} รายการ (เปิดดูเต็มในระบบ)`,
+        size: "xs",
+        color: "#0284c7",
+        align: "center",
+        margin: "sm",
+      });
+    }
+  }
+
+  return chunks.map((chunkRows, idx) => buildBubbleWithRows(chunkRows, idx === chunks.length - 1));
+}
+
+function splitCarouselContentsByByteLimit(
+  carousel: Record<string, unknown>,
+  maxMessages: number,
+): LiffFlexMessage["contents"][] {
+  const bubbles = Array.isArray(carousel["contents"]) ? carousel["contents"] : [];
+  if (
+    bubbles.length <= 1 ||
+    maxMessages <= 1 ||
+    getJsonUtf8ByteLength(carousel) <= LINE_MAX_CAROUSEL_UTF8_BYTES
+  ) {
+    return [carousel as LiffFlexMessage["contents"]];
+  }
+
+  const chunks: unknown[][] = [];
+  let currentChunk: unknown[] = [];
+
+  for (const bubble of bubbles) {
+    const candidate = [...currentChunk, bubble];
+    const candidateCarousel = { type: "carousel" as const, contents: candidate };
+    if (
+      currentChunk.length > 0 &&
+      getJsonUtf8ByteLength(candidateCarousel) > LINE_MAX_CAROUSEL_UTF8_BYTES
+    ) {
+      chunks.push(currentChunk);
+      if (chunks.length >= maxMessages) {
+        break;
+      }
+      currentChunk = [bubble];
+    } else {
+      currentChunk = candidate;
+    }
+  }
+
+  if (currentChunk.length > 0 && chunks.length < maxMessages) {
+    chunks.push(currentChunk);
+  }
+
+  return chunks.map((chunkBubbles) => ({
+    type: "carousel" as const,
+    contents: chunkBubbles as LiffFlexMessage["contents"][],
+  }));
+}
+
+export function toLiffMessages(
+  value: unknown,
+  fallbackText: string,
+  maxMessages = 5,
+): LiffMessage[] {
+  const safeLimit = Math.max(1, Math.min(5, maxMessages));
   let parsedValue = value;
   if (typeof parsedValue === "string") {
     try {
@@ -71,14 +240,35 @@ function toLiffMessage(value: unknown, fallbackText: string): LiffMessage {
           ? parsedValue
           : parsedValue["contents"];
     if (isFlexContents(contents)) {
-      const altText =
+      const rawAlt =
         typeof parsedValue["altText"] === "string" && parsedValue["altText"].trim()
           ? parsedValue["altText"]
           : fallbackText;
-      return { type: "flex", altText, contents };
+      const baseAltText = sanitizeAltText(rawAlt, fallbackText);
+
+      const splitContents =
+        isRecord(contents) && contents["type"] === "carousel"
+          ? splitCarouselContentsByByteLimit(contents, safeLimit)
+          : isRecord(contents) && contents["type"] === "bubble"
+            ? splitBubbleContentsByByteLimit(contents, safeLimit)
+            : [contents];
+
+      return splitContents.map((partContents, index) => ({
+        type: "flex" as const,
+        altText:
+          splitContents.length > 1
+            ? sanitizeAltText(`${baseAltText} (${index + 1}/${splitContents.length})`, fallbackText)
+            : baseAltText,
+        contents: partContents,
+      }));
     }
   }
-  return { type: "text", text: fallbackText };
+  return [{ type: "text", text: fallbackText.slice(0, 5000) }];
+}
+
+function toLiffMessage(value: unknown, fallbackText: string): LiffMessage {
+  const messages = toLiffMessages(value, fallbackText, 1);
+  return messages[0] ?? { type: "text", text: sanitizeAltText(fallbackText) };
 }
 
 export interface LineConfigStatus {
@@ -502,8 +692,10 @@ export async function shareFlexViaLiffPicker(
   }
 
   try {
-    const messagePayload = toLiffMessage(flexMessage, altSummary);
-    let liffMessages: LiffMessage[] = [messagePayload];
+    const maxFlexCount = sendFormat === "BOTH" ? 4 : 5;
+    const flexPayloads =
+      sendFormat === "IMAGE_PNG" ? [] : toLiffMessages(flexMessage, altSummary, maxFlexCount);
+    let liffMessages: LiffMessage[] = [...flexPayloads];
 
     if (sendFormat === "IMAGE_PNG" || sendFormat === "BOTH") {
       let finalImageUrl = options.imageUrl?.trim();
@@ -528,7 +720,7 @@ export async function shareFlexViaLiffPicker(
         if (sendFormat === "IMAGE_PNG") {
           liffMessages = [imagePayload];
         } else {
-          liffMessages = [messagePayload, imagePayload];
+          liffMessages = [...flexPayloads, imagePayload];
         }
       }
     }
@@ -758,8 +950,10 @@ export async function sendWith3TierFallback(
     try {
       const initialized = await initLiff();
       if (initialized && liffInstance) {
-        const messagePayload = toLiffMessage(flexMessage, summary);
-        let liffMessages: LiffMessage[] = [messagePayload];
+        const maxFlexCount = format === "BOTH" ? 4 : 5;
+        const flexPayloads =
+          format === "IMAGE_PNG" ? [] : toLiffMessages(flexMessage, summary, maxFlexCount);
+        let liffMessages: LiffMessage[] = [...flexPayloads];
 
         if (format === "IMAGE_PNG" || format === "BOTH") {
           let resolvedImageUrl = imageUrl?.trim();
@@ -781,7 +975,8 @@ export async function sendWith3TierFallback(
               originalContentUrl: resolvedImageUrl,
               previewImageUrl: resolvedImageUrl,
             };
-            liffMessages = format === "IMAGE_PNG" ? [imagePayload] : [messagePayload, imagePayload];
+            liffMessages =
+              format === "IMAGE_PNG" ? [imagePayload] : [...flexPayloads, imagePayload];
           }
         }
 
@@ -951,15 +1146,24 @@ export function formatDailyOrderFlexMessage(
 ) {
   const resolvedDate = options?.dateStr ?? dateStr ?? new Date().toLocaleDateString("th-TH");
   const templateItems = items.map((item) => ({
+    name: item.name,
     productName: item.name,
     quantity: item.quantity,
     unitName: item.unitName,
     ...(item.barcode === undefined ? {} : { barcode: item.barcode }),
+    ...(item.categoryId === undefined ? {} : { categoryId: item.categoryId }),
     ...(item.categoryName === undefined
       ? item.categoryId === undefined
         ? {}
         : { categoryName: MasterStore.getCategoryName(item.categoryId) }
       : { categoryName: item.categoryName }),
+    ...(item.subCategoryId === undefined ? {} : { subCategoryId: item.subCategoryId }),
+    ...(item.subCategoryName === undefined
+      ? item.subCategoryId === undefined
+        ? {}
+        : { subCategoryName: MasterStore.getSubCategoryName(item.subCategoryId) }
+      : { subCategoryName: item.subCategoryName }),
+    ...(item.zoneId === undefined ? {} : { zoneId: item.zoneId }),
     ...(item.zoneName === undefined
       ? item.zoneId === undefined
         ? {}
@@ -995,22 +1199,15 @@ export function formatDailyOrderFlexMessage(
         : { showGroupHeaders: options.showGroupHeaders }),
     });
   } catch {
-    const nowStr = new Date().toISOString();
-    const lineOrders: LineOrderItem[] = items.map((i) => ({
-      product: productFromOrderItem(i, nowStr),
-      quantity: i.quantity,
-      unitName: i.unitName,
-    }));
-    return buildOrderFlexMessage(
-      lineOrders,
-      `ใบสั่งซื้อสินค้าประจำวัน (${resolvedDate})`,
-      getSystemStoreName(storeName),
-      {
-        dateStr: resolvedDate,
-        containerType: targetContainerType,
-        ...options,
-      },
-    );
+    return createPurchaseOrderFlex(templateItems, {
+      orderNumber: options?.orderNumber ?? "DRAFT",
+      dateStr: resolvedDate,
+      storeName: getSystemStoreName(options?.storeName ?? storeName),
+      supplierName: options?.supplierName ?? "ซัพพลายเออร์ทั่วไป",
+      note: options?.note ?? `ใบสั่งซื้อสินค้าประจำวัน (${resolvedDate})`,
+      containerType: targetContainerType,
+      ...options,
+    });
   }
 }
 

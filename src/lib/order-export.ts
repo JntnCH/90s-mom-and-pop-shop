@@ -210,8 +210,12 @@ export function buildOrderFlexMessageFromPayload(
   order: ExportOrderPayload,
   options?: Partial<PurchaseOrderFlexOptions>,
 ) {
-  const sortedItems = getCategorySortedExportItems(order.items);
-  const items: OrderFlexItem[] = sortedItems.map((i) => ({
+  const groupBy = options?.groupBy;
+  const sourceItems =
+    !groupBy || groupBy === "category" || groupBy === "category_no_header"
+      ? getCategorySortedExportItems(order.items)
+      : order.items;
+  const items: OrderFlexItem[] = sourceItems.map((i) => ({
     name: i.productName,
     quantity: i.quantity,
     unitName: i.unitName,
