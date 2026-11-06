@@ -29,6 +29,7 @@ import {
   buildOrderFlexMessageFromPayload,
   copyTextToClipboard,
   downloadJsonFile,
+  getCategorySortedExportItems,
 } from "@/lib/order-export";
 import { shareFlexViaLiffPicker, loginToLine } from "@/lib/line-service";
 import {
@@ -36,6 +37,7 @@ import {
   shareImageFileViaNavigator,
   type SlipDesignStyle,
 } from "@/lib/slip-image-generator";
+import { formatThaiDateTime } from "@/lib/store";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -52,13 +54,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export interface ExportOrderItem {
   productName: string;
   barcode: string;
+  categoryId?: string | undefined;
   categoryName: string;
+  subCategoryId?: string | undefined;
+  subCategoryName?: string | undefined;
+  zoneId?: string | undefined;
   zoneName: string;
   quantity: number;
   unitName: string;
   costPrice: number;
   total: number;
-  note?: string;
+  note?: string | undefined;
 }
 
 export interface ExportOrderPayload {
@@ -97,9 +103,32 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   const [flexGroupBy, setFlexGroupBy] = useState<FlexItemGroupBy>("category_no_header");
   const [copiedFlexJson, setCopiedFlexJson] = useState(false);
 
-  const currentFlexMessage = useMemo(() => {
+  const sortedItems = useMemo(() => {
+    if (!payload?.items) return [];
+    return getCategorySortedExportItems(payload.items).map((it) => ({
+      ...it,
+      categoryName: it.categoryName || "หมวดหมู่ทั่วไป",
+      zoneName: it.zoneName || "-",
+    }));
+  }, [payload]);
+
+  const formattedCreatedAt = useMemo(
+    () => (payload?.createdAt ? formatThaiDateTime(payload.createdAt) : "-"),
+    [payload?.createdAt],
+  );
+
+  const sortedPayload = useMemo<ExportOrderPayload | null>(() => {
     if (!payload) return null;
-    return buildOrderFlexMessageFromPayload(payload, {
+    return {
+      ...payload,
+      createdAt: formattedCreatedAt,
+      items: sortedItems,
+    };
+  }, [payload, formattedCreatedAt, sortedItems]);
+
+  const currentFlexMessage = useMemo(() => {
+    if (!sortedPayload) return null;
+    return buildOrderFlexMessageFromPayload(sortedPayload, {
       groupBy: flexGroupBy,
       showGroupHeaders:
         flexGroupBy !== "none" &&
@@ -107,7 +136,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         flexGroupBy !== "zone_no_header",
       containerType: flexContainerType,
     });
-  }, [payload, flexGroupBy, flexContainerType]);
+  }, [sortedPayload, flexGroupBy, flexContainerType]);
 
   const handleDownloadFlexJSON = () => {
     if (!payload || !currentFlexMessage) return;
@@ -159,7 +188,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         [
           `ใบสั่งซื้อสินค้าเลขที่: ${payload.orderNumber}`,
           `ร้านค้า: ${payload.storeName}`,
-          `วันที่: ${payload.createdAt}`,
+          `วันที่: ${formattedCreatedAt}`,
         ],
         [
           `ซัพพลายเออร์: ${payload.supplierName || "-"}`,
@@ -171,19 +200,21 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
           "บาร์โค้ด",
           "ชื่อสินค้า",
           "โซนจัดเก็บ",
-          "หมวดหมู่",
+          "หมวดหมู่หลัก",
+          "หมวดหมู่ย่อย",
           "จำนวน",
           "หน่วยนับ",
           "ราคาต่อหน่วย (บาท)",
           "ราคารวม (บาท)",
           "หมายเหตุ",
         ],
-        ...payload.items.map((it, idx) => [
+        ...sortedItems.map((it, idx) => [
           idx + 1,
           it.barcode,
           it.productName,
           it.zoneName,
           it.categoryName,
+          it.subCategoryName || "-",
           it.quantity,
           it.unitName,
           it.costPrice,
@@ -195,6 +226,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
           "",
           "",
           "ยอดรวมทั้งสิ้น",
+          "",
           "",
           "",
           payload.totalQuantity,
@@ -235,7 +267,8 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         "บาร์โค้ด",
         "ชื่อสินค้า",
         "โซน",
-        "หมวดหมู่",
+        "หมวดหมู่หลัก",
+        "หมวดหมู่ย่อย",
         "จำนวน",
         "หน่วยนับ",
         "ราคาทุนต่อหน่วย (บาท)",
@@ -243,16 +276,17 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         "หมายเหตุ",
       ];
 
-      const rows = payload.items.map((item, idx) => [
+      const rows = sortedItems.map((item, idx) => [
         idx + 1,
         `"${payload.orderNumber}"`,
-        `"${payload.createdAt}"`,
+        `"${formattedCreatedAt}"`,
         `"${payload.storeName}"`,
         `"${payload.supplierName}"`,
         `"${item.barcode}"`,
         `"${item.productName.replace(/"/g, '""')}"`,
         `"${item.zoneName}"`,
         `"${item.categoryName}"`,
+        `"${item.subCategoryName || "-"}"`,
         item.quantity,
         `"${item.unitName}"`,
         item.costPrice.toFixed(2),
@@ -269,6 +303,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         "",
         "",
         `"ยอดรวมทั้งสิ้น"`,
+        "",
         "",
         "",
         payload.totalQuantity,
@@ -297,7 +332,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   // 2. Download JSON
   const handleDownloadJSON = () => {
     try {
-      const jsonStr = JSON.stringify(payload, null, 2);
+      const jsonStr = JSON.stringify(sortedPayload || payload, null, 2);
       const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8;" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -320,19 +355,23 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
     try {
       const res = await generatePurchaseOrderSlipImage({
         orderNumber: payload.orderNumber,
-        createdAt: payload.createdAt,
+        createdAt: formattedCreatedAt,
         storeName: payload.storeName,
         supplierName: payload.supplierName,
         style: chosenStyle,
-        items: payload.items.map((i) => ({
+        items: sortedItems.map((i) => ({
           name: i.productName,
           quantity: i.quantity,
           unitName: i.unitName,
           costPrice: i.costPrice,
           total: i.total,
           barcode: i.barcode,
+          zoneId: i.zoneId,
           zoneName: i.zoneName,
+          categoryId: i.categoryId,
           categoryName: i.categoryName,
+          subCategoryId: i.subCategoryId,
+          subCategoryName: i.subCategoryName,
           note: i.note,
         })),
         totalQuantity: payload.totalQuantity,
@@ -476,11 +515,11 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   // 4. Plain Text Formatted
   const formattedText = `📦 ใบสั่งซื้อสินค้า (Purchase Order) — ${payload.storeName}
 เลขที่: ${payload.orderNumber}
-วันที่: ${payload.createdAt}
+วันที่: ${formattedCreatedAt}
 ซัพพลายเออร์: ${payload.supplierName}
 ────────────────────
 รายการสินค้า (รายการ -> จำนวน -> หน่วยนับ):
-${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity} ${it.unitName} (฿${it.total.toFixed(0)})`).join("\n")}
+${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity} ${it.unitName} (฿${it.total.toFixed(0)})`).join("\n")}
 ────────────────────
 รวมสินค้า: ${payload.totalQuantity} ชิ้น
 ยอดเงินรวมทั้งสิ้น: ฿${payload.totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
@@ -598,7 +637,7 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                     {payload.orderNumber}
                   </div>
                   <div className="text-gray-600 text-[11px]">
-                    วันที่สั่งซื้อ: {payload.createdAt}
+                    วันที่สั่งซื้อ: {formattedCreatedAt}
                   </div>
                 </div>
               </div>
@@ -609,7 +648,7 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                   <span className="font-bold text-gray-900">{payload.supplierName}</span>
                 </div>
                 <div className="text-gray-500 text-[11px]">
-                  จำนวนสินค้า: {payload.items.length} รายการ ({payload.totalQuantity} ชิ้น)
+                  จำนวนสินค้า: {sortedItems.length} รายการ ({payload.totalQuantity} ชิ้น)
                 </div>
               </div>
 
@@ -620,14 +659,14 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                       <th className="p-2.5 w-10 text-center">#</th>
                       <th className="p-2.5">รายการสินค้า</th>
                       <th className="p-2.5 w-28">บาร์โค้ด</th>
-                      <th className="p-2.5 w-24">โซน/หมวดหมู่</th>
+                      <th className="p-2.5 w-32">หมวดหมู่หลัก/ย่อย</th>
                       <th className="p-2.5 text-right w-24">จำนวน</th>
                       <th className="p-2.5 text-right w-24">ราคาทุน/หน่วย</th>
                       <th className="p-2.5 text-right w-28">ยอดรวม (บาท)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {payload.items.map((item, idx) => (
+                    {sortedItems.map((item, idx) => (
                       <tr key={idx} className="text-gray-800">
                         <td className="p-2.5 text-center text-gray-500 font-mono">{idx + 1}</td>
                         <td className="p-2.5 font-medium">
@@ -642,7 +681,9 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                           {item.barcode}
                         </td>
                         <td className="p-2.5 text-gray-500 text-[11px]">
-                          {item.zoneName} / {item.categoryName}
+                          {item.subCategoryName
+                            ? `${item.categoryName} › ${item.subCategoryName}`
+                            : item.categoryName}
                         </td>
                         <td className="p-2.5 text-right font-mono font-bold">
                           {item.quantity} {item.unitName}
@@ -744,20 +785,24 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
                     <th className="p-2">บาร์โค้ด</th>
                     <th className="p-2">ชื่อสินค้า</th>
                     <th className="p-2">โซน</th>
-                    <th className="p-2">หมวดหมู่</th>
+                    <th className="p-2">หมวดหมู่หลัก/ย่อย</th>
                     <th className="p-2 text-right">จำนวน</th>
                     <th className="p-2 text-right">ราคาทุน</th>
                     <th className="p-2 text-right">ยอดรวม</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {payload.items.map((it, idx) => (
+                  {sortedItems.map((it, idx) => (
                     <tr key={idx} className="hover:bg-muted/30">
                       <td className="p-2 font-mono">{idx + 1}</td>
                       <td className="p-2 font-mono">{it.barcode}</td>
                       <td className="p-2 font-medium">{it.productName}</td>
                       <td className="p-2 text-muted-foreground">{it.zoneName}</td>
-                      <td className="p-2 text-muted-foreground">{it.categoryName}</td>
+                      <td className="p-2 text-muted-foreground">
+                        {it.subCategoryName
+                          ? `${it.categoryName} › ${it.subCategoryName}`
+                          : it.categoryName}
+                      </td>
                       <td className="p-2 text-right font-mono font-bold">
                         {it.quantity} {it.unitName}
                       </td>
@@ -1192,7 +1237,7 @@ ${payload.items.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantit
             </div>
 
             <pre className="p-3 bg-muted rounded-xl text-[11px] font-mono overflow-x-auto max-h-60 text-muted-foreground">
-              {JSON.stringify(payload, null, 2)}
+              {JSON.stringify(sortedPayload || payload, null, 2)}
             </pre>
           </TabsContent>
         </Tabs>

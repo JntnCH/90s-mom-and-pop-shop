@@ -42,8 +42,22 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { AuthService } from "@/lib/auth-rbac";
 import { BackupService, type BackupPackage, type DatabaseStats } from "@/lib/backup-restore";
 
+const INITIAL_DB_STATS: DatabaseStats = {
+  products: 0,
+  categories: 0,
+  zones: 0,
+  units: 0,
+  movements: 0,
+  receives: 0,
+  purchaseOrders: 0,
+  salesDocuments: 0,
+  followers: 0,
+  staffUsers: 0,
+  estimatedSizeKB: 0,
+};
+
 export function BackupRestoreTab() {
-  const [stats, setStats] = useState<DatabaseStats>(BackupService.getDatabaseStats());
+  const [stats, setStats] = useState<DatabaseStats>(INITIAL_DB_STATS);
   const [includeTransactions, setIncludeTransactions] = useState(true);
   const [includePrinters, setIncludePrinters] = useState(true);
   const [includeStaff, setIncludeStaff] = useState(true);

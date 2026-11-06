@@ -342,7 +342,7 @@ export async function syncDatabasePayload(payload: {
               totalCost: po.totalCost ?? 0,
               status: po.status || "DRAFT",
               sentViaLineAt: po.sentViaLineAt || null,
-              updatedAt: new Date().toISOString(),
+              updatedAt: po.updatedAt || po.createdAt || new Date().toISOString(),
             },
           });
       }

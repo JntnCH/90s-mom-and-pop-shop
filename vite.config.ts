@@ -12,6 +12,11 @@ const isCloudflare =
 const nitroPreset =
   process.env["NITRO_PRESET"] || (isCloudflare ? "cloudflare-module" : "node-server");
 
+// Prevent nitro:main from overriding Vite's dev server port (3000) with Cloud Run's PORT=8080
+if (process.env["NODE_ENV"] !== "production") {
+  process.env["PORT"] = "3000";
+}
+
 export default defineConfig({
   plugins: [
     tailwindcss(),

@@ -112,12 +112,12 @@ function DocumentsPage() {
   const [modalDocType, setModalDocType] = useState<DocumentType>("QUOTATION");
   const [editingDoc, setEditingDoc] = useState<SalesDocument | null>(null);
   const [previewDoc, setPreviewDoc] = useState<SalesDocument | null>(null);
+  const [allDocuments, setAllDocuments] = useState<SalesDocument[]>([]);
 
-  // Fetch all documents
-  const allDocuments = useMemo(() => {
-    // depend on refreshKey
+  // Fetch all documents on client mount and when refreshKey changes
+  React.useEffect(() => {
     void refreshKey;
-    return salesDocService.getDocuments();
+    setAllDocuments(salesDocService.getDocuments());
   }, [refreshKey]);
 
   // Filtered documents

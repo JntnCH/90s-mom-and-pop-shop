@@ -34,11 +34,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { AuthService, ROLE_DEFINITIONS, type StaffUser, type UserRole } from "@/lib/auth-rbac";
+import {
+  AuthService,
+  DEFAULT_USERS,
+  ROLE_DEFINITIONS,
+  type StaffUser,
+  type UserRole,
+} from "@/lib/auth-rbac";
 
 export function UserSwitcher() {
-  const [currentUser, setCurrentUser] = useState<StaffUser>(AuthService.getCurrentUser());
-  const [users, setUsers] = useState<StaffUser[]>(AuthService.getUsers());
+  const [currentUser, setCurrentUser] = useState<StaffUser>(DEFAULT_USERS[0]!);
+  const [users, setUsers] = useState<StaffUser[]>(DEFAULT_USERS);
 
   // PIN Prompt Modal State
   const [pinModalOpen, setPinModalOpen] = useState(false);

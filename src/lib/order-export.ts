@@ -8,18 +8,46 @@
  * - Image Canvas Snapshot
  */
 
-import { getSystemStoreName, type PurchaseOrderFlexOptions } from "./flex-templates";
+import {
+  getSystemStoreName,
+  groupAndSortFlexItems,
+  type PurchaseOrderFlexOptions,
+} from "./flex-templates";
 import { formatDailyOrderFlexMessage, type OrderFlexItem } from "./line-service";
+import { formatThaiDateTime } from "./store";
 
 export interface ExportOrderItem {
   productName: string;
   barcode: string;
-  categoryName?: string;
-  zoneName?: string;
+  categoryId?: string | undefined;
+  categoryName?: string | undefined;
+  subCategoryId?: string | undefined;
+  subCategoryName?: string | undefined;
+  zoneId?: string | undefined;
+  zoneName?: string | undefined;
   quantity: number;
   unitName: string;
   costPrice: number;
   total: number;
+  note?: string | undefined;
+}
+
+export function getCategorySortedExportItems(items: ExportOrderItem[]): ExportOrderItem[] {
+  if (!items || items.length === 0) return [];
+  const wrapped = items.map((item) => ({
+    ...item,
+    name: item.productName,
+  }));
+  const grouped = groupAndSortFlexItems(wrapped, "category");
+  return grouped.flatMap((g) =>
+    g.items.map(({ item }) => ({
+      ...item,
+      categoryName: g.categoryName || item.categoryName || "หมวดหมู่ทั่วไป",
+      ...(g.subCategoryName || item.subCategoryName
+        ? { subCategoryName: g.subCategoryName || item.subCategoryName }
+        : {}),
+    })),
+  );
 }
 
 export interface ExportOrderPayload {
@@ -55,7 +83,8 @@ export function exportOrderToCSV(order: ExportOrderPayload) {
     "ลำดับ",
     "บาร์โค้ด",
     "ชื่อสินค้า",
-    "หมวดหมู่",
+    "หมวดหมู่หลัก",
+    "หมวดหมู่ย่อย",
     "โซนจัดเก็บ",
     "จำนวน",
     "หน่วยนับ",
@@ -63,11 +92,15 @@ export function exportOrderToCSV(order: ExportOrderPayload) {
     "ยอดรวม (บาท)",
   ];
 
-  const rows = order.items.map((item, idx) => [
+  const sortedItems = getCategorySortedExportItems(order.items);
+  const formattedDate = formatThaiDateTime(order.createdAt);
+
+  const rows = sortedItems.map((item, idx) => [
     idx + 1,
     `"${item.barcode || ""}"`,
     `"${item.productName.replace(/"/g, '""')}"`,
     `"${item.categoryName || "-"}"`,
+    `"${item.subCategoryName || "-"}"`,
     `"${item.zoneName || "-"}"`,
     item.quantity,
     `"${item.unitName}"`,
@@ -82,7 +115,7 @@ export function exportOrderToCSV(order: ExportOrderPayload) {
     [`ใบสั่งซื้อสินค้า (Purchase Order)`, `เลขที่: ${order.orderNumber}`],
     [`ร้านค้า:`, `${resolvedStoreName}`],
     [`ซัพพลายเออร์:`, `${order.supplierName || "ซัพพลายเออร์ทั่วไป"}`],
-    [`วันที่สั่งซื้อ:`, `${order.createdAt}`],
+    [`วันที่สั่งซื้อ:`, `${formattedDate}`],
     [`หมายเหตุ:`, `${order.note || "-"}`],
     [],
   ];
@@ -91,6 +124,7 @@ export function exportOrderToCSV(order: ExportOrderPayload) {
     "",
     "",
     "ยอดรวมทั้งสิ้น",
+    "",
     "",
     "",
     order.totalQuantity,
@@ -116,12 +150,13 @@ export function exportOrderToCSV(order: ExportOrderPayload) {
  */
 export function exportOrderToTXT(order: ExportOrderPayload) {
   const resolvedStoreName = getSystemStoreName(order.storeName);
+  const formattedDate = formatThaiDateTime(order.createdAt);
   let txt = `====================================================\n`;
   txt += `        ใบสั่งซื้อสินค้า (PURCHASE ORDER)\n`;
   txt += `        ${resolvedStoreName}\n`;
   txt += `====================================================\n`;
   txt += `เลขที่ใบสั่งซื้อ : ${order.orderNumber}\n`;
-  txt += `วันที่ออกเอกสาร  : ${order.createdAt}\n`;
+  txt += `วันที่ออกเอกสาร  : ${formattedDate}\n`;
   txt += `ซัพพลายเออร์    : ${order.supplierName || "ซัพพลายเออร์ทั่วไป"}\n`;
   if (order.note) {
     txt += `หมายเหตุ        : ${order.note}\n`;
@@ -130,7 +165,9 @@ export function exportOrderToTXT(order: ExportOrderPayload) {
   txt += `ลำดับ | รายการสินค้า                  | จำนวน      | รวมเงิน\n`;
   txt += `----------------------------------------------------\n`;
 
-  order.items.forEach((item, idx) => {
+  const sortedItems = getCategorySortedExportItems(order.items);
+
+  sortedItems.forEach((item, idx) => {
     const num = String(idx + 1).padStart(2, " ");
     const name = item.productName.padEnd(28, " ");
     const qty = `${item.quantity} ${item.unitName}`.padStart(10, " ");
@@ -156,7 +193,12 @@ export function exportOrderToTXT(order: ExportOrderPayload) {
  * 3. Export as Structured JSON (.json)
  */
 export function exportOrderToJSON(order: ExportOrderPayload) {
-  const jsonStr = JSON.stringify(order, null, 2);
+  const sortedOrder: ExportOrderPayload = {
+    ...order,
+    createdAt: formatThaiDateTime(order.createdAt),
+    items: getCategorySortedExportItems(order.items),
+  };
+  const jsonStr = JSON.stringify(sortedOrder, null, 2);
   const blob = new Blob([jsonStr], { type: "application/json;charset=utf-8;" });
   downloadBlob(blob, `PO_${order.orderNumber}.json`);
 }
@@ -168,19 +210,24 @@ export function buildOrderFlexMessageFromPayload(
   order: ExportOrderPayload,
   options?: Partial<PurchaseOrderFlexOptions>,
 ) {
-  const items: OrderFlexItem[] = order.items.map((i) => ({
+  const sortedItems = getCategorySortedExportItems(order.items);
+  const items: OrderFlexItem[] = sortedItems.map((i) => ({
     name: i.productName,
     quantity: i.quantity,
     unitName: i.unitName,
     costPrice: i.costPrice,
     barcode: i.barcode,
+    categoryId: i.categoryId,
     categoryName: i.categoryName,
+    subCategoryId: i.subCategoryId,
+    subCategoryName: i.subCategoryName,
+    zoneId: i.zoneId,
     zoneName: i.zoneName,
     priceEstimate: i.total,
-    note: order.note,
+    note: i.note || order.note,
   }));
 
-  return formatDailyOrderFlexMessage(items, order.createdAt, order.storeName, {
+  return formatDailyOrderFlexMessage(items, formatThaiDateTime(order.createdAt), order.storeName, {
     orderNumber: order.orderNumber,
     supplierName: order.supplierName,
     note: order.note,
@@ -249,7 +296,9 @@ export function printOrderAsPDF(order: ExportOrderPayload) {
   }
 
   const resolvedStoreName = getSystemStoreName(order.storeName);
-  const itemsHtml = order.items
+  const formattedDate = formatThaiDateTime(order.createdAt);
+  const sortedItems = getCategorySortedExportItems(order.items);
+  const itemsHtml = sortedItems
     .map(
       (item, idx) => `
       <tr>
@@ -258,7 +307,11 @@ export function printOrderAsPDF(order: ExportOrderPayload) {
           <strong>${item.productName}</strong><br/>
           <span style="font-size: 11px; color: #666; font-family: monospace;">${item.barcode || "-"}</span>
         </td>
-        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${item.categoryName || "-"}</td>
+        <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${
+          item.subCategoryName
+            ? `${item.categoryName || "-"} › ${item.subCategoryName}`
+            : item.categoryName || "-"
+        }</td>
         <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-weight: bold;">
           ${item.quantity} ${item.unitName}
         </td>
@@ -302,7 +355,7 @@ export function printOrderAsPDF(order: ExportOrderPayload) {
           </div>
           <div style="text-align: right;">
             <div style="font-size: 16px; font-weight: bold; font-family: monospace;">${order.orderNumber}</div>
-            <div style="font-size: 12px;">วันที่: ${order.createdAt}</div>
+            <div style="font-size: 12px;">วันที่: ${formattedDate}</div>
           </div>
         </div>
 

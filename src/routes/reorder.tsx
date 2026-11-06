@@ -146,9 +146,8 @@ import { generateStoreBarcode } from "@/lib/barcode-engine";
 import {
   MasterStore,
   calculateSuggestedQuantity,
+  generateNextPurchaseOrderNumber,
   getSmartReorderForecast,
-  formatThaiDateTime,
-  sortPurchaseOrdersNewestFirst,
   type CategoryItem,
   type LineUserFollower,
   type ProductItem,
@@ -156,13 +155,31 @@ import {
   type SubCategoryItem,
   type UnitItem,
   type ZoneItem,
+  formatThaiDateTime,
+  sortPurchaseOrdersNewestFirst,
 } from "@/lib/store";
 
 function getPurchaseOrderFlexItems(po: PurchaseOrderRecord): OrderFlexItem[] {
   const products = MasterStore.getProducts();
   return po.items.map((item) => {
-    const product = products.find((candidate) => candidate.id === item.productId);
-    const subCategoryId = item.subCategoryId || product?.subCategoryId;
+    const product = products.find(
+      (candidate) =>
+        candidate.id === item.productId ||
+        (item.barcode && candidate.barcode === item.barcode) ||
+        candidate.name === item.productName,
+    );
+    const resolvedCategoryId =
+      (item.categoryId && item.categoryId !== "cat-general" ? item.categoryId : undefined) ||
+      product?.categoryId ||
+      item.categoryId ||
+      "";
+    const resolvedSubCategoryId = item.subCategoryId || product?.subCategoryId || "";
+    const resolvedZoneId = item.zoneId || product?.zoneId || "";
+    const catName = resolvedCategoryId ? MasterStore.getCategoryName(resolvedCategoryId) : "";
+    const subCatName = resolvedSubCategoryId
+      ? MasterStore.getSubCategoryName(resolvedSubCategoryId)
+      : "";
+    const zName = resolvedZoneId ? MasterStore.getZoneName(resolvedZoneId) : "";
     return {
       name: item.productName,
       quantity: item.quantity,
@@ -173,14 +190,12 @@ function getPurchaseOrderFlexItems(po: PurchaseOrderRecord): OrderFlexItem[] {
       barcode: item.barcode,
       costPrice: item.costPrice,
       priceEstimate: item.total,
-      categoryId: product?.categoryId ?? "",
-      categoryName: product ? MasterStore.getCategoryName(product.categoryId) : "หมวดหมู่ทั่วไป",
-      subCategoryId: subCategoryId,
-      subCategoryName: subCategoryId
-        ? MasterStore.getSubCategoryName(subCategoryId)
-        : undefined,
-      zoneId: product?.zoneId ?? "",
-      zoneName: product?.zoneId ? MasterStore.getZoneName(product.zoneId) : "-",
+      categoryId: resolvedCategoryId,
+      categoryName: catName && catName !== "ไม่ระบุ" ? catName : "หมวดหมู่ทั่วไป",
+      ...(resolvedSubCategoryId ? { subCategoryId: resolvedSubCategoryId } : {}),
+      ...(subCatName && subCatName !== "ไม่ระบุ" ? { subCategoryName: subCatName } : {}),
+      zoneId: resolvedZoneId,
+      zoneName: zName && zName !== "ไม่ระบุ" ? zName : "-",
       note: item.note,
     };
   });
@@ -270,6 +285,8 @@ function ReorderPage() {
     note?: string | undefined;
     categoryId?: string | undefined;
     categoryName?: string | undefined;
+    subCategoryId?: string | undefined;
+    subCategoryName?: string | undefined;
     zoneId?: string | undefined;
     zoneName?: string | undefined;
   }
@@ -332,12 +349,7 @@ function ReorderPage() {
   const [newContactName, setNewContactName] = useState("");
   const [newContactId, setNewContactId] = useState("");
   const [newContactRole, setNewContactRole] = useState<"admin" | "staff" | "viewer">("staff");
-  const [customChannelToken, setCustomChannelToken] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("minimark_line_channel_token") || "";
-    }
-    return "";
-  });
+  const [customChannelToken, setCustomChannelToken] = useState<string>("");
   const [isBroadcastMode, setIsBroadcastMode] = useState(false);
   const [pushMessageType, setPushMessageType] = useState<"PURCHASE_ORDER" | "STOCK_ALERT">(
     "PURCHASE_ORDER",
@@ -397,7 +409,8 @@ function ReorderPage() {
 
   // Flex Simulator Importer Modal
   const [flexSimulatorModalOpen, setFlexSimulatorModalOpen] = useState(false);
-  const currentStoreName = getSystemStoreName();
+  const [currentStoreName, setCurrentStoreName] = useState<string>(DEFAULT_STORE_NAME);
+  const [nextPONumberPreview, setNextPONumberPreview] = useState<string>("PO-DRAFT");
 
   // Quick Add Product Directly Inside Purchase Order
   const [quickAddModalOpen, setQuickAddModalOpen] = useState(false);
@@ -422,15 +435,7 @@ function ReorderPage() {
     "DRAFT" | "ORDERED" | "RECEIVED" | "CANCELLED"
   >("DRAFT");
   const [lastAutoSavedAt, setLastAutoSavedAt] = useState<Date | null>(null);
-  const [flexContainerType, setFlexContainerType] = useState<FlexContainerType>(() => {
-    try {
-      return (
-        (localStorage.getItem("minimark_flex_container_type_v2") as FlexContainerType) || "carousel"
-      );
-    } catch {
-      return "carousel";
-    }
-  });
+  const [flexContainerType, setFlexContainerType] = useState<FlexContainerType>("carousel");
   const [inlineCarouselPage, setInlineCarouselPage] = useState(0);
   const [modalImageDisplayMode, setModalImageDisplayMode] = useState<"full" | "mockup">("full");
 
@@ -456,11 +461,25 @@ function ReorderPage() {
     setUnits(allUnits);
     setFollowers(allFollowers);
     setPurchaseOrders(allPOs);
+    setCurrentStoreName(getSystemStoreName());
+    setNextPONumberPreview(generateNextPurchaseOrderNumber(allPOs));
   }, []);
 
   // 1. Initial load on mount: Check active editing PO, saved draft, or seed low-stock items
   useEffect(() => {
     reloadData();
+    try {
+      const savedToken = localStorage.getItem("minimark_line_channel_token");
+      if (savedToken) setCustomChannelToken(savedToken);
+      const savedContainerType = localStorage.getItem(
+        "minimark_flex_container_type_v2",
+      ) as FlexContainerType | null;
+      if (savedContainerType === "carousel" || savedContainerType === "bubble") {
+        setFlexContainerType(savedContainerType);
+      }
+    } catch {
+      // ignore
+    }
 
     // Check if an existing PO was actively being edited before navigating away
     try {
@@ -527,7 +546,13 @@ function ReorderPage() {
       setLastAutoSavedAt(draft.savedAt ? new Date(draft.savedAt) : new Date());
     } else {
       const allProds = MasterStore.getProducts();
-      const lowStockItems = allProds.filter((p) => p.isActive !== false && p.stock <= p.minStock);
+      const lowStockItems = allProds
+        .filter((p) => p.isActive !== false && p.stock <= p.minStock)
+        .sort((a, b) => {
+          const timeA = Date.parse(a.updatedAt || a.createdAt || "") || 0;
+          const timeB = Date.parse(b.updatedAt || b.createdAt || "") || 0;
+          return timeB - timeA;
+        });
       if (lowStockItems.length > 0) {
         setOrderList(
           lowStockItems.map((p) => ({
@@ -836,19 +861,33 @@ function ReorderPage() {
 
   const getUnitName = (unitId: string) => MasterStore.getUnitName(unitId);
   const getCatName = (catId: string) => MasterStore.getCategoryName(catId);
+  const getSubCatName = (subCatId?: string) =>
+    subCatId ? MasterStore.getSubCategoryName(subCatId) : "";
 
-  // Categorized alerts
-  const outOfStockItems = products.filter((p) => p.isActive !== false && p.stock <= 0);
-  const lowStockItems = products.filter(
-    (p) => p.isActive !== false && p.stock > 0 && p.stock <= p.minStock,
+  const sortProductsLatestFirst = (list: ProductItem[]) =>
+    [...list].sort((a, b) => {
+      const timeA = Date.parse(a.updatedAt || a.createdAt || "") || 0;
+      const timeB = Date.parse(b.updatedAt || b.createdAt || "") || 0;
+      return timeB - timeA;
+    });
+
+  // Categorized alerts (sorted by latest item first)
+  const outOfStockItems = sortProductsLatestFirst(
+    products.filter((p) => p.isActive !== false && p.stock <= 0),
   );
-  const allReorderNeeded = products.filter((p) => p.isActive !== false && p.stock <= p.minStock);
+  const lowStockItems = sortProductsLatestFirst(
+    products.filter((p) => p.isActive !== false && p.stock > 0 && p.stock <= p.minStock),
+  );
+  const allReorderNeeded = sortProductsLatestFirst(
+    products.filter((p) => p.isActive !== false && p.stock <= p.minStock),
+  );
 
-  // Phase 5: Smart Reorder Forecast List
-  const forecastList =
-    typeof MasterStore.getSmartReorderForecast === "function"
-      ? MasterStore.getSmartReorderForecast(calculationStrategy, customMultiplier)
-      : getSmartReorderForecast(products, calculationStrategy, customMultiplier);
+  // Phase 5: Smart Reorder Forecast List (use products state to prevent SSR hydration mismatch)
+  const forecastList = getSmartReorderForecast(
+    allReorderNeeded,
+    calculationStrategy,
+    customMultiplier,
+  );
   const displayedForecastList = forecastList.filter((item) => {
     if (calcCatFilter !== "all" && item.product.categoryId !== calcCatFilter) return false;
     if (calcSubCatFilter !== "all" && item.product.subCategoryId !== calcSubCatFilter) return false;
@@ -902,17 +941,10 @@ function ReorderPage() {
     }),
   );
 
-  /** แสดงวันที่แบบไทย — ถ้าเป็น ISO จะแปลงให้อ่านง่าย */
+  /** แสดงวันที่แบบไทย D/M/2569 HH:mm:ss ตามรูปแบบ IMG_8534.jpeg */
   const displayPODate = (raw?: string) => {
     if (!raw) return "-";
-    if (/^\d{4}-\d{2}-\d{2}T/.test(raw.trim())) {
-      try {
-        return formatThaiDateTime(new Date(raw));
-      } catch {
-        return raw;
-      }
-    }
-    return raw;
+    return formatThaiDateTime(raw);
   };
 
   const handleUpdateQuantity = (productId: string, val: number, isDirect: boolean = false) => {
@@ -1233,17 +1265,33 @@ function ReorderPage() {
 
   const handleOpenExportCurrentOrder = () => {
     if (fullItems.length === 0) return;
+    const sortedFullItems = groupAndSortFlexItems(fullItems, "category").flatMap((g) =>
+      g.items.map((x) => x.item),
+    );
+    const resolvedOrderNumber =
+      editingPOId && editingPONumber
+        ? editingPONumber
+        : generateNextPurchaseOrderNumber(purchaseOrders);
     const payload: ExportOrderPayload = {
-      orderNumber: editingPOId ? editingPONumber : "DRAFT",
-      createdAt: editingPOId
-        ? editingPOCreatedAt
-        : new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH"),
+      orderNumber: resolvedOrderNumber,
+      createdAt:
+        editingPOId && editingPOCreatedAt
+          ? formatThaiDateTime(editingPOCreatedAt)
+          : formatThaiDateTime(new Date()),
       storeName: currentStoreName,
       supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
-      items: fullItems.map((f) => ({
+      items: sortedFullItems.map((f) => ({
         productName: f.product.name,
         barcode: f.product.barcode,
+        categoryId: f.product.categoryId,
         categoryName: getCatName(f.product.categoryId),
+        ...(f.product.subCategoryId !== undefined
+          ? {
+              subCategoryId: f.product.subCategoryId,
+              subCategoryName: getSubCatName(f.product.subCategoryId),
+            }
+          : {}),
+        zoneId: f.product.zoneId,
         zoneName: zones.find((z) => z.id === f.product.zoneId)?.name || "-",
         quantity: f.quantity,
         unitName: f.unitName,
@@ -1259,28 +1307,52 @@ function ReorderPage() {
   };
 
   const handleOpenExportPO = (po: PurchaseOrderRecord) => {
+    const mappedItems = po.items.map((i) => {
+      const p = products.find(
+        (prod) =>
+          prod.id === i.productId ||
+          (i.barcode && prod.barcode === i.barcode) ||
+          prod.name === i.productName,
+      );
+      const resolvedCatId =
+        (i.categoryId && i.categoryId !== "cat-general" ? i.categoryId : undefined) ||
+        p?.categoryId ||
+        i.categoryId;
+      const resolvedSubCatId = i.subCategoryId || p?.subCategoryId;
+      const resolvedZoneId = i.zoneId || p?.zoneId;
+      return {
+        name: i.productName,
+        productName: i.productName,
+        barcode: i.barcode,
+        categoryId: resolvedCatId,
+        categoryName: resolvedCatId ? getCatName(resolvedCatId) : "-",
+        ...(resolvedSubCatId
+          ? {
+              subCategoryId: resolvedSubCatId,
+              subCategoryName: getSubCatName(resolvedSubCatId),
+            }
+          : {}),
+        zoneId: resolvedZoneId,
+        zoneName: resolvedZoneId ? zones.find((z) => z.id === resolvedZoneId)?.name || "-" : "-",
+        quantity: i.quantity,
+        unitName:
+          (i.unitId ? getUnitName(i.unitId) : undefined) ||
+          i.unitName ||
+          (p ? getUnitName(p.unitId) : "-"),
+        costPrice: i.costPrice,
+        total: i.total,
+        ...(i.note !== undefined ? { note: i.note } : {}),
+      };
+    });
+    const sortedMappedItems = groupAndSortFlexItems(mappedItems, "category").flatMap((g) =>
+      g.items.map((x) => x.item),
+    );
     const payload: ExportOrderPayload = {
       orderNumber: po.orderNumber,
-      createdAt: po.createdAt,
+      createdAt: formatThaiDateTime(po.createdAt),
       storeName: currentStoreName,
       supplierName: po.supplierName || "ซัพพลายเออร์ทั่วไป",
-      items: po.items.map((i) => {
-        const p = products.find((prod) => prod.id === i.productId);
-        return {
-          productName: i.productName,
-          barcode: i.barcode,
-          categoryName: p ? getCatName(p.categoryId) : "-",
-          zoneName: p ? zones.find((z) => z.id === p.zoneId)?.name || "-" : "-",
-          quantity: i.quantity,
-          unitName:
-            (i.unitId ? getUnitName(i.unitId) : undefined) ||
-            i.unitName ||
-            (p ? getUnitName(p.unitId) : "-"),
-          costPrice: i.costPrice,
-          total: i.total,
-          ...(i.note !== undefined ? { note: i.note } : {}),
-        };
-      }),
+      items: sortedMappedItems,
       totalQuantity: po.totalQuantity,
       totalCost: po.totalCost,
     };
@@ -1364,7 +1436,8 @@ function ReorderPage() {
         if (nextQty <= 0) {
           return prev.filter((i) => i.productId !== prod.id);
         }
-        return prev.map((i) => (i.productId === prod.id ? { ...i, quantity: nextQty } : i));
+        const updatedItem = { ...item, quantity: nextQty };
+        return [updatedItem, ...prev.filter((i) => i.productId !== prod.id)];
       }
       return [
         {
@@ -1545,8 +1618,12 @@ function ReorderPage() {
       updatedAt: new Date().toISOString(),
     };
 
-    // Prefer category/zone saved on the cart row (survives products-state lag / server overwrite)
-    const resolvedCategoryId = item.categoryId || effectiveProduct.categoryId;
+    // Prefer valid category/zone saved on the cart row or product master (never let fallback "cat-general" overwrite real product category)
+    const resolvedCategoryId =
+      (item.categoryId && item.categoryId !== "cat-general" ? item.categoryId : undefined) ||
+      effectiveProduct.categoryId ||
+      item.categoryId ||
+      "cat-general";
     const resolvedZoneId = item.zoneId || effectiveProduct.zoneId;
     const resolvedSubCategoryId = item.subCategoryId || effectiveProduct.subCategoryId;
     const productWithResolved: ProductItem = {
@@ -1556,6 +1633,9 @@ function ReorderPage() {
       ...(resolvedZoneId !== undefined ? { zoneId: resolvedZoneId } : {}),
     };
     const zoneName = zones.find((z) => z.id === productWithResolved.zoneId)?.name;
+    const subCategoryName = productWithResolved.subCategoryId
+      ? getSubCatName(productWithResolved.subCategoryId)
+      : undefined;
     return {
       product: productWithResolved,
       name: productWithResolved.name,
@@ -1568,6 +1648,10 @@ function ReorderPage() {
       ...(item.note !== undefined ? { note: item.note } : {}),
       categoryId: productWithResolved.categoryId,
       categoryName: getCatName(productWithResolved.categoryId),
+      ...(productWithResolved.subCategoryId !== undefined
+        ? { subCategoryId: productWithResolved.subCategoryId }
+        : {}),
+      ...(subCategoryName ? { subCategoryName } : {}),
       ...(productWithResolved.zoneId !== undefined ? { zoneId: productWithResolved.zoneId } : {}),
       ...(zoneName !== undefined ? { zoneName } : {}),
     };
@@ -1583,11 +1667,14 @@ function ReorderPage() {
   ) => {
     if (fullItems.length === 0) return undefined;
 
+    // Preserve latest-first order on the PO record so "รายการสินค้าที่ต้องสั่ง" stays sorted by latest item first
+    const itemsToSave = fullItems;
+
     // If currently editing an existing PO, update it!
     if (editingPOId) {
       const updated = MasterStore.updatePurchaseOrder(editingPOId, {
         supplierName: supplierNameInput.trim() || undefined,
-        items: fullItems.map((f) => ({
+        items: itemsToSave.map((f) => ({
           productId: f.product.id,
           productName: f.product.name,
           barcode: f.product.barcode,
@@ -1604,10 +1691,7 @@ function ReorderPage() {
         totalQuantity,
         totalCost,
         status,
-        sentViaLineAt:
-          status === "ORDERED"
-            ? new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH")
-            : undefined,
+        sentViaLineAt: status === "ORDERED" ? formatThaiDateTime(new Date()) : undefined,
       });
 
       if (updated) {
@@ -1616,7 +1700,9 @@ function ReorderPage() {
         } catch {
           /* ignore */
         }
-        setPurchaseOrders(MasterStore.getPurchaseOrders());
+        const latestPOs = MasterStore.getPurchaseOrders();
+        setPurchaseOrders(latestPOs);
+        setNextPONumberPreview(generateNextPurchaseOrderNumber(latestPOs));
         if (typeof MasterStore.clearDraftPurchaseOrder === "function") {
           MasterStore.clearDraftPurchaseOrder();
         }
@@ -1646,8 +1732,9 @@ function ReorderPage() {
     }
 
     const poRecord = MasterStore.savePurchaseOrder({
+      orderNumber: generateNextPurchaseOrderNumber(purchaseOrders),
       supplierName: supplierNameInput.trim() || undefined,
-      items: fullItems.map((f) => ({
+      items: itemsToSave.map((f) => ({
         productId: f.product.id,
         productName: f.product.name,
         barcode: f.product.barcode,
@@ -1666,13 +1753,12 @@ function ReorderPage() {
       totalQuantity,
       totalCost,
       status,
-      sentViaLineAt:
-        status === "ORDERED"
-          ? new Date().toLocaleDateString("th-TH") + " " + new Date().toLocaleTimeString("th-TH")
-          : undefined,
+      sentViaLineAt: status === "ORDERED" ? formatThaiDateTime(new Date()) : undefined,
     });
 
-    setPurchaseOrders(MasterStore.getPurchaseOrders());
+    const latestPOs = MasterStore.getPurchaseOrders();
+    setPurchaseOrders(latestPOs);
+    setNextPONumberPreview(generateNextPurchaseOrderNumber(latestPOs));
     if (typeof MasterStore.clearDraftPurchaseOrder === "function") {
       MasterStore.clearDraftPurchaseOrder();
     }
@@ -1797,22 +1883,35 @@ function ReorderPage() {
           setModalPngData({ dataUrl: res.dataUrl, blob: res.blob });
           return res;
         } else {
-          const orderDateStr = formatPurchaseOrderSentAt();
+          const orderDateStr = formatThaiDateTime(
+            editingPOId && editingPOCreatedAt ? editingPOCreatedAt : new Date(),
+          );
+          const sortedSlipItems = groupAndSortFlexItems(fullItems, "category").flatMap((g) =>
+            g.items.map((x) => x.item),
+          );
+          const resolvedOrderNumber =
+            editingPOId && editingPONumber
+              ? editingPONumber
+              : generateNextPurchaseOrderNumber(purchaseOrders);
           const res = await generatePurchaseOrderSlipImage({
-            orderNumber: editingPOId ? editingPONumber : "DRAFT",
+            orderNumber: resolvedOrderNumber,
             createdAt: orderDateStr,
             storeName: currentStoreName,
             supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
             style: chosenStyle,
-            items: fullItems.map((f) => ({
+            items: sortedSlipItems.map((f) => ({
               name: f.name,
               quantity: f.quantity,
               unitName: f.unitName,
               costPrice: f.costPrice,
               total: f.priceEstimate,
               barcode: f.barcode,
+              zoneId: f.zoneId,
               zoneName: f.zoneName,
+              categoryId: f.categoryId,
               categoryName: f.categoryName,
+              subCategoryId: f.subCategoryId,
+              subCategoryName: f.subCategoryName,
               note: f.note,
             })),
             totalQuantity,
@@ -1837,6 +1936,8 @@ function ReorderPage() {
       currentStoreName,
       editingPOId,
       editingPONumber,
+      editingPOCreatedAt,
+      purchaseOrders,
       supplierNameInput,
       fullItems,
       totalQuantity,
@@ -1945,7 +2046,10 @@ function ReorderPage() {
       groupBy === "zone_no_header" ||
       groupBy === "zone_then_category" ||
       groupBy === "category_then_zone",
-    orderNumber: editingPOId ? editingPONumber : "DRAFT",
+    orderNumber:
+      editingPOId && editingPONumber
+        ? editingPONumber
+        : generateNextPurchaseOrderNumber(purchaseOrders),
     supplierName: supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป",
     containerType,
   });
@@ -1954,8 +2058,13 @@ function ReorderPage() {
     dateStr: string,
     groupBy = flexGroupBy,
     showHeaders = flexShowHeader,
-  ) =>
-    `${formatOrderPlainText(fullItems, dateStr, currentStoreName, groupBy, showHeaders)}\nเลขที่ใบสั่งซื้อ: ${editingPOId ? editingPONumber : "DRAFT"}\nซัพพลายเออร์: ${supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป"}`;
+  ) => {
+    const resolvedOrderNumber =
+      editingPOId && editingPONumber
+        ? editingPONumber
+        : generateNextPurchaseOrderNumber(purchaseOrders);
+    return `${formatOrderPlainText(fullItems, dateStr, currentStoreName, groupBy, showHeaders)}\nเลขที่ใบสั่งซื้อ: ${resolvedOrderNumber}\nซัพพลายเออร์: ${supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป"}`;
+  };
 
   const handlePreviewOrderFlex = (
     overrideGroupBy?: FlexItemGroupBy,
@@ -3901,7 +4010,7 @@ function ReorderPage() {
                               📦 ใบสั่งซื้อสินค้าประจำวัน
                             </div>
                             <div className="text-[10px] text-emerald-100">
-                              เลขที่: {editingPOId ? editingPONumber : "PO-DRAFT"} •{" "}
+                              เลขที่: {editingPOId ? editingPONumber : nextPONumberPreview} •{" "}
                               {supplierNameInput.trim() || "ซัพพลายเออร์ทั่วไป"}
                             </div>
                             {flexContainerType === "carousel" && flatEntries.length > 0 && (
@@ -4654,7 +4763,7 @@ function ReorderPage() {
                     {selectedPO.orderNumber}
                   </div>
                   <div className="text-gray-600 text-[11px]">
-                    วันที่สั่งซื้อ: {selectedPO.createdAt}
+                    วันที่สั่งซื้อ: {displayPODate(selectedPO.createdAt)}
                   </div>
                 </div>
               </div>
@@ -4683,27 +4792,56 @@ function ReorderPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
-                    {selectedPO.items.map((item, idx) => (
-                      <tr key={item.productId} className="text-gray-800">
-                        <td className="p-2 text-center text-gray-500 font-mono">{idx + 1}</td>
-                        <td className="p-2 font-medium">
-                          <div>{item.productName}</div>
-                          {item.note && (
-                            <div className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded mt-0.5 inline-block font-normal">
-                              📌 {item.note}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-2 font-mono text-[11px] text-gray-500">{item.barcode}</td>
-                        <td className="p-2 text-right font-mono font-bold">
-                          {item.quantity} {item.unitName}
-                        </td>
-                        <td className="p-2 text-right font-mono">฿{item.costPrice.toFixed(2)}</td>
-                        <td className="p-2 text-right font-mono font-bold">
-                          ฿{item.total.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
+                    {groupAndSortFlexItems(
+                      selectedPO.items.map((item) => {
+                        const prod = products.find(
+                          (p) =>
+                            p.id === item.productId ||
+                            (item.barcode && p.barcode === item.barcode) ||
+                            p.name === item.productName,
+                        );
+                        const catId =
+                          (item.categoryId && item.categoryId !== "cat-general"
+                            ? item.categoryId
+                            : undefined) ||
+                          prod?.categoryId ||
+                          item.categoryId;
+                        const subCatId = item.subCategoryId || prod?.subCategoryId;
+                        return {
+                          ...item,
+                          name: item.productName,
+                          categoryId: catId,
+                          categoryName: catId ? getCatName(catId) : "หมวดหมู่ทั่วไป",
+                          subCategoryId: subCatId,
+                          subCategoryName: subCatId ? getSubCatName(subCatId) : "",
+                        };
+                      }),
+                      "category",
+                    )
+                      .flatMap((g) => g.items.map((x) => x.item))
+                      .map((item, idx) => (
+                        <tr key={item.productId} className="text-gray-800">
+                          <td className="p-2 text-center text-gray-500 font-mono">{idx + 1}</td>
+                          <td className="p-2 font-medium">
+                            <div>{item.productName}</div>
+                            {item.note && (
+                              <div className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded mt-0.5 inline-block font-normal">
+                                📌 {item.note}
+                              </div>
+                            )}
+                          </td>
+                          <td className="p-2 font-mono text-[11px] text-gray-500">
+                            {item.barcode}
+                          </td>
+                          <td className="p-2 text-right font-mono font-bold">
+                            {item.quantity} {item.unitName}
+                          </td>
+                          <td className="p-2 text-right font-mono">฿{item.costPrice.toFixed(2)}</td>
+                          <td className="p-2 text-right font-mono font-bold">
+                            ฿{item.total.toFixed(2)}
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                   <tfoot className="bg-gray-50 font-bold border-t border-gray-200 text-gray-900">
                     <tr>

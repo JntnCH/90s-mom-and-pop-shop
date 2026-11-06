@@ -13,7 +13,7 @@ import {
   Share2,
   Smartphone,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { copyTextToClipboard, downloadJsonFile } from "@/lib/order-export";
 import { copyImageBlobToClipboard, downloadImageBlob } from "@/lib/slip-image-generator";
@@ -106,6 +106,13 @@ export function FlexMessageVisualizer({
   const [copiedImg, setCopiedImg] = useState(false);
   const [viewMode, setViewMode] = useState<"visual" | "fullbleed" | "json">("visual");
   const [imageDisplayMode, setImageDisplayMode] = useState<"full" | "mockup">("full");
+  const [currentTimeLabel, setCurrentTimeLabel] = useState<string>("");
+
+  useEffect(() => {
+    setCurrentTimeLabel(
+      new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }),
+    );
+  }, []);
 
   const payload = flexData as FlexMessagePayload | null;
   const isCarousel =
@@ -378,8 +385,7 @@ export function FlexMessageVisualizer({
           {/* LINE Chat Timeline Stamp & Format Tag */}
           <div className="flex items-center gap-2 mb-3 select-none flex-wrap justify-center">
             <span className="text-[10px] text-white/80 bg-black/20 px-2.5 py-0.5 rounded-full">
-              วันนี้{" "}
-              {new Date().toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" })} น.
+              วันนี้{currentTimeLabel ? ` ${currentTimeLabel} น.` : ""}
             </span>
             {isCarousel ? (
               <span className="text-[11px] text-white font-bold bg-emerald-600/95 px-3 py-0.5 rounded-full flex items-center gap-1 shadow-xs">

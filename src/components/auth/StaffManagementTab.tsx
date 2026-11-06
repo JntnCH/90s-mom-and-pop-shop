@@ -51,6 +51,7 @@ import {
 } from "@/components/ui/table";
 import {
   AuthService,
+  DEFAULT_USERS,
   ROLE_DEFINITIONS,
   type RolePermissions,
   type StaffUser,
@@ -59,7 +60,7 @@ import {
 
 export function StaffManagementTab() {
   const [users, setUsers] = useState<StaffUser[]>([]);
-  const [currentUser, setCurrentUser] = useState<StaffUser>(AuthService.getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<StaffUser>(DEFAULT_USERS[0]!);
 
   // Modal State
   const [userModalOpen, setUserModalOpen] = useState(false);

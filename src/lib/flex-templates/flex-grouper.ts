@@ -1,5 +1,5 @@
 /**
- * Helper to sort and group items by Category, SubCategory and Zone for LINE Flex Message & Text summaries.
+ * Helper to sort and group items by Category and Zone for LINE Flex Message & Text summaries.
  */
 
 import { MasterStore } from "../store";
@@ -29,6 +29,7 @@ export interface GroupedFlexItems<T extends ItemWithCategoryAndZone> {
   headerTitle: string;
   zoneName: string;
   categoryName: string;
+  subCategoryName?: string | undefined;
   items: { item: T; originalIndex: number }[];
 }
 
@@ -38,45 +39,102 @@ export interface GroupFlexItemsOptions {
 }
 
 /**
- * Resolves category, subcategory and zone names for an item using item properties or MasterStore lookup
+ * Resolves category name, subcategory name, and zone name for an item using item properties or MasterStore lookup
  */
 export function resolveItemMetadata<T extends ItemWithCategoryAndZone>(
   item: T,
-): { categoryName: string; zoneName: string; subCategoryName: string } {
-  let catName = item.categoryName?.trim();
-  let zName = item.zoneName?.trim();
-  let subName = item.subCategoryName?.trim();
+): { categoryName: string; subCategoryName: string; zoneName: string } {
+  const isInvalidName = (val?: string) =>
+    !val ||
+    val === "-" ||
+    val === "ไม่ระบุ" ||
+    val === "หมวดหมู่ทั่วไป" ||
+    val === "หมวดหมู่ย่อยทั่วไป" ||
+    val === "โซนทั่วไป";
 
-  if (!catName && item.categoryId) {
-    catName = MasterStore.getCategoryName(item.categoryId);
-  } else if (catName) {
+  let catName = item.categoryName?.trim();
+  let subCatName = item.subCategoryName?.trim();
+  let zName = item.zoneName?.trim();
+
+  // 1. Prefer resolving from explicit categoryId / subCategoryId if provided and valid in MasterStore
+  if (item.categoryId) {
+    const byId = MasterStore.getCategoryName(item.categoryId);
+    if (!isInvalidName(byId)) {
+      catName = byId;
+    }
+  }
+
+  // 2. If catName is actually a categoryId (e.g. "cat-1"), resolve it without overwriting valid names with "ไม่ระบุ"
+  if (catName && !isInvalidName(catName)) {
     const lookedUp = MasterStore.getCategoryName(catName);
-    if (lookedUp && lookedUp !== "ทั่วไป" && lookedUp !== catName) {
+    if (!isInvalidName(lookedUp) && lookedUp !== "ทั่วไป") {
       catName = lookedUp;
     }
   }
 
-  if (!zName && item.zoneId) {
-    zName = MasterStore.getZoneName(item.zoneId);
+  if (item.subCategoryId) {
+    const subById = MasterStore.getSubCategoryName(item.subCategoryId);
+    if (!isInvalidName(subById)) {
+      subCatName = subById;
+    }
   }
 
-  if (!subName && item.subCategoryId) {
-    subName = MasterStore.getSubCategoryName(item.subCategoryId);
+  if (subCatName && !isInvalidName(subCatName)) {
+    const lookedUpSub = MasterStore.getSubCategoryName(subCatName);
+    if (!isInvalidName(lookedUpSub)) {
+      subCatName = lookedUpSub;
+    }
   }
 
-  if (!catName || !zName || zName === "-" || !subName) {
+  if (item.zoneId) {
+    const zById = MasterStore.getZoneName(item.zoneId);
+    if (!isInvalidName(zById)) {
+      zName = zById;
+    }
+  }
+
+  // 3. If category, subcategory, or zone is still missing/invalid, look up the product in MasterStore
+  if (isInvalidName(catName) || isInvalidName(subCatName) || isInvalidName(zName)) {
     try {
       const products = MasterStore.getProducts();
+      const itemWithId = item as T & {
+        productId?: string;
+        product?: { id?: string; categoryId?: string; subCategoryId?: string; zoneId?: string };
+      };
+      const prodId = itemWithId.productId || itemWithId.product?.id;
       const matched = products.find(
         (p) =>
-          (item.barcode && p.barcode && item.barcode.trim() === p.barcode.trim()) ||
+          (prodId && p.id === prodId) ||
+          (item.barcode && p.barcode && item.barcode.trim() === item.barcode.trim()) ||
           (p.name && item.name && p.name.trim().toLowerCase() === item.name.trim().toLowerCase()),
       );
       if (matched) {
-        if (!catName) catName = MasterStore.getCategoryName(matched.categoryId);
-        if (!zName || zName === "-") zName = MasterStore.getZoneName(matched.zoneId);
-        if (!subName && matched.subCategoryId) {
-          subName = MasterStore.getSubCategoryName(matched.subCategoryId);
+        if (isInvalidName(catName) && matched.categoryId) {
+          const matchedCat = MasterStore.getCategoryName(matched.categoryId);
+          if (!isInvalidName(matchedCat)) catName = matchedCat;
+        }
+        if (isInvalidName(subCatName) && matched.subCategoryId) {
+          const matchedSub = MasterStore.getSubCategoryName(matched.subCategoryId);
+          if (!isInvalidName(matchedSub)) subCatName = matchedSub;
+        }
+        if (isInvalidName(zName) && matched.zoneId) {
+          const matchedZone = MasterStore.getZoneName(matched.zoneId);
+          if (!isInvalidName(matchedZone)) zName = matchedZone;
+        }
+      }
+      // Also check nested item.product if present (e.g. FullOrderItem)
+      if (itemWithId.product) {
+        if (isInvalidName(catName) && itemWithId.product.categoryId) {
+          const nestedCat = MasterStore.getCategoryName(itemWithId.product.categoryId);
+          if (!isInvalidName(nestedCat)) catName = nestedCat;
+        }
+        if (isInvalidName(subCatName) && itemWithId.product.subCategoryId) {
+          const nestedSub = MasterStore.getSubCategoryName(itemWithId.product.subCategoryId);
+          if (!isInvalidName(nestedSub)) subCatName = nestedSub;
+        }
+        if (isInvalidName(zName) && itemWithId.product.zoneId) {
+          const nestedZone = MasterStore.getZoneName(itemWithId.product.zoneId);
+          if (!isInvalidName(nestedZone)) zName = nestedZone;
         }
       }
     } catch {
@@ -85,25 +143,32 @@ export function resolveItemMetadata<T extends ItemWithCategoryAndZone>(
   }
 
   return {
-    categoryName: catName && catName !== "-" ? catName : "หมวดหมู่ทั่วไป",
-    zoneName: zName && zName !== "-" ? zName : "โซนทั่วไป",
-    subCategoryName: subName && subName !== "-" && subName !== "ไม่ระบุ" ? subName : "",
+    categoryName: !isInvalidName(catName) ? catName! : "หมวดหมู่ทั่วไป",
+    subCategoryName: !isInvalidName(subCatName) ? subCatName! : "",
+    zoneName: !isInvalidName(zName) ? zName! : "โซนทั่วไป",
   };
 }
 
-/** Secondary sort: subcategory then product name (Thai locale) */
-function compareSubCategoryThenName(
-  a: { subCategoryName: string; item: { name: string } },
-  b: { subCategoryName: string; item: { name: string } },
-): number {
-  const sCompare = a.subCategoryName.localeCompare(b.subCategoryName, "th");
-  if (sCompare !== 0) return sCompare;
-  return a.item.name.localeCompare(b.item.name, "th");
+function compareCategoryNames(aCat: string, bCat: string): number {
+  const aIsFallback = !aCat || aCat === "หมวดหมู่ทั่วไป" || aCat === "ไม่ระบุ";
+  const bIsFallback = !bCat || bCat === "หมวดหมู่ทั่วไป" || bCat === "ไม่ระบุ";
+  if (aIsFallback !== bIsFallback) {
+    return aIsFallback ? 1 : -1;
+  }
+  return aCat.localeCompare(bCat, "th");
+}
+
+function compareSubCategoryNames(aSub: string, bSub: string): number {
+  const aEmpty = !aSub || aSub === "-" || aSub === "ไม่ระบุ";
+  const bEmpty = !bSub || bSub === "-" || bSub === "ไม่ระบุ";
+  if (aEmpty && bEmpty) return 0;
+  if (aEmpty !== bEmpty) return aEmpty ? 1 : -1;
+  return aSub.localeCompare(bSub, "th");
 }
 
 /**
- * Groups and sorts items so products belonging to the same category or zone are adjacent.
- * Within a category (and zone groups), items with the same subcategory stay adjacent.
+ * Groups and sorts items so products belonging to the same Main Category and Subcategory are adjacent.
+ * ค่าเริ่มต้น: จัดเรียงตาม หมวดหมู่หลัก -> หมวดหมู่ย่อย -> ชื่อสินค้า
  */
 export function groupAndSortFlexItems<T extends ItemWithCategoryAndZone>(
   items: T[],
@@ -116,13 +181,6 @@ export function groupAndSortFlexItems<T extends ItemWithCategoryAndZone>(
       ? groupByOrOptions
       : groupByOrOptions?.groupBy || "category";
 
-  const includeZone: boolean =
-    typeof groupByOrOptions === "object" && typeof groupByOrOptions.includeZone === "boolean"
-      ? groupByOrOptions.includeZone
-      : rawGroupBy === "zone" ||
-        rawGroupBy === "zone_then_category" ||
-        rawGroupBy === "category_then_zone";
-
   const groupBy: FlexItemGroupBy = rawGroupBy;
 
   if (groupBy === "none") {
@@ -132,68 +190,83 @@ export function groupAndSortFlexItems<T extends ItemWithCategoryAndZone>(
         headerTitle: "",
         zoneName: "",
         categoryName: "",
+        subCategoryName: "",
         items: items.map((item, originalIndex) => ({ item, originalIndex })),
       },
     ];
   }
 
+  // Enrich with resolved names
   const enriched = items.map((item, originalIndex) => {
     const meta = resolveItemMetadata(item);
     return {
       item,
       originalIndex,
       categoryName: meta.categoryName,
-      zoneName: meta.zoneName,
       subCategoryName: meta.subCategoryName,
+      zoneName: meta.zoneName,
     };
   });
 
+  // Sort based on groupBy strategy (always sorting by Main Category -> Subcategory -> Product Name)
   enriched.sort((a, b) => {
     if (groupBy === "zone_then_category") {
       const zCompare = a.zoneName.localeCompare(b.zoneName, "th");
       if (zCompare !== 0) return zCompare;
-      const cCompare = a.categoryName.localeCompare(b.categoryName, "th");
+      const cCompare = compareCategoryNames(a.categoryName, b.categoryName);
       if (cCompare !== 0) return cCompare;
-      return compareSubCategoryThenName(a, b);
+      const sCompare = compareSubCategoryNames(a.subCategoryName, b.subCategoryName);
+      if (sCompare !== 0) return sCompare;
+      return a.item.name.localeCompare(b.item.name, "th");
     }
 
     if (groupBy === "category_then_zone") {
-      const cCompare = a.categoryName.localeCompare(b.categoryName, "th");
+      const cCompare = compareCategoryNames(a.categoryName, b.categoryName);
       if (cCompare !== 0) return cCompare;
+      const sCompare = compareSubCategoryNames(a.subCategoryName, b.subCategoryName);
+      if (sCompare !== 0) return sCompare;
       const zCompare = a.zoneName.localeCompare(b.zoneName, "th");
       if (zCompare !== 0) return zCompare;
-      return compareSubCategoryThenName(a, b);
+      return a.item.name.localeCompare(b.item.name, "th");
     }
 
     if (groupBy === "zone" || groupBy === "zone_no_header") {
       const zCompare = a.zoneName.localeCompare(b.zoneName, "th");
       if (zCompare !== 0) return zCompare;
-      return compareSubCategoryThenName(a, b);
+      const cCompare = compareCategoryNames(a.categoryName, b.categoryName);
+      if (cCompare !== 0) return cCompare;
+      const sCompare = compareSubCategoryNames(a.subCategoryName, b.subCategoryName);
+      if (sCompare !== 0) return sCompare;
+      return a.item.name.localeCompare(b.item.name, "th");
     }
 
     if (groupBy === "category" || groupBy === "category_no_header") {
-      const cCompare = a.categoryName.localeCompare(b.categoryName, "th");
+      const cCompare = compareCategoryNames(a.categoryName, b.categoryName);
       if (cCompare !== 0) return cCompare;
-      return compareSubCategoryThenName(a, b);
+      const sCompare = compareSubCategoryNames(a.subCategoryName, b.subCategoryName);
+      if (sCompare !== 0) return sCompare;
+      return a.item.name.localeCompare(b.item.name, "th");
     }
 
     return 0;
   });
 
+  // Group items
   const groupMap = new Map<string, GroupedFlexItems<T>>();
 
-  enriched.forEach(({ item, originalIndex, categoryName, zoneName }) => {
+  enriched.forEach(({ item, originalIndex, categoryName, subCategoryName, zoneName }) => {
     let groupKey = "";
     let headerTitle = "";
+    const catWithSubLabel = subCategoryName ? `${categoryName} › ${subCategoryName}` : categoryName;
 
     switch (groupBy) {
       case "zone_then_category":
-        groupKey = `${zoneName}:::${categoryName}`;
-        headerTitle = `📍 ${zoneName} • 🏷️ ${categoryName}`;
+        groupKey = `${zoneName}:::${categoryName}:::${subCategoryName}`;
+        headerTitle = `📍 ${zoneName} • 🏷️ ${catWithSubLabel}`;
         break;
       case "category_then_zone":
-        groupKey = `${categoryName}:::${zoneName}`;
-        headerTitle = `🏷️ ${categoryName} • 📍 ${zoneName}`;
+        groupKey = `${categoryName}:::${subCategoryName}:::${zoneName}`;
+        headerTitle = `🏷️ ${catWithSubLabel} • 📍 ${zoneName}`;
         break;
       case "zone":
         groupKey = zoneName;
@@ -204,11 +277,11 @@ export function groupAndSortFlexItems<T extends ItemWithCategoryAndZone>(
         headerTitle = "";
         break;
       case "category":
-        groupKey = categoryName;
-        headerTitle = `🏷️ ${categoryName}`;
+        groupKey = `${categoryName}:::${subCategoryName}`;
+        headerTitle = `🏷️ ${catWithSubLabel}`;
         break;
       case "category_no_header":
-        groupKey = categoryName;
+        groupKey = `${categoryName}:::${subCategoryName}`;
         headerTitle = "";
         break;
     }
@@ -220,14 +293,13 @@ export function groupAndSortFlexItems<T extends ItemWithCategoryAndZone>(
         headerTitle,
         zoneName,
         categoryName,
+        subCategoryName,
         items: [],
       };
       groupMap.set(groupKey, existing);
     }
     existing.items.push({ item, originalIndex });
   });
-
-  void includeZone;
 
   return Array.from(groupMap.values());
 }

@@ -149,8 +149,8 @@ function ProductsPage() {
   const [skuError, setSkuError] = useState<string | null>(null);
   const [barcodeError, setBarcodeError] = useState<string | null>(null);
 
-  // Sound feedback state
-  const [soundEnabled, setSoundState] = useState(isScanSoundEnabled());
+  // Sound feedback state (SSR-safe default, synced on mount)
+  const [soundEnabled, setSoundState] = useState<boolean>(true);
 
   // Camera Scanner inside Product Form
   const [scannerActive, setScannerActive] = useState(false);
@@ -225,9 +225,7 @@ function ProductsPage() {
     }
   }, [modalOpen, scannerActive, startScanner, stopScanner]);
 
-  const [canViewCostPrice, setCanViewCostPrice] = useState(
-    AuthService.hasPermission("canViewCostPrice"),
-  );
+  const [canViewCostPrice, setCanViewCostPrice] = useState<boolean>(true);
 
   const loadData = () => {
     setProducts(MasterStore.getProducts());
@@ -235,6 +233,7 @@ function ProductsPage() {
     setZones(MasterStore.getZones());
     setUnits(MasterStore.getUnits());
     setCanViewCostPrice(AuthService.hasPermission("canViewCostPrice"));
+    setSoundState(isScanSoundEnabled());
   };
 
   useEffect(() => {

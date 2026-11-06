@@ -530,7 +530,7 @@ export function getSmartReorderForecast(
   strategy: "TARGET_PAR" | "MINIMUM_RESTORE" | "WEEKEND_BUFFER" | "DOUBLE_BUFFER" = "TARGET_PAR",
   multiplier: number = 1.0,
 ): SmartReorderForecastItem[] {
-  const list = products && products.length > 0 ? products : MasterStore.getReorderProducts();
+  const list = products !== undefined ? products : MasterStore.getReorderProducts();
   return list.map((p) => {
     const suggestedQty = calculateSuggestedQuantity(p, strategy, multiplier);
     const isOutOfStock = p.stock <= 0;
@@ -569,17 +569,34 @@ function parseOrderDateMs(raw?: string): number {
     const hour = Number(thaiMatch[4] || 0);
     const minute = Number(thaiMatch[5] || 0);
     const second = Number(thaiMatch[6] || 0);
-    const dt = new Date(year, month - 1, day, hour, minute, second).getTime();
-    if (!Number.isNaN(dt) && dt > 0) return dt;
+    // Construct UTC timestamp from Asia/Bangkok (+07:00) components
+    const utcMs = Date.UTC(year, month - 1, day, hour - 7, minute, second);
+    if (!Number.isNaN(utcMs) && utcMs > 0) return utcMs;
   }
 
   const parsed = Date.parse(trimmed);
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+function parseOrderNumberMs(orderNumber?: string): number {
+  if (!orderNumber || typeof orderNumber !== "string") return 0;
+  const match = orderNumber.trim().match(/^PO-(\d{4})(\d{2})(\d{2})-(\d+)$/i);
+  if (!match) return 0;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const seq = Number(match[4] || 0);
+  const baseMs = Date.UTC(year, month - 1, day, 0, 0, 0) - 7 * 3600 * 1000;
+  return Number.isNaN(baseMs) ? 0 : baseMs + seq;
+}
+
 function getPurchaseOrderSortTimestamp(po: PurchaseOrderRecord): number {
-  const updatedMs = parseOrderDateMs(po.updatedAt);
+  const sentMs = parseOrderDateMs(po.sentViaLineAt);
   const createdMs = parseOrderDateMs(po.createdAt);
+  if (sentMs > 0 || createdMs > 0) {
+    return Math.max(sentMs, createdMs);
+  }
+  const orderNoMs = parseOrderNumberMs(po.orderNumber);
   let idMs = 0;
   if (typeof po.id === "string") {
     const idMatch = po.id.match(/(\d{10,15})/);
@@ -588,7 +605,64 @@ function getPurchaseOrderSortTimestamp(po: PurchaseOrderRecord): number {
       if (!Number.isNaN(n) && n > 0) idMs = n;
     }
   }
-  return Math.max(updatedMs, createdMs, idMs);
+  const updatedMs = parseOrderDateMs(po.updatedAt);
+  return Math.max(idMs, orderNoMs, updatedMs);
+}
+
+export function formatThaiDateTime(value?: string | number | Date): string {
+  if (value === undefined || value === null || value === "") return "-";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "-";
+    const thaiMatch = trimmed.match(
+      /^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[\s,]+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/,
+    );
+    if (thaiMatch) {
+      const day = Number(thaiMatch[1]);
+      const month = Number(thaiMatch[2]);
+      const rawYear = Number(thaiMatch[3]);
+      const buddhistYear = rawYear < 2400 ? rawYear + 543 : rawYear;
+      const hh = String(Number(thaiMatch[4] || 0)).padStart(2, "0");
+      const mm = String(Number(thaiMatch[5] || 0)).padStart(2, "0");
+      const ss = String(Number(thaiMatch[6] || 0)).padStart(2, "0");
+      return `${day}/${month}/${buddhistYear} ${hh}:${mm}:${ss}`;
+    }
+  }
+  const dt = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(dt.getTime())) {
+    return typeof value === "string" ? value : "-";
+  }
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(dt);
+    const getPart = (type: string) => parts.find((p) => p.type === type)?.value || "";
+    const day = Number(getPart("day"));
+    const month = Number(getPart("month"));
+    const year = Number(getPart("year")) + 543;
+    const hh = getPart("hour").padStart(2, "0");
+    const mm = getPart("minute").padStart(2, "0");
+    const ss = getPart("second").padStart(2, "0");
+    if (day > 0 && month > 0 && year > 2400) {
+      return `${day}/${month}/${year} ${hh}:${mm}:${ss}`;
+    }
+  } catch {
+    // Fallback below
+  }
+  const d = dt.getDate();
+  const m = dt.getMonth() + 1;
+  const y = dt.getFullYear() + 543;
+  const hh = String(dt.getHours()).padStart(2, "0");
+  const mm = String(dt.getMinutes()).padStart(2, "0");
+  const ss = String(dt.getSeconds()).padStart(2, "0");
+  return `${d}/${m}/${y} ${hh}:${mm}:${ss}`;
 }
 
 export function sortPurchaseOrdersNewestFirst(items: PurchaseOrderRecord[]): PurchaseOrderRecord[] {
@@ -597,75 +671,56 @@ export function sortPurchaseOrdersNewestFirst(items: PurchaseOrderRecord[]): Pur
     .map((item, idx) => ({ item, idx, ts: getPurchaseOrderSortTimestamp(item) }))
     .sort((a, b) => {
       if (b.ts !== a.ts) return b.ts - a.ts;
+      const onCompare = (b.item.orderNumber || "").localeCompare(
+        a.item.orderNumber || "",
+        undefined,
+        { numeric: true },
+      );
+      if (onCompare !== 0) return onCompare;
       return a.idx - b.idx;
     })
     .map((entry) => entry.item);
 }
 
-
 /**
- * Generate sequential PO number PO-YYYYMMDD-NNN
+ * Generates standard Purchase Order number in format PO-YYYYMMDD-NNN (e.g. PO-20261029-012)
  */
-
-/** Format date/time as Thai locale string e.g. 6/11/2569 10:15:30 */
-export function formatThaiDateTime(date: Date = new Date()): string {
-  return (
-    date.toLocaleDateString("th-TH") +
-    " " +
-    date.toLocaleTimeString("th-TH", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    })
-  );
-}
-
-export function generateNextOrderNumber(
+export function generateNextPurchaseOrderNumber(
   existingOrders?: PurchaseOrderRecord[],
   date: Date = new Date(),
 ): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  const datePart = `${y}${m}${d}`;
+  const yyyy = String(date.getFullYear());
+  const mm = String(date.getMonth() + 1).padStart(2, "0");
+  const dd = String(date.getDate()).padStart(2, "0");
+  const datePart = `${yyyy}${mm}${dd}`;
   const prefix = `PO-${datePart}-`;
-  const list =
-    existingOrders ??
-    (typeof window !== "undefined"
-      ? safeGet<PurchaseOrderRecord[]>(STORAGE_KEYS.PURCHASE_ORDERS, DEFAULT_PURCHASE_ORDERS)
-      : DEFAULT_PURCHASE_ORDERS);
+
+  const list = existingOrders ?? MasterStore.getPurchaseOrders();
   let maxSeq = 0;
+
   for (const po of list) {
-    const on = po?.orderNumber;
-    if (!on || typeof on !== "string" || !on.startsWith(prefix)) continue;
-    const seq = parseInt(on.slice(prefix.length), 10);
-    if (!Number.isNaN(seq) && seq > maxSeq) maxSeq = seq;
+    if (!po?.orderNumber) continue;
+    const trimmed = po.orderNumber.trim();
+    if (trimmed.startsWith(prefix)) {
+      const seqStr = trimmed.slice(prefix.length);
+      const seqNum = Number.parseInt(seqStr, 10);
+      if (!Number.isNaN(seqNum) && seqNum > maxSeq) {
+        maxSeq = seqNum;
+      }
+    }
   }
-  return `${prefix}${String(maxSeq + 1).padStart(3, "0")}`;
+
+  const nextSeq = String(maxSeq + 1).padStart(3, "0");
+  return `${prefix}${nextSeq}`;
 }
 
-export function sortPOItemsByCategory<
-  T extends { categoryId?: string; productName?: string; name?: string },
->(items: T[], getCategoryName?: (categoryId?: string) => string): T[] {
-  if (!Array.isArray(items) || items.length <= 1) return Array.isArray(items) ? [...items] : [];
-  const resolveName =
-    getCategoryName ||
-    ((id?: string) => {
-      try { return MasterStore.getCategoryName(id); } catch { return id || "ไม่ระบุ"; }
-    });
-  return items
-    .map((item, idx) => ({ item, idx, cat: resolveName(item.categoryId) || "ไม่ระบุ" }))
-    .sort((a, b) => {
-      const c = a.cat.localeCompare(b.cat, "th");
-      if (c !== 0) return c;
-      const nameA = (a.item.productName || a.item.name || "").toString();
-      const nameB = (b.item.productName || b.item.name || "").toString();
-      const n = nameA.localeCompare(nameB, "th");
-      if (n !== 0) return n;
-      return a.idx - b.idx;
-    })
-    .map((e) => e.item);
+function isLegacyOrDraftOrderNumber(orderNumber?: string): boolean {
+  if (!orderNumber) return true;
+  const trimmed = orderNumber.trim();
+  if (!trimmed || trimmed === "DRAFT" || trimmed === "PO-DRAFT") return true;
+  // Detect 6-digit timestamp fallback PO-224995 or P0-224995 without date prefix
+  if (/^P[O0]-\d{6}$/i.test(trimmed)) return true;
+  return false;
 }
 
 export const MasterStore = {
@@ -1078,52 +1133,86 @@ export const MasterStore = {
       STORAGE_KEYS.PURCHASE_ORDERS,
       DEFAULT_PURCHASE_ORDERS,
     );
-    return sortPurchaseOrdersNewestFirst(raw);
+    const normalized = raw.map((po) => ({
+      ...po,
+      createdAt: po.createdAt ? formatThaiDateTime(po.createdAt) : formatThaiDateTime(new Date()),
+      ...(po.sentViaLineAt ? { sentViaLineAt: formatThaiDateTime(po.sentViaLineAt) } : {}),
+    }));
+    return sortPurchaseOrdersNewestFirst(normalized);
   },
   savePurchaseOrders(items: PurchaseOrderRecord[]) {
-    safeSet(STORAGE_KEYS.PURCHASE_ORDERS, sortPurchaseOrdersNewestFirst(items));
+    const normalized = items.map((po) => ({
+      ...po,
+      createdAt: po.createdAt ? formatThaiDateTime(po.createdAt) : formatThaiDateTime(new Date()),
+      ...(po.sentViaLineAt ? { sentViaLineAt: formatThaiDateTime(po.sentViaLineAt) } : {}),
+    }));
+    safeSet(STORAGE_KEYS.PURCHASE_ORDERS, sortPurchaseOrdersNewestFirst(normalized));
   },
-  addPurchaseOrder(item: Omit<PurchaseOrderRecord, "id">) {
+  addPurchaseOrder(item: Omit<PurchaseOrderRecord, "id" | "createdAt"> & { createdAt?: string }) {
     const list = this.getPurchaseOrders();
-    const nowThai = formatThaiDateTime();
+    const nowThai = formatThaiDateTime(new Date());
+    const resolvedOrderNumber = isLegacyOrDraftOrderNumber(item.orderNumber)
+      ? generateNextPurchaseOrderNumber(list)
+      : item.orderNumber;
     const newItem: PurchaseOrderRecord = {
       ...item,
       id: `po-${Date.now()}`,
-      createdAt: item.createdAt || nowThai,
-      updatedAt: item.updatedAt || nowThai,
+      orderNumber: resolvedOrderNumber,
+      createdAt: item.createdAt ? formatThaiDateTime(item.createdAt) : nowThai,
+      updatedAt: item.updatedAt ? formatThaiDateTime(item.updatedAt) : nowThai,
+      ...(item.sentViaLineAt ? { sentViaLineAt: formatThaiDateTime(item.sentViaLineAt) } : {}),
     };
     this.savePurchaseOrders([newItem, ...list]);
     return newItem;
   },
   savePurchaseOrder(
-    record: (Omit<PurchaseOrderRecord, "id"> & { id?: string }) | PurchaseOrderRecord,
+    record:
+      | (Omit<PurchaseOrderRecord, "id" | "createdAt"> & { id?: string; createdAt?: string })
+      | PurchaseOrderRecord,
   ): PurchaseOrderRecord {
     const list = this.getPurchaseOrders();
-    const nowThai = formatThaiDateTime();
+    const nowThai = formatThaiDateTime(new Date());
     if (record.id) {
       const idx = list.findIndex((po) => po.id === record.id);
       if (idx >= 0) {
+        const existingOrderNumber = list[idx]?.orderNumber;
+        const resolvedExistingOrderNumber = !isLegacyOrDraftOrderNumber(record.orderNumber)
+          ? record.orderNumber!
+          : !isLegacyOrDraftOrderNumber(existingOrderNumber)
+            ? existingOrderNumber!
+            : generateNextPurchaseOrderNumber(list);
+        const existingCreatedAt = list[idx]?.createdAt;
         const updated: PurchaseOrderRecord = {
           ...list[idx],
           ...record,
+          orderNumber: resolvedExistingOrderNumber,
+          createdAt: record.createdAt
+            ? formatThaiDateTime(record.createdAt)
+            : existingCreatedAt
+              ? formatThaiDateTime(existingCreatedAt)
+              : nowThai,
           updatedAt: nowThai,
+          ...(record.sentViaLineAt
+            ? { sentViaLineAt: formatThaiDateTime(record.sentViaLineAt) }
+            : {}),
         } as PurchaseOrderRecord;
         const remaining = list.filter((po) => po.id !== record.id);
         this.savePurchaseOrders([updated, ...remaining]);
         return updated;
       }
     }
-    const sortedItems = sortPOItemsByCategory(record.items || [], (id) =>
-      this.getCategoryName(id),
-    );
+    const resolvedOrderNumber = isLegacyOrDraftOrderNumber(record.orderNumber)
+      ? generateNextPurchaseOrderNumber(list)
+      : record.orderNumber!;
     const newPO: PurchaseOrderRecord = {
       ...record,
       id: record.id || `po-${Date.now()}`,
-      orderNumber: record.orderNumber || generateNextOrderNumber(list),
-      createdAt: record.createdAt || nowThai,
+      orderNumber: resolvedOrderNumber,
+      createdAt: record.createdAt ? formatThaiDateTime(record.createdAt) : nowThai,
       updatedAt: nowThai,
+      ...(record.sentViaLineAt ? { sentViaLineAt: formatThaiDateTime(record.sentViaLineAt) } : {}),
       status: (record.status as PurchaseOrderRecord["status"]) || "DRAFT",
-      items: sortedItems,
+      items: record.items || [],
       totalQuantity:
         record.totalQuantity ??
         (record.items ? record.items.reduce((s, it) => s + (it.quantity || 0), 0) : 0),
@@ -1146,10 +1235,17 @@ export const MasterStore = {
     const list = this.getPurchaseOrders();
     const idx = list.findIndex((po) => po.id === id);
     if (idx < 0) return undefined;
+    const nowThai = formatThaiDateTime(new Date());
     const updated: PurchaseOrderRecord = {
       ...list[idx],
       ...updates,
-      updatedAt: formatThaiDateTime(),
+      createdAt: updates.createdAt
+        ? formatThaiDateTime(updates.createdAt)
+        : formatThaiDateTime(list[idx]!.createdAt),
+      updatedAt: nowThai,
+      ...(updates.sentViaLineAt
+        ? { sentViaLineAt: formatThaiDateTime(updates.sentViaLineAt) }
+        : {}),
     };
     const remaining = list.filter((po) => po.id !== id);
     this.savePurchaseOrders([updated, ...remaining]);
@@ -1161,7 +1257,7 @@ export const MasterStore = {
   ): void {
     const list = this.getPurchaseOrders();
     const updated = list.map((po) =>
-      po.id === id ? { ...po, status, updatedAt: formatThaiDateTime() } : po,
+      po.id === id ? { ...po, status, updatedAt: new Date().toISOString() } : po,
     );
     this.savePurchaseOrders(updated);
   },
@@ -1286,9 +1382,16 @@ export const MasterStore = {
         localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(merged));
       }
       if (Array.isArray(data.purchaseOrders)) {
+        const normalizedPOs = data.purchaseOrders.map((po) => ({
+          ...po,
+          createdAt: po.createdAt
+            ? formatThaiDateTime(po.createdAt)
+            : formatThaiDateTime(new Date()),
+          ...(po.sentViaLineAt ? { sentViaLineAt: formatThaiDateTime(po.sentViaLineAt) } : {}),
+        }));
         localStorage.setItem(
           STORAGE_KEYS.PURCHASE_ORDERS,
-          JSON.stringify(sortPurchaseOrdersNewestFirst(data.purchaseOrders)),
+          JSON.stringify(sortPurchaseOrdersNewestFirst(normalizedPOs)),
         );
       }
       if (Array.isArray(data.movements) && data.movements.length > 0) {

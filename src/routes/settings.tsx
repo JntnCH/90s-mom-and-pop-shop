@@ -226,7 +226,7 @@ export const Route = createFileRoute("/settings")({
 
 function SettingsPage() {
   const [activeTab, setActiveTab] = useState("followers");
-  const [storeName, setStoreName] = useState(() => getSystemStoreName());
+  const [storeName, setStoreName] = useState<string>("โชห่วยยุค90s");
 
   // Zone State
   const [zones, setZones] = useState<ZoneItem[]>([]);
@@ -290,7 +290,7 @@ function SettingsPage() {
     hasServerLiffId: boolean;
   } | null>(null);
 
-  const clientLiffId = getClientLiffId();
+  const [clientLiffId, setClientLiffIdState] = useState<string>("");
 
   // Database Inspection & Verification State
   const [dbInspection, setDbInspection] = useState<DatabaseInspectionResult | null>(null);
@@ -332,6 +332,10 @@ function SettingsPage() {
     setSubCategories(MasterStore.getSubCategories());
     setUnits(MasterStore.getUnits());
     setFollowers(MasterStore.getFollowers());
+    setStoreName(getSystemStoreName());
+    const savedLiff = getClientLiffId();
+    setClientLiffIdState(savedLiff);
+    setEditingLiffId(savedLiff || "2012055857-2hI1T2K2");
   }, []);
 
   const handleSaveStoreName = () => {
@@ -867,10 +871,7 @@ function SettingsPage() {
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   // Local LIFF ID state for editing in Settings
-  const [editingLiffId, setEditingLiffId] = useState<string>(
-    () => clientLiffId || "2012055857-2hI1T2K2",
-  );
-  const [, setClientLiffIdState] = useState(() => clientLiffId);
+  const [editingLiffId, setEditingLiffId] = useState<string>("2012055857-2hI1T2K2");
 
   const handleSaveLiffId = () => {
     const trimmed = editingLiffId.trim();

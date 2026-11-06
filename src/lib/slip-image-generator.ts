@@ -9,7 +9,8 @@
  * 2. "receipt": Standard tabular receipt slip.
  */
 
-import { DEFAULT_STORE_NAME, getSystemStoreName } from "./flex-templates";
+import { DEFAULT_STORE_NAME, getSystemStoreName, groupAndSortFlexItems } from "./flex-templates";
+import { formatThaiDateTime } from "./store";
 
 export type SlipDesignStyle = "full_bleed_rich" | "receipt";
 
@@ -20,8 +21,12 @@ export interface SlipOrderItem {
   costPrice?: number | undefined;
   total?: number | undefined;
   barcode?: string | undefined;
+  zoneId?: string | undefined;
   zoneName?: string | undefined;
+  categoryId?: string | undefined;
   categoryName?: string | undefined;
+  subCategoryId?: string | undefined;
+  subCategoryName?: string | undefined;
   note?: string | undefined;
 }
 
@@ -152,7 +157,14 @@ export async function generateFullBleedRichCardSlipImage(
   data: PurchaseOrderSlipData,
 ): Promise<GeneratedSlipResult> {
   const storeName = getSystemStoreName(data.storeName || DEFAULT_STORE_NAME);
-  const items = data.items;
+  const formattedCreatedAt = formatThaiDateTime(data.createdAt);
+  const items = groupAndSortFlexItems(data.items, "category").flatMap((g) =>
+    g.items.map(({ item }) => ({
+      ...item,
+      categoryName: g.categoryName || item.categoryName,
+      subCategoryName: g.subCategoryName || item.subCategoryName,
+    })),
+  );
 
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -251,7 +263,7 @@ export async function generateFullBleedRichCardSlipImage(
   ctx.fillStyle = "#ffedd5";
   ctx.font = "bold 22px 'Prompt', -apple-system, BlinkMacSystemFont, sans-serif";
   ctx.fillText(
-    `เลขที่: ${data.orderNumber} • วันที่: ${data.createdAt} • ${data.supplierName || "ซัพพลายเออร์ทั่วไป"}`,
+    `เลขที่: ${data.orderNumber} • วันที่: ${formattedCreatedAt} • ${data.supplierName || "ซัพพลายเออร์ทั่วไป"}`,
     padding,
     282,
   );
@@ -404,10 +416,13 @@ export async function generateFullBleedRichCardSlipImage(
       ctx.fillText(`${i + 1}. ${nameText}`, cardInnerX + 36, tableY + 24);
 
       // Subtitle if category exists
-      if (item.categoryName || item.zoneName) {
+      if (item.categoryName || item.subCategoryName || item.zoneName) {
         ctx.fillStyle = "#64748b";
         ctx.font = "20px 'Prompt', sans-serif";
-        const meta = [item.categoryName, item.zoneName].filter(Boolean).join(" • ");
+        const catPart = item.subCategoryName
+          ? `${item.categoryName || ""} › ${item.subCategoryName}`
+          : item.categoryName;
+        const meta = [catPart, item.zoneName].filter(Boolean).join(" • ");
         ctx.fillText(meta, cardInnerX + 68, tableY + 48);
       }
 
@@ -449,7 +464,7 @@ export async function generateFullBleedRichCardSlipImage(
   ctx.font = "18px 'Prompt', sans-serif";
   ctx.textAlign = "center";
   ctx.fillText(
-    `สมมติฐานการคำนวณและข้อมูลสินค้าประมวลผลอัตโนมัติจากระบบสต็อกร้าน • ออกเอกสาร ณ ${data.createdAt}`,
+    `สมมติฐานการคำนวณและข้อมูลสินค้าประมวลผลอัตโนมัติจากระบบสต็อกร้าน • ออกเอกสาร ณ ${formattedCreatedAt}`,
     cardInnerX + cardWidth / 2,
     tableY + 28,
   );
@@ -877,7 +892,14 @@ export async function generatePurchaseOrderReceiptImage(
   data: PurchaseOrderSlipData,
 ): Promise<GeneratedSlipResult> {
   const storeName = getSystemStoreName(data.storeName || DEFAULT_STORE_NAME);
-  const items = data.items;
+  const formattedCreatedAt = formatThaiDateTime(data.createdAt);
+  const items = groupAndSortFlexItems(data.items, "category").flatMap((g) =>
+    g.items.map(({ item }) => ({
+      ...item,
+      categoryName: g.categoryName || item.categoryName,
+      subCategoryName: g.subCategoryName || item.subCategoryName,
+    })),
+  );
 
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -925,7 +947,7 @@ export async function generatePurchaseOrderReceiptImage(
   ctx.fillStyle = "#475569";
   ctx.font = "12px 'Prompt', -apple-system, sans-serif";
   ctx.fillText(`เลขที่: ${data.orderNumber}`, padding, 66);
-  ctx.fillText(`วันที่สั่งซื้อ: ${data.createdAt}`, padding, 86);
+  ctx.fillText(`วันที่สั่งซื้อ: ${formattedCreatedAt}`, padding, 86);
   ctx.fillText(`ซัพพลายเออร์: ${data.supplierName || "ซัพพลายเออร์ทั่วไป"}`, padding, 106);
 
   // Divider

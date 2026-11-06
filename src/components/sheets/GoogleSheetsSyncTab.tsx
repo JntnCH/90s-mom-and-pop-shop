@@ -104,16 +104,18 @@ import { GoogleSignInButton } from "./GoogleSignInButton";
 
 export function GoogleSheetsSyncTab() {
   const [user, setUser] = useState<User | null>(null);
-  const [token, setToken] = useState<string | null>(getGoogleAccessToken());
+  const [token, setToken] = useState<string | null>(null);
   const [isSigningIn, setIsSigningIn] = useState(false);
   const [spreadsheets, setSpreadsheets] = useState<DriveSpreadsheetFile[]>([]);
   const [isLoadingSpreadsheets, setIsLoadingSpreadsheets] = useState(false);
+  const [localProducts, setLocalProducts] = useState<ProductItem[]>([]);
+  const [movementCount, setMovementCount] = useState<number>(0);
+  const [orderCount, setOrderCount] = useState<number>(0);
+  const [categoryCount, setCategoryCount] = useState<number>(0);
 
   // Full Database Backup State
-  const [backupMeta, setBackupMeta] = useState<GoogleSheetBackupMeta | null>(() =>
-    getActiveBackupSheetMeta(),
-  );
-  const [autoSync, setAutoSync] = useState<boolean>(() => isAutoSyncToSheetsEnabled());
+  const [backupMeta, setBackupMeta] = useState<GoogleSheetBackupMeta | null>(null);
+  const [autoSync, setAutoSync] = useState<boolean>(true);
   const [isFullBackingUp, setIsFullBackingUp] = useState(false);
   const [isFullRestoring, setIsFullRestoring] = useState(false);
   const [isMigrating, setIsMigrating] = useState(false);
@@ -121,10 +123,7 @@ export function GoogleSheetsSyncTab() {
 
   // Export State
   const [exportMode, setExportMode] = useState<"new" | "existing">("new");
-  const [newSheetTitle, setNewSheetTitle] = useState(() => {
-    const today = new Date().toLocaleDateString("th-TH").replace(/\//g, "-");
-    return `โชห่วยยุค90s - ฐานข้อมูลสำรอง (${today})`;
-  });
+  const [newSheetTitle, setNewSheetTitle] = useState<string>("โชห่วยยุค90s - ฐานข้อมูลสำรอง");
   const [selectedSpreadsheetId, setSelectedSpreadsheetId] = useState<string>("");
   const [spreadsheetMetadata, setSpreadsheetMetadata] = useState<{
     title: string;
@@ -205,8 +204,21 @@ export function GoogleSheetsSyncTab() {
     }
   };
 
-  // Initialize Auth
+  // Initialize Auth & Local Store Snapshot
   useEffect(() => {
+    const reloadStoreSnapshot = () => {
+      setLocalProducts(MasterStore.getProducts());
+      setMovementCount(MasterStore.getMovements().length);
+      setOrderCount(MasterStore.getPurchaseOrders().length);
+      setCategoryCount(MasterStore.getCategories().length);
+    };
+    reloadStoreSnapshot();
+    setToken(getGoogleAccessToken());
+    setBackupMeta(getActiveBackupSheetMeta());
+    setAutoSync(isAutoSyncToSheetsEnabled());
+    const today = new Date().toLocaleDateString("th-TH").replace(/\//g, "-");
+    setNewSheetTitle(`โชห่วยยุค90s - ฐานข้อมูลสำรอง (${today})`);
+
     void refreshSaConfig();
 
     const unsubscribe = initGoogleAuth(
@@ -225,12 +237,15 @@ export function GoogleSheetsSyncTab() {
     const onBackupSynced = () => {
       setBackupMeta(getActiveBackupSheetMeta());
       setAutoSync(isAutoSyncToSheetsEnabled());
+      reloadStoreSnapshot();
     };
     window.addEventListener("minimark_google_sheet_synced", onBackupSynced);
+    window.addEventListener("minimark_store_change", reloadStoreSnapshot);
 
     return () => {
       unsubscribe();
       window.removeEventListener("minimark_google_sheet_synced", onBackupSynced);
+      window.removeEventListener("minimark_store_change", reloadStoreSnapshot);
     };
   }, []);
 
@@ -806,10 +821,7 @@ export function GoogleSheetsSyncTab() {
     }
   };
 
-  const productCount = MasterStore.getProducts().length;
-  const movementCount = MasterStore.getMovements().length;
-  const orderCount = MasterStore.getPurchaseOrders().length;
-  const categoryCount = MasterStore.getCategories().length;
+  const productCount = localProducts.length;
 
   return (
     <div className="space-y-6">
@@ -1514,12 +1526,13 @@ export function GoogleSheetsSyncTab() {
               <div className="flex items-center justify-between pb-2">
                 <span className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                   <TableIcon className="size-3.5 text-indigo-600" />
-                  รายการสินค้าทั้งหมดในระบบที่จะถูกส่งขึ้น Google Sheets (
-                  {MasterStore.getProducts().length} รายการ)
+                  รายการสินค้าทั้งหมดในระบบที่จะถูกส่งขึ้น Google Sheets ({
+                    localProducts.length
+                  }{" "}
+                  รายการ)
                 </span>
                 <span className="text-[11px] text-muted-foreground">
-                  สต็อกรวม: {MasterStore.getProducts().reduce((sum, p) => sum + (p.stock || 0), 0)}{" "}
-                  ชิ้น
+                  สต็อกรวม: {localProducts.reduce((sum, p) => sum + (p.stock || 0), 0)} ชิ้น
                 </span>
               </div>
               <div className="max-h-52 overflow-y-auto rounded-lg border border-border/60 bg-background/50">
@@ -1536,14 +1549,14 @@ export function GoogleSheetsSyncTab() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {MasterStore.getProducts().length === 0 ? (
+                    {localProducts.length === 0 ? (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center py-4 text-muted-foreground">
                           ไม่พบรายการสินค้า กรุณากด &quot;ดึงจาก Cloud SQL&quot; ด้านบน
                         </TableCell>
                       </TableRow>
                     ) : (
-                      MasterStore.getProducts().map((p) => (
+                      localProducts.map((p) => (
                         <TableRow key={p.id} className="hover:bg-muted/30">
                           <TableCell className="py-1 font-mono text-[11px] text-muted-foreground">
                             {p.barcode}
@@ -1817,8 +1830,8 @@ export function GoogleSheetsSyncTab() {
                       </>
                     ) : (
                       <>
-                        <ArrowUpFromLine className="size-4" /> ส่งออกสินค้า (
-                        {MasterStore.getProducts().length} รายการ)
+                        <ArrowUpFromLine className="size-4" /> ส่งออกสินค้า ({localProducts.length}{" "}
+                        รายการ)
                       </>
                     )}
                   </Button>

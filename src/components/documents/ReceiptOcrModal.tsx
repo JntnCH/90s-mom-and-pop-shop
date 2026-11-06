@@ -90,7 +90,7 @@ export function ReceiptOcrModal({
   const [docType, setDocType] = useState<ExpenseDocType>(initialType);
   const [docTypeReason, setDocTypeReason] = useState<string>("");
   const [docNumber, setDocNumber] = useState<string>("");
-  const [docDate, setDocDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [docDate, setDocDate] = useState<string>("");
   const [merchantName, setMerchantName] = useState<string>("");
   const [merchantTaxId, setMerchantTaxId] = useState<string>("");
   const [merchantBranch, setMerchantBranch] = useState<string>("");
@@ -122,6 +122,7 @@ export function ReceiptOcrModal({
 
   useEffect(() => {
     setAllProducts(MasterStore.getProducts());
+    setDocDate((prev) => prev || new Date().toISOString().slice(0, 10));
   }, []);
 
   // Check for duplicate whenever docNumber or merchantName changes

@@ -4,7 +4,7 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "dev": "vite dev --host 0.0.0.0 --port 3000",
+    "dev": "PORT=3000 vite dev",
     "start": "node .output/server/index.mjs",
     "build": "NODE_ENV=production vite build",
     "postbuild": "node scripts/patch-cloudflare-worker.mjs",

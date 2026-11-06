@@ -27,6 +27,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   AuthService,
+  DEFAULT_USERS,
   ROLE_DEFINITIONS,
   type RolePermissions,
   type StaffUser,
@@ -45,7 +46,7 @@ export function PermissionGuard({
   fallbackTitle = "ต้องใช้สิทธิ์เข้าถึงเพิ่มเติม",
   fallbackDescription = "บัญชีปัจจุบันของคุณไม่มีสิทธิ์ในการเข้าถึงหรือแก้ไขหน้านี้",
 }: PermissionGuardProps) {
-  const [currentUser, setCurrentUser] = useState<StaffUser>(AuthService.getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<StaffUser>(DEFAULT_USERS[0]!);
   const [isOverridden, setIsOverridden] = useState(false);
   const [overrideModalOpen, setOverrideModalOpen] = useState(false);
   const [overridePin, setOverridePin] = useState("");

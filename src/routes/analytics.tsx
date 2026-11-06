@@ -63,7 +63,25 @@ import {
   type SalesAnalyticsSummary,
   type TimeRangeFilter,
 } from "@/lib/analytics-service";
-import { AuthService, type StaffUser } from "@/lib/auth-rbac";
+import { AuthService, DEFAULT_USERS, type StaffUser } from "@/lib/auth-rbac";
+
+const INITIAL_ANALYTICS_SUMMARY: SalesAnalyticsSummary = {
+  totalRevenue: 0,
+  totalCost: 0,
+  totalProfit: 0,
+  averageMarginPct: 0,
+  totalUnitsSold: 0,
+  totalTransactions: 0,
+  totalInventoryValueCost: 0,
+  totalInventoryValueRetail: 0,
+  potentialInventoryProfit: 0,
+  bestSellersByQty: [],
+  bestSellersByRevenue: [],
+  bestSellersByProfit: [],
+  categoryBreakdown: [],
+  deadStockProducts: [],
+  allProductStats: [],
+};
 
 export const Route = createFileRoute("/analytics")({
   head: () => ({
@@ -85,13 +103,11 @@ export const Route = createFileRoute("/analytics")({
 
 export function AnalyticsPage() {
   const [timeRange, setTimeRange] = useState<TimeRangeFilter>("ALL");
-  const [summary, setSummary] = useState<SalesAnalyticsSummary>(
-    AnalyticsService.getAnalyticsSummary("ALL"),
-  );
+  const [summary, setSummary] = useState<SalesAnalyticsSummary>(INITIAL_ANALYTICS_SUMMARY);
   const [activeTab, setActiveTab] = useState("bestsellers");
   const [marginFilter, setMarginFilter] = useState<"ALL" | "HIGH" | "MEDIUM" | "LOW">("ALL");
   const [searchQuery, setSearchQuery] = useState("");
-  const [currentUser, setCurrentUser] = useState<StaffUser>(AuthService.getCurrentUser());
+  const [currentUser, setCurrentUser] = useState<StaffUser>(DEFAULT_USERS[0]!);
 
   const canViewCostPrice = AuthService.hasPermission("canViewCostPrice", currentUser);
 
