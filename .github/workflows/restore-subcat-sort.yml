@@ -1,0 +1,28 @@
+name: Restore line-service + subCategory sort fields
+on:
+  workflow_dispatch:
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore line-service from last good commit and patch subCategory
+        run: |
+          set -e
+          curl -fsSL "https://raw.githubusercontent.com/JntnCH/90s-mom-and-pop-shop/dba8c4ff65148a6789638ce0b17b31e3f07e1495/src/lib/line-service.ts" -o src/lib/line-service.ts
+          python3 scripts/apply-subcat-sort-patch.py
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/line-service.ts src/routes/reorder.tsx
+          git status
+          git diff --cached --stat
+          if git diff --cached --quiet; then
+            echo "No changes"
+          else
+            git commit -m "fix(flex): restore line-service + pass subCategoryId for PO sort"
+            git push
+          fi
