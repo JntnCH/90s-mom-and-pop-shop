@@ -153,8 +153,9 @@ import {
   type PurchaseOrderRecord,
   type SubCategoryItem,
   type UnitItem,
-  type ZoneItem,
-} from "@/lib/store";
+  type ZoneItem,,
+  formatThaiDateTime,
+  sortPurchaseOrdersNewestFirst} from "@/lib/store";
 
 function getPurchaseOrderFlexItems(po: PurchaseOrderRecord): OrderFlexItem[] {
   const products = MasterStore.getProducts();
@@ -880,18 +881,33 @@ function ReorderPage() {
         barcode: product.barcode,
       };
     });
-  const filteredPOs = purchaseOrders.filter((po) => {
-    if (poStatusFilter !== "ALL" && po.status !== poStatusFilter) return false;
-    const q = poSearchQuery.trim().toLowerCase();
-    if (!q) return true;
-    return (
-      po.orderNumber.toLowerCase().includes(q) ||
-      (po.supplierName && po.supplierName.toLowerCase().includes(q)) ||
-      po.items.some(
-        (it) => it.productName.toLowerCase().includes(q) || it.barcode.toLowerCase().includes(q),
-      )
-    );
-  });
+  const filteredPOs = sortPurchaseOrdersNewestFirst(
+    purchaseOrders.filter((po) => {
+      if (poStatusFilter !== "ALL" && po.status !== poStatusFilter) return false;
+      const q = poSearchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        po.orderNumber.toLowerCase().includes(q) ||
+        (po.supplierName && po.supplierName.toLowerCase().includes(q)) ||
+        po.items.some(
+          (it) => it.productName.toLowerCase().includes(q) || it.barcode.toLowerCase().includes(q),
+        )
+      );
+    }),
+  );
+
+  /** แสดงวันที่แบบไทย — ถ้าเป็น ISO จะแปลงให้อ่านง่าย */
+  const displayPODate = (raw?: string) => {
+    if (!raw) return "-";
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw.trim())) {
+      try {
+        return formatThaiDateTime(new Date(raw));
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
+  };
 
   const handleUpdateQuantity = (productId: string, val: number, isDirect: boolean = false) => {
     setOrderList((prev) =>
@@ -2836,8 +2852,8 @@ function ReorderPage() {
                             {po.supplierName || "ร้านค้า/ซัพพลายเออร์ทั่วไป"}
                           </span>
                         </div>
-                        <div>วันที่สร้าง: {po.createdAt}</div>
-                        {po.sentViaLineAt && <div>ส่ง LINE: {po.sentViaLineAt}</div>}
+                        <div>วันที่สร้าง: {displayPODate(po.createdAt)}</div>
+                        {po.sentViaLineAt && <div>ส่ง LINE: {displayPODate(po.sentViaLineAt)}</div>}
                       </div>
 
                       {/* ข้อมูลสรุปจำนวนรายการและยอดเงินรวม */}
@@ -2940,7 +2956,7 @@ function ReorderPage() {
                             {po.orderNumber}
                           </TableCell>
                           <TableCell className="text-xs text-muted-foreground font-mono">
-                            {po.createdAt}
+                            {displayPODate(po.createdAt)}
                           </TableCell>
                           <TableCell className="text-sm font-medium text-foreground">
                             {po.supplierName || "ซัพพลายเออร์ทั่วไป"}

@@ -606,6 +606,21 @@ export function sortPurchaseOrdersNewestFirst(items: PurchaseOrderRecord[]): Pur
 /**
  * Generate sequential PO number PO-YYYYMMDD-NNN
  */
+
+/** Format date/time as Thai locale string e.g. 6/11/2569 10:15:30 */
+export function formatThaiDateTime(date: Date = new Date()): string {
+  return (
+    date.toLocaleDateString("th-TH") +
+    " " +
+    date.toLocaleTimeString("th-TH", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    })
+  );
+}
+
 export function generateNextOrderNumber(
   existingOrders?: PurchaseOrderRecord[],
   date: Date = new Date(),
@@ -1070,12 +1085,12 @@ export const MasterStore = {
   },
   addPurchaseOrder(item: Omit<PurchaseOrderRecord, "id">) {
     const list = this.getPurchaseOrders();
-    const nowIso = new Date().toISOString();
+    const nowThai = formatThaiDateTime();
     const newItem: PurchaseOrderRecord = {
       ...item,
       id: `po-${Date.now()}`,
-      createdAt: item.createdAt || nowIso,
-      updatedAt: item.updatedAt || nowIso,
+      createdAt: item.createdAt || nowThai,
+      updatedAt: item.updatedAt || nowThai,
     };
     this.savePurchaseOrders([newItem, ...list]);
     return newItem;
@@ -1084,14 +1099,14 @@ export const MasterStore = {
     record: (Omit<PurchaseOrderRecord, "id"> & { id?: string }) | PurchaseOrderRecord,
   ): PurchaseOrderRecord {
     const list = this.getPurchaseOrders();
-    const nowIso = new Date().toISOString();
+    const nowThai = formatThaiDateTime();
     if (record.id) {
       const idx = list.findIndex((po) => po.id === record.id);
       if (idx >= 0) {
         const updated: PurchaseOrderRecord = {
           ...list[idx],
           ...record,
-          updatedAt: nowIso,
+          updatedAt: nowThai,
         } as PurchaseOrderRecord;
         const remaining = list.filter((po) => po.id !== record.id);
         this.savePurchaseOrders([updated, ...remaining]);
@@ -1105,8 +1120,8 @@ export const MasterStore = {
       ...record,
       id: record.id || `po-${Date.now()}`,
       orderNumber: record.orderNumber || generateNextOrderNumber(list),
-      createdAt: record.createdAt || nowIso,
-      updatedAt: nowIso,
+      createdAt: record.createdAt || nowThai,
+      updatedAt: nowThai,
       status: (record.status as PurchaseOrderRecord["status"]) || "DRAFT",
       items: sortedItems,
       totalQuantity:
@@ -1134,7 +1149,7 @@ export const MasterStore = {
     const updated: PurchaseOrderRecord = {
       ...list[idx],
       ...updates,
-      updatedAt: new Date().toISOString(),
+      updatedAt: formatThaiDateTime(),
     };
     const remaining = list.filter((po) => po.id !== id);
     this.savePurchaseOrders([updated, ...remaining]);
@@ -1146,7 +1161,7 @@ export const MasterStore = {
   ): void {
     const list = this.getPurchaseOrders();
     const updated = list.map((po) =>
-      po.id === id ? { ...po, status, updatedAt: new Date().toISOString() } : po,
+      po.id === id ? { ...po, status, updatedAt: formatThaiDateTime() } : po,
     );
     this.savePurchaseOrders(updated);
   },
