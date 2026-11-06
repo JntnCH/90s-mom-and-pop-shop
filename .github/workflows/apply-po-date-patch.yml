@@ -1,0 +1,24 @@
+name: apply-po-date-patch
+on:
+  push:
+    paths:
+      - ".github/APPLY_PO_DATE_PATCH"
+    branches:
+      - main
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run patch script
+        run: python3 scripts/apply_po_date_patch.py
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/store.ts src/routes/reorder.tsx
+          git status
+          git commit -m "fix: PO createdAt Thai locale + newest-first sort" || true
+          git push
