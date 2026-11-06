@@ -1,0 +1,249 @@
+name: patch-po-date-format-sort
+on:
+  push:
+    paths:
+      - ".github/PATCH_PO_DATE_MARKER"
+    branches:
+      - main
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch store.ts Thai date + reorder sort/display
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+
+          path = Path("src/lib/store.ts")
+          text = path.read_text()
+
+          helper = '''
+          /** Format date/time as Thai locale string e.g. 6/11/2569 10:15:30 */
+          export function formatThaiDateTime(date: Date = new Date()): string {
+            return (
+              date.toLocaleDateString("th-TH") +
+              " " +
+              date.toLocaleTimeString("th-TH", {
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit",
+                hour12: false,
+              })
+            );
+          }
+
+          '''
+
+          if "formatThaiDateTime" not in text:
+              if "export function generateNextOrderNumber" in text:
+                  text = text.replace(
+                      "export function generateNextOrderNumber",
+                      helper + "export function generateNextOrderNumber",
+                      1,
+                  )
+                  print("added formatThaiDateTime")
+              else:
+                  raise SystemExit("generateNextOrderNumber not found")
+          else:
+              print("formatThaiDateTime already present")
+
+          old_add = '''  addPurchaseOrder(item: Omit<PurchaseOrderRecord, "id">) {
+    const list = this.getPurchaseOrders();
+    const nowIso = new Date().toISOString();
+    const newItem: PurchaseOrderRecord = {
+      ...item,
+      id: `po-${Date.now()}`,
+      createdAt: item.createdAt || nowIso,
+      updatedAt: item.updatedAt || nowIso,
+    };'''
+          new_add = '''  addPurchaseOrder(item: Omit<PurchaseOrderRecord, "id">) {
+    const list = this.getPurchaseOrders();
+    const nowThai = formatThaiDateTime();
+    const newItem: PurchaseOrderRecord = {
+      ...item,
+      id: `po-${Date.now()}`,
+      createdAt: item.createdAt || nowThai,
+      updatedAt: item.updatedAt || nowThai,
+    };'''
+          if old_add not in text:
+              raise SystemExit("addPurchaseOrder block not found")
+          text = text.replace(old_add, new_add, 1)
+          print("patched addPurchaseOrder")
+
+          old_save_start = '''  savePurchaseOrder(
+    record: (Omit<PurchaseOrderRecord, "id"> & { id?: string }) | PurchaseOrderRecord,
+  ): PurchaseOrderRecord {
+    const list = this.getPurchaseOrders();
+    const nowIso = new Date().toISOString();
+    if (record.id) {
+      const idx = list.findIndex((po) => po.id === record.id);
+      if (idx >= 0) {
+        const updated: PurchaseOrderRecord = {
+          ...list[idx],
+          ...record,
+          updatedAt: nowIso,
+        } as PurchaseOrderRecord;'''
+          new_save_start = '''  savePurchaseOrder(
+    record: (Omit<PurchaseOrderRecord, "id"> & { id?: string }) | PurchaseOrderRecord,
+  ): PurchaseOrderRecord {
+    const list = this.getPurchaseOrders();
+    const nowThai = formatThaiDateTime();
+    if (record.id) {
+      const idx = list.findIndex((po) => po.id === record.id);
+      if (idx >= 0) {
+        const updated: PurchaseOrderRecord = {
+          ...list[idx],
+          ...record,
+          updatedAt: nowThai,
+        } as PurchaseOrderRecord;'''
+          if old_save_start not in text:
+              raise SystemExit("savePurchaseOrder start not found")
+          text = text.replace(old_save_start, new_save_start, 1)
+          print("patched savePurchaseOrder start")
+
+          text = text.replace(
+              "createdAt: record.createdAt || nowIso,\n      updatedAt: nowIso,",
+              "createdAt: record.createdAt || nowThai,\n      updatedAt: nowThai,",
+              1,
+          )
+          print("patched newPO dates")
+
+          old_upd = '''    const updated: PurchaseOrderRecord = {
+      ...list[idx],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    const remaining = list.filter((po) => po.id !== id);
+    this.savePurchaseOrders([updated, ...remaining]);
+    return updated;
+  },
+  updatePurchaseOrderStatus('''
+          new_upd = '''    const updated: PurchaseOrderRecord = {
+      ...list[idx],
+      ...updates,
+      updatedAt: formatThaiDateTime(),
+    };
+    const remaining = list.filter((po) => po.id !== id);
+    this.savePurchaseOrders([updated, ...remaining]);
+    return updated;
+  },
+  updatePurchaseOrderStatus('''
+          if old_upd in text:
+              text = text.replace(old_upd, new_upd, 1)
+              print("patched updatePurchaseOrder")
+          else:
+              print("WARN updatePurchaseOrder block skip")
+
+          old_st = '''    const updated = list.map((po) =>
+      po.id === id ? { ...po, status, updatedAt: new Date().toISOString() } : po,
+    );
+    this.savePurchaseOrders(updated);'''
+          new_st = '''    const updated = list.map((po) =>
+      po.id === id ? { ...po, status, updatedAt: formatThaiDateTime() } : po,
+    );
+    this.savePurchaseOrders(updated);'''
+          if old_st in text:
+              text = text.replace(old_st, new_st, 1)
+              print("patched updatePurchaseOrderStatus")
+          else:
+              print("WARN status block skip")
+
+          path.write_text(text)
+          assert "formatThaiDateTime" in text
+          assert "createdAt: record.createdAt || nowThai" in text
+          print("store.ts OK")
+
+          rpath = Path("src/routes/reorder.tsx")
+          rtext = rpath.read_text()
+
+          import re
+          m = re.search(r'import\s*\{([^}]+)\}\s*from\s*"@/lib/store";', rtext, re.DOTALL)
+          if not m:
+              raise SystemExit("store import not found in reorder")
+          names = m.group(1)
+          to_add = []
+          if "formatThaiDateTime" not in names:
+              to_add.append("formatThaiDateTime")
+          if "sortPurchaseOrdersNewestFirst" not in names:
+              to_add.append("sortPurchaseOrdersNewestFirst")
+          if to_add:
+              new_names = names.rstrip() + ",\n  " + ",\n  ".join(to_add)
+              rtext = rtext[: m.start(1)] + new_names + rtext[m.end(1) :]
+              print("reorder imports added", to_add)
+
+          old_filt = '''  const filteredPOs = purchaseOrders.filter((po) => {
+    if (poStatusFilter !== "ALL" && po.status !== poStatusFilter) return false;
+    const q = poSearchQuery.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      po.orderNumber.toLowerCase().includes(q) ||
+      (po.supplierName && po.supplierName.toLowerCase().includes(q)) ||
+      po.items.some(
+        (it) => it.productName.toLowerCase().includes(q) || it.barcode.toLowerCase().includes(q),
+      )
+    );
+  });'''
+          new_filt = '''  const filteredPOs = sortPurchaseOrdersNewestFirst(
+    purchaseOrders.filter((po) => {
+      if (poStatusFilter !== "ALL" && po.status !== poStatusFilter) return false;
+      const q = poSearchQuery.trim().toLowerCase();
+      if (!q) return true;
+      return (
+        po.orderNumber.toLowerCase().includes(q) ||
+        (po.supplierName && po.supplierName.toLowerCase().includes(q)) ||
+        po.items.some(
+          (it) => it.productName.toLowerCase().includes(q) || it.barcode.toLowerCase().includes(q),
+        )
+      );
+    }),
+  );
+
+  /** แสดงวันที่แบบไทย — ถ้าเป็น ISO จะแปลงให้อ่านง่าย */
+  const displayPODate = (raw?: string) => {
+    if (!raw) return "-";
+    if (/^\d{4}-\d{2}-\d{2}T/.test(raw.trim())) {
+      try {
+        return formatThaiDateTime(new Date(raw));
+      } catch {
+        return raw;
+      }
+    }
+    return raw;
+  };'''
+          if old_filt not in rtext:
+              raise SystemExit("filteredPOs block not found")
+          rtext = rtext.replace(old_filt, new_filt, 1)
+          print("patched filteredPOs + displayPODate")
+
+          rtext = rtext.replace(
+              "<div>วันที่สร้าง: {po.createdAt}</div>",
+              "<div>วันที่สร้าง: {displayPODate(po.createdAt)}</div>",
+              1,
+          )
+          rtext = rtext.replace(
+              "{po.sentViaLineAt && <div>ส่ง LINE: {po.sentViaLineAt}</div>}",
+              "{po.sentViaLineAt && <div>ส่ง LINE: {displayPODate(po.sentViaLineAt)}</div>}",
+              1,
+          )
+          if "{po.createdAt}" in rtext:
+              rtext = rtext.replace(
+                  '''                            {po.createdAt}''',
+                  '''                            {displayPODate(po.createdAt)}''',
+                  1,
+              )
+              print("patched table createdAt")
+
+          rpath.write_text(rtext)
+          print("reorder.tsx OK")
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/store.ts src/routes/reorder.tsx
+          git status
+          git commit -m "fix: PO createdAt Thai locale format + list sort newest first" || true
+          git push
