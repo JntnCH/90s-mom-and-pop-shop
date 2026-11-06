@@ -66,9 +66,10 @@ new3 = """    return {
       zoneId: o.product.zoneId,
       zoneName: zName,
     };"""
+n = data.count(old3)
 data = data.replace(old3, new3)
 p.write_text(data)
-print("line-service restored+patched", len(data))
+print("line-service restored+patched", len(data), "map_replacements", n)
 
 p = Path("src/routes/reorder.tsx")
 data = p.read_text()
