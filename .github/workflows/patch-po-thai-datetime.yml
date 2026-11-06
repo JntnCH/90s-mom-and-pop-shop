@@ -1,0 +1,189 @@
+name: patch-po-thai-datetime
+on:
+  push:
+    paths:
+      - ".github/PATCH_PO_DATETIME_MARKER"
+    branches:
+      - main
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch PO date format to Thai locale
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          path = Path("src/lib/store.ts")
+          text = path.read_text()
+
+          helper = '''
+          /**
+           * Format date/time for PO display like the original: "29/10/2569 11:42:06"
+           * (th-TH locale uses Buddhist Era year)
+           */
+          export function formatThaiDateTime(date: Date = new Date()): string {
+            const datePart = date.toLocaleDateString("th-TH");
+            const timePart = date.toLocaleTimeString("th-TH", {
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+              hour12: false,
+            });
+            return `${datePart} ${timePart}`;
+          }
+
+          '''
+
+          marker = "export function sortPOItemsByCategory<"
+          if "formatThaiDateTime" not in text:
+              if marker not in text:
+                  raise SystemExit("sortPOItemsByCategory marker not found")
+              text = text.replace(marker, helper + marker, 1)
+              print("added formatThaiDateTime")
+          else:
+              print("formatThaiDateTime already present")
+
+          old_add = '''  addPurchaseOrder(item: Omit<PurchaseOrderRecord, "id">) {
+    const list = this.getPurchaseOrders();
+    const nowIso = new Date().toISOString();
+    const newItem: PurchaseOrderRecord = {
+      ...item,
+      id: `po-${Date.now()}`,
+      createdAt: item.createdAt || nowIso,
+      updatedAt: item.updatedAt || nowIso,
+    };'''
+
+          new_add = '''  addPurchaseOrder(item: Omit<PurchaseOrderRecord, "id">) {
+    const list = this.getPurchaseOrders();
+    const nowThai = formatThaiDateTime();
+    const newItem: PurchaseOrderRecord = {
+      ...item,
+      id: `po-${Date.now()}`,
+      createdAt: item.createdAt || nowThai,
+      updatedAt: item.updatedAt || nowThai,
+    };'''
+
+          if old_add not in text:
+              raise SystemExit("addPurchaseOrder block not found")
+          text = text.replace(old_add, new_add, 1)
+          print("patched addPurchaseOrder")
+
+          old_save = '''  savePurchaseOrder(
+    record: (Omit<PurchaseOrderRecord, "id"> & { id?: string }) | PurchaseOrderRecord,
+  ): PurchaseOrderRecord {
+    const list = this.getPurchaseOrders();
+    const nowIso = new Date().toISOString();
+    if (record.id) {
+      const idx = list.findIndex((po) => po.id === record.id);
+      if (idx >= 0) {
+        const updated: PurchaseOrderRecord = {
+          ...list[idx],
+          ...record,
+          updatedAt: nowIso,
+        } as PurchaseOrderRecord;
+        const remaining = list.filter((po) => po.id !== record.id);
+        this.savePurchaseOrders([updated, ...remaining]);
+        return updated;
+      }
+    }
+    const sortedItems = sortPOItemsByCategory(record.items || [], (id) =>
+      this.getCategoryName(id),
+    );
+    const newPO: PurchaseOrderRecord = {
+      ...record,
+      id: record.id || `po-${Date.now()}`,
+      orderNumber: record.orderNumber || generateNextOrderNumber(list),
+      createdAt: record.createdAt || nowIso,
+      updatedAt: nowIso,'''
+
+          new_save = '''  savePurchaseOrder(
+    record: (Omit<PurchaseOrderRecord, "id"> & { id?: string }) | PurchaseOrderRecord,
+  ): PurchaseOrderRecord {
+    const list = this.getPurchaseOrders();
+    const nowThai = formatThaiDateTime();
+    if (record.id) {
+      const idx = list.findIndex((po) => po.id === record.id);
+      if (idx >= 0) {
+        const updated: PurchaseOrderRecord = {
+          ...list[idx],
+          ...record,
+          updatedAt: nowThai,
+        } as PurchaseOrderRecord;
+        const remaining = list.filter((po) => po.id !== record.id);
+        this.savePurchaseOrders([updated, ...remaining]);
+        return updated;
+      }
+    }
+    const sortedItems = sortPOItemsByCategory(record.items || [], (id) =>
+      this.getCategoryName(id),
+    );
+    const newPO: PurchaseOrderRecord = {
+      ...record,
+      id: record.id || `po-${Date.now()}`,
+      orderNumber: record.orderNumber || generateNextOrderNumber(list),
+      createdAt: record.createdAt || nowThai,
+      updatedAt: nowThai,'''
+
+          if old_save not in text:
+              raise SystemExit("savePurchaseOrder block not found")
+          text = text.replace(old_save, new_save, 1)
+          print("patched savePurchaseOrder")
+
+          old_upd = '''    const updated: PurchaseOrderRecord = {
+      ...list[idx],
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    };
+    const remaining = list.filter((po) => po.id !== id);
+    this.savePurchaseOrders([updated, ...remaining]);
+    return updated;
+  },
+  updatePurchaseOrderStatus('''
+
+          new_upd = '''    const updated: PurchaseOrderRecord = {
+      ...list[idx],
+      ...updates,
+      updatedAt: formatThaiDateTime(),
+    };
+    const remaining = list.filter((po) => po.id !== id);
+    this.savePurchaseOrders([updated, ...remaining]);
+    return updated;
+  },
+  updatePurchaseOrderStatus('''
+
+          if old_upd not in text:
+              raise SystemExit("updatePurchaseOrder block not found")
+          text = text.replace(old_upd, new_upd, 1)
+          print("patched updatePurchaseOrder")
+
+          old_st = '''    const updated = list.map((po) =>
+      po.id === id ? { ...po, status, updatedAt: new Date().toISOString() } : po,
+    );
+    this.savePurchaseOrders(updated);'''
+
+          new_st = '''    const updated = list.map((po) =>
+      po.id === id ? { ...po, status, updatedAt: formatThaiDateTime() } : po,
+    );
+    this.savePurchaseOrders(updated);'''
+
+          if old_st not in text:
+              raise SystemExit("updatePurchaseOrderStatus block not found")
+          text = text.replace(old_st, new_st, 1)
+          print("patched updatePurchaseOrderStatus")
+
+          path.write_text(text)
+          assert "formatThaiDateTime" in text
+          assert "const nowThai = formatThaiDateTime()" in text
+          print("OK store.ts PO datetime patched")
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add src/lib/store.ts
+          git status
+          git commit -m "fix: PO createdAt/updatedAt use Thai locale (29/10/2569 11:42:06) like original" || true
+          git push
