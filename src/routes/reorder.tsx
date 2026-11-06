@@ -161,6 +161,7 @@ function getPurchaseOrderFlexItems(po: PurchaseOrderRecord): OrderFlexItem[] {
   const products = MasterStore.getProducts();
   return po.items.map((item) => {
     const product = products.find((candidate) => candidate.id === item.productId);
+    const subCategoryId = item.subCategoryId || product?.subCategoryId;
     return {
       name: item.productName,
       quantity: item.quantity,
@@ -173,6 +174,10 @@ function getPurchaseOrderFlexItems(po: PurchaseOrderRecord): OrderFlexItem[] {
       priceEstimate: item.total,
       categoryId: product?.categoryId ?? "",
       categoryName: product ? MasterStore.getCategoryName(product.categoryId) : "หมวดหมู่ทั่วไป",
+      subCategoryId: subCategoryId,
+      subCategoryName: subCategoryId
+        ? MasterStore.getSubCategoryName(subCategoryId)
+        : undefined,
       zoneId: product?.zoneId ?? "",
       zoneName: product?.zoneId ? MasterStore.getZoneName(product.zoneId) : "-",
       note: item.note,

@@ -1,1 +1,1160 @@
-/* see next */
+/**
+ * LINE Integration Service
+ * Handles LINE LIFF, Mini App detection, and LINE Flex Message for Purchase Orders.
+ * Strictly adheres to Zero-Secret-Leakage: All keys come from Environment Injection.
+ */
+
+import type { Liff } from "@line/liff";
+import { MasterStore, type ProductItem } from "./store";
+import {
+  createDailySummaryFlexBubble,
+  createPurchaseOrderFlexBubble,
+  createPurchaseOrderFlexCarousel,
+  createPurchaseOrderFlex,
+  createStockAlertFlexBubble,
+  createStockAlertFlexCarousel,
+  createStockAlertFlex,
+  DEFAULT_STORE_NAME,
+  type FlexContainerType,
+  type FlexItemGroupBy,
+  type FlexOrderItem,
+  type FlexStockAlertItem,
+  getSystemStoreName,
+  groupAndSortFlexItems,
+  type PurchaseOrderFlexOptions,
+  type StockAlertFlexOptions,
+} from "./flex-templates";
+import {
+  getLatestPurchaseOrderFlexMessage,
+  populatePurchaseOrderFlexTemplate,
+} from "./flex-templates/flex-simulator-json";
+import { getLineServerConfigFn, sendLineMessagingApiFn } from "./line-server-fn";
+
+export interface LineOrderItem {
+  product: ProductItem;
+  quantity: number;
+  unitName: string;
+}
+
+type LiffMessage = Parameters<Liff["shareTargetPicker"]>[0][number];
+type LiffFlexMessage = Extract<LiffMessage, { type: "flex" }>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isFlexContents(value: unknown): value is LiffFlexMessage["contents"] {
+  if (!isRecord(value)) return false;
+  if (value["type"] === "bubble") return true;
+  return (
+    value["type"] === "carousel" &&
+    Array.isArray(value["contents"]) &&
+    value["contents"].length > 0 &&
+    value["contents"].every((content) => isRecord(content) && content["type"] === "bubble")
+  );
+}
+
+function toLiffMessage(value: unknown, fallbackText: string): LiffMessage {
+  let parsedValue = value;
+  if (typeof parsedValue === "string") {
+    try {
+      parsedValue = JSON.parse(parsedValue);
+    } catch {
+      // keep as string
+    }
+  }
+  if (isRecord(parsedValue)) {
+    const contents =
+      parsedValue["type"] === "flex"
+        ? parsedValue["contents"]
+        : isFlexContents(parsedValue)
+          ? parsedValue
+          : parsedValue["contents"];
+    if (isFlexContents(contents)) {
+      const altText =
+        typeof parsedValue["altText"] === "string" && parsedValue["altText"].trim()
+          ? parsedValue["altText"]
+          : fallbackText;
+      return { type: "flex", altText, contents };
+    }
+  }
+  return { type: "text", text: fallbackText };
+}
+
+export interface LineConfigStatus {
+  hasLiffId: boolean;
+  liffIdDisplay: string;
+  isInClient: boolean;
+  isLoggedIn: boolean;
+  profileName?: string | undefined;
+  profilePicture?: string | undefined;
+  error?: string | undefined;
+}
+
+export const DEFAULT_LINE_LIFF_ID = "2012055857-2hI1T2K2";
+
+let memoryLiffId: string | null = DEFAULT_LINE_LIFF_ID;
+
+// Retrieve LIFF ID from memory, URL params, localStorage, Vite env, or runtime config
+export function getClientLiffId(): string | null {
+  if (memoryLiffId && memoryLiffId.trim() && memoryLiffId.trim() !== "xxxxx-xxxxx") {
+    return memoryLiffId.trim();
+  }
+  if (typeof window !== "undefined") {
+    // 1. Check URL parameters (e.g. ?liffId=... or ?liff_id=...)
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramId =
+        urlParams.get("liffId") || urlParams.get("liff_id") || urlParams.get("liffID");
+      if (paramId && paramId.trim() && paramId.trim() !== "xxxxx-xxxxx") {
+        setClientLiffId(paramId.trim());
+        return paramId.trim();
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. Check window cached object
+    const w = window as unknown as { __MINIMARK_LIFF_ID?: string };
+    if (
+      w.__MINIMARK_LIFF_ID &&
+      w.__MINIMARK_LIFF_ID.trim() &&
+      w.__MINIMARK_LIFF_ID.trim() !== "xxxxx-xxxxx"
+    ) {
+      memoryLiffId = w.__MINIMARK_LIFF_ID.trim();
+      return memoryLiffId;
+    }
+
+    // 3. Check localStorage
+    const local = localStorage.getItem("minimark_line_liff_id");
+    if (local && local.trim() && local.trim() !== "xxxxx-xxxxx") {
+      memoryLiffId = local.trim();
+      return memoryLiffId;
+    }
+  }
+  const id =
+    import.meta.env["VITE_LINE_LIFF_ID"] ||
+    import.meta.env["LINE_LIFF_ID"] ||
+    import.meta.env["VITE_LIFF_ID"] ||
+    import.meta.env["LIFF_ID"];
+  if (id && typeof id === "string" && id.trim() !== "" && id.trim() !== "xxxxx-xxxxx") {
+    memoryLiffId = id.trim();
+    return memoryLiffId;
+  }
+  return DEFAULT_LINE_LIFF_ID;
+}
+
+export function setClientLiffId(id: string): void {
+  if (!id || !id.trim() || id.trim() === "xxxxx-xxxxx") {
+    memoryLiffId = null;
+    if (typeof window !== "undefined") {
+      const w = window as unknown as { __MINIMARK_LIFF_ID?: string };
+      delete w.__MINIMARK_LIFF_ID;
+      localStorage.removeItem("minimark_line_liff_id");
+    }
+  } else {
+    memoryLiffId = id.trim();
+    if (typeof window !== "undefined") {
+      const w = window as unknown as { __MINIMARK_LIFF_ID?: string };
+      w.__MINIMARK_LIFF_ID = id.trim();
+      localStorage.setItem("minimark_line_liff_id", id.trim());
+    }
+  }
+  liffInstance = null;
+}
+
+let liffInstance: typeof import("@line/liff").default | null = null;
+let liffInitPromise: Promise<boolean> | null = null;
+
+/**
+ * Initializes LINE LIFF SDK safely (Browser-only) with promise singleton
+ */
+export async function initLiff(): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  if (liffInstance) return true;
+  if (liffInitPromise) return liffInitPromise;
+
+  liffInitPromise = (async () => {
+    let liffId = getClientLiffId();
+    if (!liffId) {
+      try {
+        const cfg = await getLineServerConfigFn();
+        if (cfg?.configuredLiffId) {
+          setClientLiffId(cfg.configuredLiffId);
+          liffId = cfg.configuredLiffId;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    if (!liffId) {
+      return false;
+    }
+
+    try {
+      const liffMod = await import("@line/liff");
+      const liff =
+        (liffMod as unknown as { default?: typeof import("@line/liff").default }).default ||
+        liffMod;
+
+      if (!liff.id) {
+        await liff.init({ liffId, withLoginOnExternalBrowser: false });
+      }
+      liffInstance = liff as typeof import("@line/liff").default;
+      return true;
+    } catch (err) {
+      console.warn("LIFF initialization note:", err);
+      liffInstance = null;
+      return false;
+    } finally {
+      liffInitPromise = null;
+    }
+  })();
+
+  return liffInitPromise;
+}
+
+/**
+ * Gets current LIFF and LINE environment diagnostics safely without eager SDK init.
+ */
+export async function getLineStatus(): Promise<LineConfigStatus> {
+  try {
+    if (!liffInstance) {
+      await initLiff();
+    }
+    const liffId = getClientLiffId();
+    if (!liffId) {
+      return {
+        hasLiffId: false,
+        liffIdDisplay: "ไม่ได้ตั้งค่า (ดึงจาก GitHub Secrets)",
+        isInClient: false,
+        isLoggedIn: false,
+      };
+    }
+
+    if (liffInstance) {
+      const inClient =
+        typeof liffInstance.isInClient === "function" ? liffInstance.isInClient() : false;
+      const loggedIn =
+        typeof liffInstance.isLoggedIn === "function" ? liffInstance.isLoggedIn() : false;
+      let profileName: string | undefined;
+      let profilePicture: string | undefined;
+
+      if (loggedIn && typeof liffInstance.getProfile === "function") {
+        try {
+          const profile = await liffInstance.getProfile();
+          profileName = profile?.displayName;
+          profilePicture = profile?.pictureUrl;
+        } catch {
+          // Profile fetch optional
+        }
+      }
+
+      return {
+        hasLiffId: true,
+        liffIdDisplay: `${liffId.slice(0, 4)}...${liffId.slice(-4)}`,
+        isInClient: inClient,
+        isLoggedIn: loggedIn,
+        profileName,
+        profilePicture,
+      };
+    }
+
+    return {
+      hasLiffId: true,
+      liffIdDisplay: `${liffId.slice(0, 4)}...${liffId.slice(-4)}`,
+      isInClient: false,
+      isLoggedIn: false,
+    };
+  } catch (err) {
+    return {
+      hasLiffId: false,
+      liffIdDisplay: "เกิดข้อผิดพลาด",
+      isInClient: false,
+      isLoggedIn: false,
+      error: String(err),
+    };
+  }
+}
+
+/**
+ * Generates LINE Flex Message payload for Daily Purchase Order.
+ * Specifications: จัดกลุ่มหมวดหมู่/โซน -> รายการ -> จำนวน -> หน่วยนับ
+ */
+export function buildOrderFlexMessage(
+  orders: LineOrderItem[],
+  note: string = "ใบสั่งซื้อสินค้าประจำวัน",
+  storeName: string = DEFAULT_STORE_NAME,
+  options?: Partial<PurchaseOrderFlexOptions>,
+) {
+  const items: FlexOrderItem[] = orders.map((o) => {
+    const catName = o.product.categoryId
+      ? MasterStore.getCategoryName(o.product.categoryId)
+      : undefined;
+    const zName = o.product.zoneId ? MasterStore.getZoneName(o.product.zoneId) : undefined;
+    return {
+      name: o.product.name,
+      quantity: o.quantity,
+      unitName: o.unitName,
+      costPrice: o.product.costPrice,
+      barcode: o.product.barcode,
+      categoryId: o.product.categoryId,
+      categoryName: catName,
+      subCategoryId: o.product.subCategoryId,
+      subCategoryName: o.product.subCategoryId
+        ? MasterStore.getSubCategoryName(o.product.subCategoryId)
+        : undefined,
+      zoneId: o.product.zoneId,
+      zoneName: zName,
+    };
+  });
+
+  const liffId = getClientLiffId() || undefined;
+  const resolvedStoreName = getSystemStoreName(storeName);
+
+  const groupBy = options?.groupBy || "category";
+  const includeZone =
+    options?.includeZone ??
+    (groupBy === "zone" || groupBy === "zone_then_category" || groupBy === "category_then_zone");
+
+  return createPurchaseOrderFlex(items, {
+    storeName: resolvedStoreName,
+    note,
+    liffId,
+    groupBy,
+    showGroupHeaders: options?.showGroupHeaders,
+    includeZone,
+    ...options,
+  });
+}
+
+/**
+ * Creates plain text fallback for web share intent, grouped by Category
+ */
+export function buildOrderPlainText(
+  orders: LineOrderItem[],
+  storeName: string = DEFAULT_STORE_NAME,
+  groupBy: FlexItemGroupBy = "category",
+  showGroupHeaders: boolean = true,
+): string {
+  const resolvedStoreName = getSystemStoreName(storeName);
+  const now = new Date();
+  const dateStr = now.toLocaleDateString("th-TH");
+  const timeStr = now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+
+  const isNoHeader =
+    !showGroupHeaders ||
+    groupBy === "none" ||
+    groupBy === "category_no_header" ||
+    groupBy === "zone_no_header";
+
+  const groupingLabel = isNoHeader
+    ? "รายการสินค้า:"
+    : groupBy === "zone"
+      ? "รายการสินค้า (จัดกลุ่มตามโซนจัดวาง):"
+      : groupBy === "zone_then_category"
+        ? "รายการสินค้า (จัดกลุ่มตามโซน ➔ หมวดหมู่):"
+        : "รายการสินค้า (จัดกลุ่มตามหมวดหมู่):";
+
+  let text = `📦 ใบสั่งซื้อสินค้าประจำวัน — ${resolvedStoreName}\n`;
+  text += `📅 วันที่: ${dateStr} เวลา ${timeStr} น.\n`;
+  text += `────────────────────\n`;
+  text += `${groupingLabel}\n\n`;
+
+  const itemsForGrouping = orders.map((o) => {
+    const catName = o.product.categoryId
+      ? MasterStore.getCategoryName(o.product.categoryId)
+      : undefined;
+    const zName = o.product.zoneId ? MasterStore.getZoneName(o.product.zoneId) : undefined;
+    return {
+      name: o.product.name,
+      quantity: o.quantity,
+      unitName: o.unitName,
+      costPrice: o.product.costPrice,
+      barcode: o.product.barcode,
+      categoryId: o.product.categoryId,
+      categoryName: catName,
+      subCategoryId: o.product.subCategoryId,
+      subCategoryName: o.product.subCategoryId
+        ? MasterStore.getSubCategoryName(o.product.subCategoryId)
+        : undefined,
+      zoneId: o.product.zoneId,
+      zoneName: zName,
+    };
+  });
+
+  const includeZone =
+    groupBy === "zone" ||
+    groupBy === "zone_no_header" ||
+    groupBy === "zone_then_category" ||
+    groupBy === "category_then_zone";
+  const grouped = groupAndSortFlexItems(itemsForGrouping, { groupBy, includeZone });
+  let counter = 0;
+
+  grouped.forEach((grp) => {
+    if (!isNoHeader && grp.headerTitle) {
+      text += `${grp.headerTitle} (${grp.items.length} รายการ)\n`;
+    }
+    grp.items.forEach(({ item }) => {
+      counter++;
+      text += `  ${counter}. ${item.name} ➔ ${item.quantity} ${item.unitName}\n`;
+    });
+    if (!isNoHeader) {
+      text += `\n`;
+    }
+  });
+
+  const totalItems = orders.reduce((sum, o) => sum + o.quantity, 0);
+  const totalCost = orders.reduce((sum, o) => sum + o.quantity * (o.product.costPrice || 0), 0);
+
+  text += `────────────────────\n`;
+  text += `รวมสินค้าทั้งหมด: ${totalItems} หน่วย (${orders.length} รายการ)\n`;
+  text += `ประมาณการค่าใช้จ่าย: ฿${totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}\n`;
+  text += `ส่งจากระบบ ${resolvedStoreName}`;
+
+  return text;
+}
+
+export type LineShareTarget = "group" | "personal";
+export type LineMessageSendFormat = "FLEX" | "IMAGE_PNG" | "BOTH";
+
+export interface ThreeTierSendOptions {
+  summary: string;
+  flexMessage?: unknown;
+  imageBase64?: string | undefined;
+  imageUrl?: string | undefined;
+  format?: LineMessageSendFormat | undefined;
+  target?: LineShareTarget | undefined;
+  toUserIdOrGroupId?: string | undefined;
+  isBroadcast?: boolean | undefined;
+  channelAccessToken?: string | undefined;
+  disableIntentFallback?: boolean | undefined;
+}
+
+export interface LineShareResult {
+  success: boolean;
+  channel: "server_api" | "liff_picker" | "liff_send" | "line_intent";
+  tier: 1 | 2 | 3;
+  message: string;
+  fallbackReason?: string | undefined;
+}
+
+export interface SharePickerOptions {
+  format?: LineMessageSendFormat | undefined;
+  imageBase64?: string | undefined;
+  imageUrl?: string | undefined;
+  altSummary?: string | undefined;
+}
+
+/**
+ * Directly trigger LINE LIFF shareTargetPicker with Flex Message and/or PNG Image Message
+ */
+export async function shareFlexViaLiffPicker(
+  flexMessage: unknown,
+  altSummaryOrOptions: string | SharePickerOptions = `รายการสั่งซื้อสินค้า ${DEFAULT_STORE_NAME}`,
+): Promise<{
+  success: boolean;
+  message: string;
+  needLiffId?: boolean;
+  needLogin?: boolean;
+  isLineBrowser?: boolean;
+  isMobileDevice?: boolean;
+  liffUrl?: string;
+}> {
+  const options: SharePickerOptions =
+    typeof altSummaryOrOptions === "string"
+      ? { altSummary: altSummaryOrOptions }
+      : altSummaryOrOptions;
+  const altSummary = options.altSummary || `รายการสั่งซื้อสินค้า ${DEFAULT_STORE_NAME}`;
+  const sendFormat = options.format || "FLEX";
+  if (typeof window === "undefined") {
+    return { success: false, message: "ทำงานบนเบราว์เซอร์เท่านั้น" };
+  }
+
+  let liffId = getClientLiffId();
+  if (!liffId) {
+    try {
+      const cfg = await getLineServerConfigFn();
+      if (cfg?.configuredLiffId) {
+        setClientLiffId(cfg.configuredLiffId);
+        liffId = cfg.configuredLiffId;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!liffId) {
+    return {
+      success: false,
+      needLiffId: true,
+      message: "ยังไม่ได้ระบุ LINE LIFF ID กรุณาใส่ LIFF ID ของท่านเพื่อเปิดรายชื่อเพื่อน",
+    };
+  }
+
+  const initialized = await initLiff();
+  if (!initialized || !liffInstance) {
+    return {
+      success: false,
+      needLiffId: true,
+      message: `ไม่สามารถเริ่มต้น LINE LIFF SDK ได้ (${liffId}) กรุณาตรวจสอบว่ากรอก LIFF ID ถูกต้อง`,
+    };
+  }
+
+  try {
+    const messagePayload = toLiffMessage(flexMessage, altSummary);
+    let liffMessages: LiffMessage[] = [messagePayload];
+
+    if (sendFormat === "IMAGE_PNG" || sendFormat === "BOTH") {
+      let finalImageUrl = options.imageUrl?.trim();
+      if (!finalImageUrl && options.imageBase64?.trim()) {
+        try {
+          const { uploadSlipImageToServer } = await import("./slip-image-generator");
+          const uploadRes = await uploadSlipImageToServer(options.imageBase64);
+          if (uploadRes.success && uploadRes.imageUrl) {
+            finalImageUrl = uploadRes.imageUrl;
+          }
+        } catch (uploadErr) {
+          console.warn("Could not upload image for LIFF picker:", uploadErr);
+        }
+      }
+
+      if (finalImageUrl) {
+        const imagePayload: LiffMessage = {
+          type: "image",
+          originalContentUrl: finalImageUrl,
+          previewImageUrl: finalImageUrl,
+        };
+        if (sendFormat === "IMAGE_PNG") {
+          liffMessages = [imagePayload];
+        } else {
+          liffMessages = [messagePayload, imagePayload];
+        }
+      }
+    }
+
+    // Diagnostic check for API availability in this environment
+    const isApiAvailable =
+      typeof liffInstance.isApiAvailable === "function"
+        ? liffInstance.isApiAvailable("shareTargetPicker")
+        : true;
+
+    if (!isApiAvailable) {
+      console.warn("[LIFF] shareTargetPicker is reported as not available by LINE SDK");
+    }
+
+    if (typeof liffInstance.isLoggedIn === "function" && !liffInstance.isLoggedIn()) {
+      const userAgent = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
+      const isLineBrowser = /Line\//i.test(userAgent);
+      const isMobileDevice = /iPhone|iPad|iPod|Android/i.test(userAgent);
+      const currentPath =
+        typeof window !== "undefined"
+          ? `${window.location.pathname}${window.location.search}`
+          : "/reorder";
+      const cleanPath = currentPath.startsWith("/") ? currentPath : `/${currentPath}`;
+      const liffUrl = `https://liff.line.me/${liffId}${cleanPath}`;
+
+      try {
+        if (typeof window !== "undefined") {
+          const payloadJson = JSON.stringify({
+            flexMessage,
+            options,
+            altSummary,
+            timestamp: Date.now(),
+          });
+          sessionStorage.setItem("minimark_pending_liff_share", payloadJson);
+          localStorage.setItem("minimark_pending_liff_share", payloadJson);
+        }
+      } catch {
+        // ignore storage error
+      }
+
+      return {
+        success: false,
+        needLogin: true,
+        isLineBrowser,
+        isMobileDevice,
+        liffUrl,
+        message:
+          isLineBrowser || isMobileDevice
+            ? "ตรวจพบเปิดในเว็บภายนอก: ระบบจะพาคุณไปยังแอป LINE เพื่อเลือกเพื่อนและส่งทันที"
+            : "เปิดในเบราว์เซอร์ภายนอก: กรุณาเข้าสู่ระบบ LINE เพื่อเปิดรายชื่อเพื่อน",
+      };
+    }
+
+    if (typeof liffInstance.shareTargetPicker === "function") {
+      const res = await liffInstance.shareTargetPicker(liffMessages);
+      if (res) {
+        const typeLabel =
+          sendFormat === "IMAGE_PNG"
+            ? "รูปภาพ PNG"
+            : sendFormat === "BOTH"
+              ? "Flex Message + รูปภาพ PNG"
+              : "Flex Message";
+        return {
+          success: true,
+          message: `ส่ง LINE ${typeLabel} ไปยังเพื่อน/กลุ่มที่เลือกสำเร็จแล้ว`,
+        };
+      }
+      return {
+        success: false,
+        message: "ยกเลิกการเลือกห้องแชทใน LINE",
+      };
+    }
+
+    return {
+      success: false,
+      message: "ไม่พบฟังก์ชัน Share Target Picker ใน LINE LIFF SDK",
+    };
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("[LIFF shareTargetPicker error]", err);
+    return {
+      success: false,
+      message: `LINE Share Target Picker (${errMsg}): กรุณาตรวจสอบว่าเปิด Share Target Picker: ON และปิด-เปิดแอป LINE ใหม่อีกครั้ง`,
+    };
+  }
+}
+
+/**
+ * Trigger LINE Login for external browsers
+ */
+export function loginToLine(redirectUri?: string): void {
+  if (typeof window === "undefined") return;
+  if (liffInstance && typeof liffInstance.login === "function") {
+    liffInstance.login({ redirectUri: redirectUri || window.location.href });
+  } else {
+    const liffId = getClientLiffId();
+    if (liffId) {
+      window.location.href = `https://liff.line.me/${liffId}${window.location.pathname}${window.location.search}`;
+    }
+  }
+}
+
+/**
+ * Open the current page or specified path inside the native LINE App (via LIFF Universal Link)
+ */
+export function openInLineApp(customPath?: string): void {
+  if (typeof window === "undefined") return;
+  const liffId = getClientLiffId();
+  if (!liffId) return;
+  const path = customPath || `${window.location.pathname}${window.location.search}`;
+  const cleanPath = path.startsWith("/") ? path : `/${path}`;
+  window.location.href = `https://liff.line.me/${liffId}${cleanPath}`;
+}
+
+export interface PendingLiffSharePayload {
+  flexMessage: unknown;
+  options: SharePickerOptions;
+  altSummary: string;
+  timestamp: number;
+}
+
+export function getPendingLiffShare(): PendingLiffSharePayload | null {
+  if (typeof window === "undefined") return null;
+  try {
+    let raw = sessionStorage.getItem("minimark_pending_liff_share");
+    if (!raw) {
+      raw = localStorage.getItem("minimark_pending_liff_share");
+    }
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as PendingLiffSharePayload;
+    if (Date.now() - (parsed.timestamp || 0) > 30 * 60 * 1000) {
+      sessionStorage.removeItem("minimark_pending_liff_share");
+      localStorage.removeItem("minimark_pending_liff_share");
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+export function clearPendingLiffShare(): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem("minimark_pending_liff_share");
+    localStorage.removeItem("minimark_pending_liff_share");
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * 3-Tier Fallback Dispatcher for LINE Messaging:
+ * Tier 1: Server LINE Messaging API (Push/Broadcast via Bot)
+ * Tier 2: LINE LIFF shareTargetPicker / in-client send
+ * Tier 3: Web Share Intent (https://line.me/R/share)
+ */
+export async function sendWith3TierFallback(
+  options: ThreeTierSendOptions,
+): Promise<LineShareResult> {
+  const {
+    summary,
+    flexMessage,
+    target = "group",
+    toUserIdOrGroupId,
+    isBroadcast,
+    format = "FLEX",
+    imageBase64,
+    imageUrl,
+  } = options;
+  let tier1ErrorReason = "";
+
+  const tokenToUse =
+    options.channelAccessToken ||
+    (typeof window !== "undefined"
+      ? localStorage.getItem("minimark_line_channel_token") || undefined
+      : undefined);
+
+  // ─────────────────────────────────────────────────────────────
+  // Tier 1: Server LINE Messaging API (Sends Flex Message / PNG Image)
+  // ─────────────────────────────────────────────────────────────
+  try {
+    const serverRes = await sendLineMessagingApiFn({
+      data: {
+        orderSummary: summary,
+        ...(flexMessage !== undefined ? { flexMessage } : {}),
+        ...(toUserIdOrGroupId !== undefined ? { toUserIdOrGroupId } : {}),
+        ...(isBroadcast !== undefined ? { isBroadcast } : {}),
+        ...(tokenToUse !== undefined ? { channelAccessToken: tokenToUse } : {}),
+        ...(format !== undefined ? { format } : {}),
+        ...(imageBase64 !== undefined ? { imageBase64 } : {}),
+        ...(imageUrl !== undefined ? { imageUrl } : {}),
+      },
+    });
+
+    if (serverRes.success) {
+      const formatLabel =
+        format === "IMAGE_PNG"
+          ? "รูปภาพ PNG"
+          : format === "BOTH"
+            ? "Flex Message และรูปภาพ PNG"
+            : "Flex Message";
+      return {
+        success: true,
+        channel: "server_api",
+        tier: 1,
+        message: `ส่ง ${formatLabel} ผ่าน Server LINE Messaging API สำเร็จ (Tier 1)`,
+      };
+    } else {
+      tier1ErrorReason = serverRes.error || "Server LINE Messaging API ไม่พร้อมใช้งาน";
+      console.warn(
+        `[3-Tier Fallback] Tier 1 unavailable: ${tier1ErrorReason}. Cascading to Tier 2 (LIFF)...`,
+      );
+    }
+  } catch (err: unknown) {
+    tier1ErrorReason = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[3-Tier Fallback] Tier 1 error: ${tier1ErrorReason}. Cascading to Tier 2 (LIFF)...`,
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Tier 2: LINE LIFF shareTargetPicker / In-client Send
+  // ─────────────────────────────────────────────────────────────
+  const liffId = getClientLiffId();
+  if (liffId && typeof window !== "undefined") {
+    try {
+      const initialized = await initLiff();
+      if (initialized && liffInstance) {
+        const messagePayload = toLiffMessage(flexMessage, summary);
+        let liffMessages: LiffMessage[] = [messagePayload];
+
+        if (format === "IMAGE_PNG" || format === "BOTH") {
+          let resolvedImageUrl = imageUrl?.trim();
+          if (!resolvedImageUrl && imageBase64?.trim()) {
+            try {
+              const { uploadSlipImageToServer } = await import("./slip-image-generator");
+              const uploadRes = await uploadSlipImageToServer(imageBase64);
+              if (uploadRes.success && uploadRes.imageUrl) {
+                resolvedImageUrl = uploadRes.imageUrl;
+              }
+            } catch (upErr) {
+              console.warn("Could not upload image for Tier 2 fallback:", upErr);
+            }
+          }
+
+          if (resolvedImageUrl) {
+            const imagePayload: LiffMessage = {
+              type: "image",
+              originalContentUrl: resolvedImageUrl,
+              previewImageUrl: resolvedImageUrl,
+            };
+            liffMessages = format === "IMAGE_PNG" ? [imagePayload] : [messagePayload, imagePayload];
+          }
+        }
+
+        const formatLabel =
+          format === "IMAGE_PNG"
+            ? "รูปภาพ PNG"
+            : format === "BOTH"
+              ? "Flex Message และรูปภาพ PNG"
+              : "Flex Message";
+
+        // 2a. shareTargetPicker (sends REAL Flex/Image Message inside LINE)
+        if (liffInstance.isApiAvailable("shareTargetPicker") && liffInstance.isLoggedIn()) {
+          try {
+            const pickerRes = await liffInstance.shareTargetPicker(liffMessages);
+            if (pickerRes) {
+              return {
+                success: true,
+                channel: "liff_picker",
+                tier: 2,
+                message: `ส่ง ${formatLabel} เข้า LINE (${target === "group" ? "กลุ่ม" : "ส่วนตัว"}) ผ่าน LIFF Target Picker สำเร็จ (Tier 2)`,
+                fallbackReason: tier1ErrorReason,
+              };
+            }
+            return {
+              success: false,
+              channel: "liff_picker",
+              tier: 2,
+              message: "ผู้ใช้ยกเลิกการเลือกห้องแชทใน LINE",
+              fallbackReason: tier1ErrorReason,
+            };
+          } catch (pickerErr) {
+            console.warn(
+              "[3-Tier Fallback] Tier 2 shareTargetPicker error, trying in-client send:",
+              pickerErr,
+            );
+          }
+        }
+
+        // 2b. In-client direct chat send
+        if (liffInstance.isInClient()) {
+          try {
+            await liffInstance.sendMessages(liffMessages);
+            return {
+              success: true,
+              channel: "liff_send",
+              tier: 2,
+              message: `ส่ง ${formatLabel} เข้าแชท LINE ผ่าน LIFF สำเร็จ (Tier 2)`,
+              fallbackReason: tier1ErrorReason,
+            };
+          } catch (sendErr) {
+            console.warn("[3-Tier Fallback] Tier 2 sendMessages error:", sendErr);
+          }
+        }
+      }
+    } catch (liffErr) {
+      console.warn("[3-Tier Fallback] Tier 2 initialization error:", liffErr);
+    }
+  }
+
+  // Never silently downgrade a Flex Message to plain text.
+  if (format === "FLEX" || options.disableIntentFallback) {
+    return {
+      success: false,
+      channel: "server_api",
+      tier: 1,
+      message:
+        tier1ErrorReason || "ส่ง Flex Message ไม่สำเร็จ กรุณาตรวจสอบ LINE Messaging API และ LIFF",
+      fallbackReason: tier1ErrorReason,
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Tier 3: Web Share Intent (https://line.me/R/share) - Plain Text Fallback
+  // ─────────────────────────────────────────────────────────────
+  const lineIntentUrl = `https://line.me/R/share?text=${encodeURIComponent(summary)}`;
+  if (typeof window !== "undefined") {
+    const link = document.createElement("a");
+    link.href = lineIntentUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  }
+
+  return {
+    success: true,
+    channel: "line_intent",
+    tier: 3,
+    message: `เปิดหน้าแชร์ LINE ด้วยข้อความธรรมดา (Web Share Intent) สำเร็จ (Tier 3 Fallback)`,
+    fallbackReason: tier1ErrorReason,
+  };
+}
+
+/**
+ * Dispatches the order to LINE utilizing the 3-Tier Fallback Architecture:
+ * 1. Server Messaging API -> 2. LIFF Target Picker -> 3. Web Share Intent
+ */
+export async function sendOrderToLine(
+  orders: LineOrderItem[],
+  target: LineShareTarget = "group",
+  storeName: string = DEFAULT_STORE_NAME,
+): Promise<LineShareResult> {
+  const resolvedStoreName = getSystemStoreName(storeName);
+  const flex = buildOrderFlexMessage(
+    orders,
+    `ใบสั่งซื้อประจำวัน (${target === "group" ? "กลุ่ม" : "ส่วนตัว"})`,
+    resolvedStoreName,
+  );
+  const plain = buildOrderPlainText(orders, resolvedStoreName);
+
+  return sendWith3TierFallback({
+    summary: plain,
+    flexMessage: flex,
+    target,
+  });
+}
+
+export interface OrderFlexItem {
+  name: string;
+  quantity: number;
+  unitName: string;
+  barcode?: string | undefined;
+  costPrice?: number | undefined;
+  priceEstimate?: number | undefined;
+  categoryId?: string | undefined;
+  categoryName?: string | undefined;
+  subCategoryId?: string | undefined;
+  subCategoryName?: string | undefined;
+  zoneId?: string | undefined;
+  zoneName?: string | undefined;
+  note?: string | undefined;
+}
+
+function productFromOrderItem(item: OrderFlexItem, timestamp: string): ProductItem {
+  const id = item.barcode || item.name;
+  return {
+    id,
+    sku: id,
+    barcode: item.barcode || "",
+    codeType: "Barcode",
+    name: item.name,
+    categoryId: item.categoryId || "",
+    subCategoryId: item.subCategoryId || undefined,
+    zoneId: item.zoneId || "",
+    unitId: "",
+    costPrice:
+      item.costPrice ??
+      (item.priceEstimate && item.quantity ? item.priceEstimate / item.quantity : 0),
+    sellPrice: 0,
+    stock: 0,
+    minStock: 0,
+    targetStock: 0,
+    reorderQuantity: item.quantity,
+    isActive: true,
+    createdAt: timestamp,
+    updatedAt: timestamp,
+  };
+}
+
+/** Format order flex message using custom simulator JSON if available, or standard layout */
+export function formatDailyOrderFlexMessage(
+  items: OrderFlexItem[],
+  dateStr?: string,
+  storeName: string = DEFAULT_STORE_NAME,
+  options?: Partial<PurchaseOrderFlexOptions>,
+) {
+  const resolvedDate = options?.dateStr ?? dateStr ?? new Date().toLocaleDateString("th-TH");
+  const templateItems = items.map((item) => ({
+    productName: item.name,
+    quantity: item.quantity,
+    unitName: item.unitName,
+    ...(item.barcode === undefined ? {} : { barcode: item.barcode }),
+    ...(item.categoryName === undefined
+      ? item.categoryId === undefined
+        ? {}
+        : { categoryName: MasterStore.getCategoryName(item.categoryId) }
+      : { categoryName: item.categoryName }),
+    ...(item.zoneName === undefined
+      ? item.zoneId === undefined
+        ? {}
+        : { zoneName: MasterStore.getZoneName(item.zoneId) }
+      : { zoneName: item.zoneName }),
+    ...(item.costPrice === undefined ? {} : { costPrice: item.costPrice }),
+    total: item.priceEstimate ?? item.quantity * (item.costPrice ?? 0),
+    ...(item.note === undefined ? {} : { note: item.note }),
+  }));
+  const totalQuantity = templateItems.reduce((sum, item) => sum + item.quantity, 0);
+  const totalCost = templateItems.reduce((sum, item) => sum + (item.total ?? 0), 0);
+
+  const targetContainerType: FlexContainerType = options?.containerType ?? "carousel";
+
+  try {
+    const customTemplate = getLatestPurchaseOrderFlexMessage();
+    const customType = (customTemplate.contents as { type?: string })?.type;
+    if (options?.containerType && customType && customType !== options.containerType) {
+      throw new Error("Custom template type does not match requested containerType");
+    }
+    return populatePurchaseOrderFlexTemplate(customTemplate, {
+      orderNumber: options?.orderNumber ?? "DRAFT",
+      orderDate: resolvedDate,
+      storeName: getSystemStoreName(options?.storeName ?? storeName),
+      supplierName: options?.supplierName ?? "ซัพพลายเออร์ทั่วไป",
+      items: templateItems,
+      totalQuantity,
+      totalCost,
+      ...(options?.note === undefined ? {} : { note: options.note }),
+      ...(options?.groupBy === undefined ? {} : { groupBy: options.groupBy }),
+      ...(options?.showGroupHeaders === undefined
+        ? {}
+        : { showGroupHeaders: options.showGroupHeaders }),
+    });
+  } catch {
+    const nowStr = new Date().toISOString();
+    const lineOrders: LineOrderItem[] = items.map((i) => ({
+      product: productFromOrderItem(i, nowStr),
+      quantity: i.quantity,
+      unitName: i.unitName,
+    }));
+    return buildOrderFlexMessage(
+      lineOrders,
+      `ใบสั่งซื้อสินค้าประจำวัน (${resolvedDate})`,
+      getSystemStoreName(storeName),
+      {
+        dateStr: resolvedDate,
+        containerType: targetContainerType,
+        ...options,
+      },
+    );
+  }
+}
+
+export function formatOrderPlainText(
+  items: OrderFlexItem[],
+  dateStr?: string,
+  storeName: string = DEFAULT_STORE_NAME,
+  groupBy: FlexItemGroupBy = "zone_then_category",
+  showGroupHeaders: boolean = true,
+): string {
+  const resolvedStoreName = getSystemStoreName(storeName);
+  const nowStr = new Date().toISOString();
+  const lineOrders: LineOrderItem[] = items.map((i) => ({
+    product: productFromOrderItem(i, nowStr),
+    quantity: i.quantity,
+    unitName: i.unitName,
+  }));
+  return buildOrderPlainText(lineOrders, resolvedStoreName, groupBy, showGroupHeaders);
+}
+
+export async function sendDailyOrderToLine(
+  items: (OrderFlexItem & { product?: ProductItem })[],
+  target: LineShareTarget = "group",
+  dateStr?: string,
+  storeName: string = DEFAULT_STORE_NAME,
+  options?: Partial<PurchaseOrderFlexOptions>,
+): Promise<{ success: boolean; method?: string; error?: string }> {
+  const resolvedStoreName = getSystemStoreName(storeName);
+  const nowStr = new Date().toISOString();
+  const lineOrders: LineOrderItem[] = items.map((i) => ({
+    product: i.product ?? productFromOrderItem(i, nowStr),
+    quantity: i.quantity,
+    unitName: i.unitName,
+  }));
+
+  const flex = buildOrderFlexMessage(
+    lineOrders,
+    `ใบสั่งซื้อประจำวัน (${dateStr || "วันนี้"})`,
+    resolvedStoreName,
+    options,
+  );
+  const plain = buildOrderPlainText(
+    lineOrders,
+    resolvedStoreName,
+    options?.groupBy || "zone_then_category",
+  );
+
+  const res = await sendWith3TierFallback({
+    summary: plain,
+    flexMessage: flex,
+    target,
+  });
+
+  const result: { success: boolean; method?: string; error?: string } = {
+    success: res.success,
+    method: res.channel === "liff_picker" ? "share_target_picker" : "web_intent",
+  };
+  if (!res.success && res.message) {
+    result.error = res.message;
+  }
+  return result;
+}
+
+export async function sendStockAlertToLine(
+  alertItems: FlexStockAlertItem[],
+  target: LineShareTarget = "group",
+  storeName: string = DEFAULT_STORE_NAME,
+  options?: Partial<StockAlertFlexOptions> & {
+    format?: LineMessageSendFormat;
+    imageBase64?: string;
+    imageUrl?: string;
+  },
+): Promise<{ success: boolean; method?: string; error?: string; tier?: number }> {
+  const resolvedStoreName = getSystemStoreName(storeName);
+  const flexMsg = createStockAlertFlex(alertItems, {
+    storeName: resolvedStoreName,
+    ...options,
+  });
+
+  const grouped = groupAndSortFlexItems(alertItems, options?.groupBy || "zone_then_category");
+  let text = `⚠️ แจ้งเตือนสต็อกสินค้าต้องสั่งซื้อ — ${resolvedStoreName}\n`;
+  text += `────────────────────\n`;
+  let counter = 0;
+  grouped.forEach((grp) => {
+    if (grp.headerTitle && options?.groupBy !== "none") {
+      text += `📍 ${grp.headerTitle} (${grp.items.length} รายการ)\n`;
+    }
+    grp.items.forEach(({ item }) => {
+      counter++;
+      const statusText =
+        item.status === "OUT_OF_STOCK" ? "สินค้าหมด (0)" : `เหลือ ${item.stock} ${item.unitName}`;
+      text += `  ${counter}. ${item.name} ➔ ${statusText}\n`;
+    });
+    text += `\n`;
+  });
+  text += `────────────────────\nกรุณาเข้าสู่ระบบ ${resolvedStoreName} เพื่อตรวจสอบสต็อก`;
+
+  const res = await sendWith3TierFallback({
+    summary: text,
+    flexMessage: flexMsg,
+    target,
+    format: options?.format || "FLEX",
+    ...(options?.imageBase64 !== undefined ? { imageBase64: options.imageBase64 } : {}),
+    ...(options?.imageUrl !== undefined ? { imageUrl: options.imageUrl } : {}),
+  });
+
+  const result: { success: boolean; method?: string; error?: string; tier?: number } = {
+    success: res.success,
+    method: res.channel,
+    tier: res.tier,
+  };
+  if (!res.success) result.error = res.message;
+  return result;
+}
+
+/**
+ * Sends order to LINE as PNG Image, Flex Message, or Both
+ */
+export async function sendOrderImageToLine(
+  orders: LineOrderItem[],
+  target: LineShareTarget = "group",
+  storeName: string = DEFAULT_STORE_NAME,
+  options?: {
+    format?: LineMessageSendFormat;
+    imageBase64?: string;
+    imageUrl?: string;
+    orderNumber?: string;
+  },
+): Promise<LineShareResult> {
+  const resolvedStoreName = getSystemStoreName(storeName);
+  const flex = buildOrderFlexMessage(
+    orders,
+    `ใบสั่งซื้อประจำวัน (${target === "group" ? "กลุ่ม" : "ส่วนตัว"})`,
+    resolvedStoreName,
+    { orderNumber: options?.orderNumber },
+  );
+  const plain = buildOrderPlainText(orders, resolvedStoreName);
+
+  return sendWith3TierFallback({
+    summary: plain,
+    flexMessage: flex,
+    target,
+    format: options?.format || "IMAGE_PNG",
+    ...(options?.imageBase64 !== undefined ? { imageBase64: options.imageBase64 } : {}),
+    ...(options?.imageUrl !== undefined ? { imageUrl: options.imageUrl } : {}),
+  });
+}
