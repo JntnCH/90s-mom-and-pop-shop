@@ -43,7 +43,7 @@ export interface PurchaseOrderFlexOptions {
 }
 
 const LINE_MAX_CAROUSEL_BUBBLES = 12;
-const DEFAULT_ITEMS_PER_CARD = 20;
+const DEFAULT_ITEMS_PER_CARD = 15;
 type FlexBox = Record<string, unknown>;
 
 interface Meta {
