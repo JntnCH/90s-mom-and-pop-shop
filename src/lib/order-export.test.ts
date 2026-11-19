@@ -1,6 +1,64 @@
 import { describe, expect, it } from "vitest";
 import { getJsonUtf8ByteLength, toLiffMessages } from "./line-service";
-import { buildOrderFlexMessageFromPayload, type ExportOrderPayload } from "./order-export";
+import {
+  buildOrderFlexMessageFromPayload,
+  getZoneCategorySubcategorySortedExportItems,
+  type ExportOrderPayload,
+} from "./order-export";
+
+describe("purchase-order export sorting", () => {
+  it("sorts by zone, main category, subcategory, then product name", () => {
+    const items = [
+      {
+        productName: "ขนม B",
+        barcode: "3",
+        zoneName: "โซน B",
+        categoryName: "หมวด ก",
+        subCategoryName: "ย่อย ก",
+        quantity: 1,
+        unitName: "ชิ้น",
+        costPrice: 1,
+        total: 1,
+      },
+      {
+        productName: "น้ำ C",
+        barcode: "2",
+        zoneName: "โซน A",
+        categoryName: "หมวด ข",
+        subCategoryName: "ย่อย ก",
+        quantity: 1,
+        unitName: "ชิ้น",
+        costPrice: 1,
+        total: 1,
+      },
+      {
+        productName: "น้ำ B",
+        barcode: "1",
+        zoneName: "โซน A",
+        categoryName: "หมวด ก",
+        subCategoryName: "ย่อย ข",
+        quantity: 1,
+        unitName: "ชิ้น",
+        costPrice: 1,
+        total: 1,
+      },
+      {
+        productName: "น้ำ A",
+        barcode: "0",
+        zoneName: "โซน A",
+        categoryName: "หมวด ก",
+        subCategoryName: "ย่อย ก",
+        quantity: 1,
+        unitName: "ชิ้น",
+        costPrice: 1,
+        total: 1,
+      },
+    ];
+
+    expect(getZoneCategorySubcategorySortedExportItems(items).map((item) => item.productName))
+      .toEqual(["น้ำ A", "น้ำ B", "น้ำ C", "ขนม B"]);
+  });
+});
 
 describe("order-export LINE Flex Message builder", () => {
   const samplePayload: ExportOrderPayload = {

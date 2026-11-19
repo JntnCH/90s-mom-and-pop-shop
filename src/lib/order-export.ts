@@ -50,6 +50,28 @@ export function getCategorySortedExportItems(items: ExportOrderItem[]): ExportOr
   );
 }
 
+/** Sort purchase-order items by Zone -> Main category -> Subcategory -> Product name. */
+export function getZoneCategorySubcategorySortedExportItems(
+  items: ExportOrderItem[],
+): ExportOrderItem[] {
+  if (!items || items.length === 0) return [];
+  const wrapped = items.map((item) => ({
+    ...item,
+    name: item.productName,
+  }));
+  const grouped = groupAndSortFlexItems(wrapped, "zone_then_category");
+  return grouped.flatMap((group) =>
+    group.items.map(({ item }) => ({
+      ...item,
+      zoneName: group.zoneName || item.zoneName || "โซนทั่วไป",
+      categoryName: group.categoryName || item.categoryName || "หมวดหมู่ทั่วไป",
+      ...(group.subCategoryName || item.subCategoryName
+        ? { subCategoryName: group.subCategoryName || item.subCategoryName }
+        : {}),
+    })),
+  );
+}
+
 export interface ExportOrderPayload {
   orderNumber: string;
   createdAt: string;

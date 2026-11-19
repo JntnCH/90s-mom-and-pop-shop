@@ -40,6 +40,7 @@ export interface PurchaseOrderSlipData {
   totalCost: number;
   note?: string | undefined;
   style?: SlipDesignStyle | undefined;
+  preserveItemOrder?: boolean | undefined;
 }
 
 export interface StockAlertSlipItem {
@@ -158,13 +159,15 @@ export async function generateFullBleedRichCardSlipImage(
 ): Promise<GeneratedSlipResult> {
   const storeName = getSystemStoreName(data.storeName || DEFAULT_STORE_NAME);
   const formattedCreatedAt = formatThaiDateTime(data.createdAt);
-  const items = groupAndSortFlexItems(data.items, "category").flatMap((g) =>
-    g.items.map(({ item }) => ({
-      ...item,
-      categoryName: g.categoryName || item.categoryName,
-      subCategoryName: g.subCategoryName || item.subCategoryName,
-    })),
-  );
+  const items = data.preserveItemOrder
+    ? data.items
+    : groupAndSortFlexItems(data.items, "category").flatMap((g) =>
+        g.items.map(({ item }) => ({
+          ...item,
+          categoryName: g.categoryName || item.categoryName,
+          subCategoryName: g.subCategoryName || item.subCategoryName,
+        })),
+      );
 
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
@@ -419,9 +422,7 @@ export async function generateFullBleedRichCardSlipImage(
       if (item.categoryName || item.subCategoryName || item.zoneName) {
         ctx.fillStyle = "#64748b";
         ctx.font = "20px 'Prompt', sans-serif";
-        const catPart = item.subCategoryName
-          ? `${item.categoryName || ""} › ${item.subCategoryName}`
-          : item.categoryName;
+        const catPart = [item.categoryName, item.subCategoryName].filter(Boolean).join(" › ");
         const meta = [catPart, item.zoneName].filter(Boolean).join(" • ");
         ctx.fillText(meta, cardInnerX + 68, tableY + 48);
       }
@@ -784,7 +785,10 @@ export async function generateStockAlertFullBleedRichCardImage(
       if (item.categoryName || item.zoneName) {
         ctx.fillStyle = "#64748b";
         ctx.font = "20px 'Prompt', sans-serif";
-        const meta = [item.categoryName, item.zoneName].filter(Boolean).join(" • ");
+        const meta = [
+          [item.categoryName, item.subCategoryName].filter(Boolean).join(" › "),
+          item.zoneName,
+        ].filter(Boolean).join(" • ");
         ctx.fillText(meta, cardInnerX + 68, tableY + 48);
       }
 
@@ -893,13 +897,15 @@ export async function generatePurchaseOrderReceiptImage(
 ): Promise<GeneratedSlipResult> {
   const storeName = getSystemStoreName(data.storeName || DEFAULT_STORE_NAME);
   const formattedCreatedAt = formatThaiDateTime(data.createdAt);
-  const items = groupAndSortFlexItems(data.items, "category").flatMap((g) =>
-    g.items.map(({ item }) => ({
-      ...item,
-      categoryName: g.categoryName || item.categoryName,
-      subCategoryName: g.subCategoryName || item.subCategoryName,
-    })),
-  );
+  const items = data.preserveItemOrder
+    ? data.items
+    : groupAndSortFlexItems(data.items, "category").flatMap((g) =>
+        g.items.map(({ item }) => ({
+          ...item,
+          categoryName: g.categoryName || item.categoryName,
+          subCategoryName: g.subCategoryName || item.subCategoryName,
+        })),
+      );
 
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");

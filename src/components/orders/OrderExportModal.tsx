@@ -29,7 +29,7 @@ import {
   buildOrderFlexMessageFromPayload,
   copyTextToClipboard,
   downloadJsonFile,
-  getCategorySortedExportItems,
+  getZoneCategorySubcategorySortedExportItems,
 } from "@/lib/order-export";
 import { shareFlexViaLiffPicker, loginToLine } from "@/lib/line-service";
 import {
@@ -55,7 +55,7 @@ export interface ExportOrderItem {
   productName: string;
   barcode: string;
   categoryId?: string | undefined;
-  categoryName: string;
+  categoryName?: string | undefined;
   subCategoryId?: string | undefined;
   subCategoryName?: string | undefined;
   zoneId?: string | undefined;
@@ -102,13 +102,17 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   const [exportSlipStyle, setExportSlipStyle] = useState<SlipDesignStyle>("full_bleed_rich");
 
   const [flexContainerType, setFlexContainerType] = useState<FlexContainerType>("carousel");
-  const [flexGroupBy, setFlexGroupBy] = useState<FlexItemGroupBy>("category_no_header");
+  const [flexGroupBy, setFlexGroupBy] = useState<FlexItemGroupBy>("zone_then_category");
+  const [exportSortMode, setExportSortMode] = useState<"zone_category_subcategory" | "original">(
+    "zone_category_subcategory",
+  );
+  const [showMainCategory, setShowMainCategory] = useState(true);
   const [copiedFlexJson, setCopiedFlexJson] = useState(false);
 
   useEffect(() => {
     setImageBlobUrl(null);
     setImageDataUrl(null);
-  }, [payload?.orderNumber, payload?.items.length]);
+  }, [payload?.orderNumber, payload?.items.length, showMainCategory]);
 
   const rawItemsWithDefaults = useMemo(() => {
     if (!payload?.items) return [];
@@ -121,8 +125,17 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
 
   const sortedItems = useMemo(() => {
     if (!rawItemsWithDefaults.length) return [];
-    return getCategorySortedExportItems(rawItemsWithDefaults);
-  }, [rawItemsWithDefaults]);
+    const ordered =
+      exportSortMode === "zone_category_subcategory"
+        ? getZoneCategorySubcategorySortedExportItems(rawItemsWithDefaults)
+        : rawItemsWithDefaults;
+    return showMainCategory
+      ? ordered
+      : ordered.map((item) => ({ ...item, categoryName: undefined }));
+  }, [rawItemsWithDefaults, exportSortMode, showMainCategory]);
+
+  const categoryDisplay = (item: ExportOrderItem) =>
+    [item.categoryName, item.subCategoryName].filter(Boolean).join(" › ") || "-";
 
   const formattedCreatedAt = useMemo(
     () => (payload?.createdAt ? formatThaiDateTime(payload.createdAt) : "-"),
@@ -148,23 +161,23 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   }, [payload, formattedCreatedAt, rawItemsWithDefaults]);
 
   const currentFlexMessage = useMemo(() => {
-    const basePayload =
-      flexGroupBy === "none" ||
-      flexGroupBy === "zone" ||
-      flexGroupBy === "zone_no_header" ||
-      flexGroupBy === "zone_then_category"
-        ? rawPayloadForFlex
-        : sortedPayload;
-    if (!basePayload) return null;
-    return buildOrderFlexMessageFromPayload(basePayload, {
-      groupBy: flexGroupBy,
+    if (!rawPayloadForFlex) return null;
+    const effectiveGroupBy: FlexItemGroupBy = !showMainCategory
+      ? exportSortMode === "zone_category_subcategory"
+        ? "zone"
+        : "none"
+      : exportSortMode === "zone_category_subcategory"
+        ? flexGroupBy
+        : "none";
+    return buildOrderFlexMessageFromPayload(rawPayloadForFlex, {
+      groupBy: effectiveGroupBy,
       showGroupHeaders:
-        flexGroupBy !== "none" &&
-        flexGroupBy !== "category_no_header" &&
-        flexGroupBy !== "zone_no_header",
+        effectiveGroupBy !== "none" &&
+        effectiveGroupBy !== "category_no_header" &&
+        effectiveGroupBy !== "zone_no_header",
       containerType: flexContainerType,
     });
-  }, [rawPayloadForFlex, sortedPayload, flexGroupBy, flexContainerType]);
+  }, [rawPayloadForFlex, flexGroupBy, flexContainerType, exportSortMode, showMainCategory]);
 
   const handleDownloadFlexJSON = () => {
     if (!payload || !currentFlexMessage) return;
@@ -272,7 +285,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
           "บาร์โค้ด",
           "ชื่อสินค้า",
           "โซนจัดเก็บ",
-          "หมวดหมู่หลัก",
+          ...(showMainCategory ? ["หมวดหมู่หลัก"] : []),
           "หมวดหมู่ย่อย",
           "จำนวน",
           "หน่วยนับ",
@@ -285,7 +298,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
           it.barcode,
           it.productName,
           it.zoneName,
-          it.categoryName,
+          ...(showMainCategory ? [it.categoryName || "-"] : []),
           it.subCategoryName || "-",
           it.quantity,
           it.unitName,
@@ -300,7 +313,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
           "ยอดรวมทั้งสิ้น",
           "",
           "",
-          "",
+          ...(showMainCategory ? [""] : []),
           payload.totalQuantity,
           "ชิ้น",
           "",
@@ -339,7 +352,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         "บาร์โค้ด",
         "ชื่อสินค้า",
         "โซน",
-        "หมวดหมู่หลัก",
+        ...(showMainCategory ? ["หมวดหมู่หลัก"] : []),
         "หมวดหมู่ย่อย",
         "จำนวน",
         "หน่วยนับ",
@@ -357,7 +370,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         `"${item.barcode}"`,
         `"${item.productName.replace(/"/g, '""')}"`,
         `"${item.zoneName}"`,
-        `"${item.categoryName}"`,
+        ...(showMainCategory ? [`"${item.categoryName || "-"}"`] : []),
         `"${item.subCategoryName || "-"}"`,
         item.quantity,
         `"${item.unitName}"`,
@@ -377,7 +390,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         `"ยอดรวมทั้งสิ้น"`,
         "",
         "",
-        "",
+        ...(showMainCategory ? [""] : []),
         payload.totalQuantity,
         `"ชิ้น"`,
         "",
@@ -431,6 +444,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
         storeName: payload.storeName,
         supplierName: payload.supplierName,
         style: chosenStyle,
+        preserveItemOrder: true,
         items: sortedItems.map((i) => ({
           name: i.productName,
           quantity: i.quantity,
@@ -441,7 +455,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
           zoneId: i.zoneId,
           zoneName: i.zoneName,
           categoryId: i.categoryId,
-          categoryName: i.categoryName,
+          categoryName: showMainCategory ? i.categoryName : undefined,
           subCategoryId: i.subCategoryId,
           subCategoryName: i.subCategoryName,
           note: i.note,
@@ -597,7 +611,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
 ซัพพลายเออร์: ${payload.supplierName}
 ────────────────────
 รายการสินค้า (รายการ -> จำนวน -> หน่วยนับ):
-${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity} ${it.unitName} (฿${it.total.toFixed(0)})`).join("\n")}
+${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity} ${it.unitName} (฿${it.total.toFixed(0)})${showMainCategory ? `\n   ${[it.zoneName, it.categoryName, it.subCategoryName].filter(Boolean).join(" › ")}` : ""}`).join("\n")}
 ────────────────────
 รวมสินค้า: ${payload.totalQuantity} ชิ้น
 ยอดเงินรวมทั้งสิ้น: ฿${payload.totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
@@ -637,6 +651,33 @@ ${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity}
             รูปภาพสลิป PNG, ข้อความแชท หรือ JSON
           </DialogDescription>
         </DialogHeader>
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border bg-muted/30 p-3">
+          <div className="space-y-1">
+            <div className="text-xs font-semibold">การจัดเรียงรายการส่งออก</div>
+            <select
+              className="h-9 min-w-0 w-full sm:w-72 rounded-lg border border-input bg-background px-2.5 text-xs font-medium"
+              value={exportSortMode}
+              onChange={(event) =>
+                setExportSortMode(event.target.value as typeof exportSortMode)
+              }
+            >
+              <option value="zone_category_subcategory">
+                โซน → หมวดหมู่หลัก → หมวดหมู่ย่อย
+              </option>
+              <option value="original">ลำดับเดิมในใบสั่งซื้อ</option>
+            </select>
+          </div>
+          <label className="flex items-center gap-2 text-xs font-medium cursor-pointer shrink-0">
+            <input
+              type="checkbox"
+              checked={showMainCategory}
+              onChange={(event) => setShowMainCategory(event.target.checked)}
+              className="size-4 accent-emerald-600"
+            />
+            แสดงหมวดหมู่หลัก
+          </label>
+        </div>
 
         <Tabs
           value={activeTab}
@@ -737,7 +778,7 @@ ${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity}
                       <th className="p-2.5 w-10 text-center">#</th>
                       <th className="p-2.5">รายการสินค้า</th>
                       <th className="p-2.5 w-28">บาร์โค้ด</th>
-                      <th className="p-2.5 w-32">หมวดหมู่หลัก/ย่อย</th>
+                      <th className="p-2.5 w-32">{showMainCategory ? "หมวดหมู่หลัก/ย่อย" : "หมวดหมู่ย่อย"}</th>
                       <th className="p-2.5 text-right w-24">จำนวน</th>
                       <th className="p-2.5 text-right w-24">ราคาทุน/หน่วย</th>
                       <th className="p-2.5 text-right w-28">ยอดรวม (บาท)</th>
@@ -759,9 +800,7 @@ ${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity}
                           {item.barcode}
                         </td>
                         <td className="p-2.5 text-gray-500 text-[11px]">
-                          {item.subCategoryName
-                            ? `${item.categoryName} › ${item.subCategoryName}`
-                            : item.categoryName}
+                          {categoryDisplay(item)}
                         </td>
                         <td className="p-2.5 text-right font-mono font-bold">
                           {item.quantity} {item.unitName}
@@ -775,7 +814,7 @@ ${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity}
                   </tbody>
                   <tfoot className="bg-gray-50 font-bold border-t border-gray-200 text-gray-900">
                     <tr>
-                      <td colSpan={4} className="p-3 text-right">
+                      <td colSpan={showMainCategory ? 4 : 3} className="p-3 text-right">
                         ยอดรวมทั้งสิ้น ({payload.totalQuantity} ชิ้น):
                       </td>
                       <td
@@ -863,7 +902,8 @@ ${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity}
                     <th className="p-2">บาร์โค้ด</th>
                     <th className="p-2">ชื่อสินค้า</th>
                     <th className="p-2">โซน</th>
-                    <th className="p-2">หมวดหมู่หลัก/ย่อย</th>
+                    {showMainCategory && <th className="p-2">หมวดหมู่หลัก</th>}
+                    <th className="p-2">หมวดหมู่ย่อย</th>
                     <th className="p-2 text-right">จำนวน</th>
                     <th className="p-2 text-right">ราคาทุน</th>
                     <th className="p-2 text-right">ยอดรวม</th>
@@ -876,11 +916,10 @@ ${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity}
                       <td className="p-2 font-mono">{it.barcode}</td>
                       <td className="p-2 font-medium">{it.productName}</td>
                       <td className="p-2 text-muted-foreground">{it.zoneName}</td>
-                      <td className="p-2 text-muted-foreground">
-                        {it.subCategoryName
-                          ? `${it.categoryName} › ${it.subCategoryName}`
-                          : it.categoryName}
-                      </td>
+                      {showMainCategory && (
+                        <td className="p-2 text-muted-foreground">{it.categoryName || "-"}</td>
+                      )}
+                      <td className="p-2 text-muted-foreground">{it.subCategoryName || "-"}</td>
                       <td className="p-2 text-right font-mono font-bold">
                         {it.quantity} {it.unitName}
                       </td>
@@ -1262,7 +1301,7 @@ ${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity}
                   onChange={(e) => setFlexGroupBy(e.target.value as FlexItemGroupBy)}
                 >
                   <option value="category_no_header">
-                    🏷️ ตามหมวดหมู่ (ไม่แสดงหมวดหมู่ใน Flex - แนะนำ)
+                    🏷️ ตามหมวดหมู่ (ไม่แสดงแถบหัวข้อหมวด)
                   </option>
                   <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
                   <option value="zone_no_header">📍 ตามโซน (ไม่แสดงแถบหัวข้อใน Flex)</option>
