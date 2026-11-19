@@ -121,20 +121,6 @@ function ScanPage() {
   const [genPrice, setGenPrice] = useState<number>(7.0);
   const [selectedProductId, setSelectedProductId] = useState<string>("");
 
-  // LIFF / LINE in-app browser detection (camera & some scripts are restricted)
-  const [isLiffEnv, setIsLiffEnv] = useState(false);
-  useEffect(() => {
-    try {
-      const ua = typeof navigator !== "undefined" ? navigator.userAgent || "" : "";
-      const inLine = /Line\//i.test(ua) || /LIFF/i.test(ua);
-      const hasLiff =
-        typeof window !== "undefined" && Boolean((window as unknown as { liff?: unknown }).liff);
-      setIsLiffEnv(Boolean(inLine || hasLiff));
-    } catch {
-      setIsLiffEnv(false);
-    }
-  }, []);
-
   const reloadData = useCallback(() => {
     setProducts(MasterStore.getProducts());
     setCategories(MasterStore.getCategories());
@@ -351,23 +337,6 @@ function ScanPage() {
         </div>
 
         <TabsContent value="scanner" className="space-y-5">
-          {isLiffEnv ? (
-            <Alert className="rounded-2xl border-amber-500/40 bg-amber-500/10 text-amber-950 dark:text-amber-100">
-              <AlertCircle className="size-4 text-amber-600" />
-              <AlertTitle className="text-sm font-semibold">กำลังใช้งานผ่าน LINE LIFF</AlertTitle>
-              <AlertDescription className="text-xs space-y-1">
-                <p>
-                  กล้องสแกนและบางสคริปต์อาจถูกจำกัดใน WebView ของ LINE (อาจเห็นข้อความ Cross-origin
-                  / CORS)
-                </p>
-                <p className="font-medium">
-                  แนะนำ: ใช้ช่องพิมพ์บาร์โค้ดด้านล่าง หรือเปิดหน้านี้นอก LINE (เบราว์เซอร์ภายนอก)
-                  เพื่อใช้กล้องเต็มรูปแบบ
-                </p>
-              </AlertDescription>
-            </Alert>
-          ) : null}
-
           <Card className="overflow-hidden rounded-2xl border-border/80 shadow-sm">
             <CardHeader className="text-center pb-2">
               <CardTitle className="text-base sm:text-lg flex items-center justify-center gap-2">
