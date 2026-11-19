@@ -162,13 +162,8 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
 
   const currentFlexMessage = useMemo(() => {
     if (!rawPayloadForFlex) return null;
-    const effectiveGroupBy: FlexItemGroupBy = !showMainCategory
-      ? exportSortMode === "zone_category_subcategory"
-        ? "zone"
-        : "none"
-      : exportSortMode === "zone_category_subcategory"
-        ? flexGroupBy
-        : "none";
+    const effectiveGroupBy: FlexItemGroupBy =
+      exportSortMode === "zone_category_subcategory" ? flexGroupBy : "none";
     return buildOrderFlexMessageFromPayload(rawPayloadForFlex, {
       groupBy: effectiveGroupBy,
       showGroupHeaders:
