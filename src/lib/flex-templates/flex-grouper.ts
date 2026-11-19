@@ -6,6 +6,7 @@ import { MasterStore } from "../store";
 
 export type FlexItemGroupBy =
   | "zone_then_category"
+  | "zone_then_category_no_header"
   | "category_then_zone"
   | "zone"
   | "zone_no_header"
@@ -210,7 +211,7 @@ export function groupAndSortFlexItems<T extends ItemWithCategoryAndZone>(
 
   // Sort based on groupBy strategy (always sorting by Main Category -> Subcategory -> Product Name)
   enriched.sort((a, b) => {
-    if (groupBy === "zone_then_category") {
+    if (groupBy === "zone_then_category" || groupBy === "zone_then_category_no_header") {
       const zCompare = a.zoneName.localeCompare(b.zoneName, "th");
       if (zCompare !== 0) return zCompare;
       const cCompare = compareCategoryNames(a.categoryName, b.categoryName);
@@ -263,6 +264,10 @@ export function groupAndSortFlexItems<T extends ItemWithCategoryAndZone>(
       case "zone_then_category":
         groupKey = `${zoneName}:::${categoryName}:::${subCategoryName}`;
         headerTitle = `📍 ${zoneName} • 🏷️ ${catWithSubLabel}`;
+        break;
+      case "zone_then_category_no_header":
+        groupKey = `${zoneName}:::${categoryName}:::${subCategoryName}`;
+        headerTitle = "";
         break;
       case "category_then_zone":
         groupKey = `${categoryName}:::${subCategoryName}:::${zoneName}`;

@@ -174,7 +174,8 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
       showGroupHeaders:
         effectiveGroupBy !== "none" &&
         effectiveGroupBy !== "category_no_header" &&
-        effectiveGroupBy !== "zone_no_header",
+        effectiveGroupBy !== "zone_no_header" &&
+        effectiveGroupBy !== "zone_then_category_no_header",
       containerType: flexContainerType,
     });
   }, [rawPayloadForFlex, flexGroupBy, flexContainerType, exportSortMode, showMainCategory]);
@@ -1311,11 +1312,14 @@ ${sortedItems.map((it, idx) => {
                     🏷️ ตามหมวดหมู่ (ไม่แสดงแถบหัวข้อหมวด)
                   </option>
                   <option value="none">📄 ตามลำดับเดิม (ไม่มีแถบหัวข้อ)</option>
-                  <option value="zone_no_header">📍 ตามโซน (ไม่แสดงแถบหัวข้อใน Flex)</option>
+                  <option value="zone_no_header">📍 ตามโซน (ไม่แสดงแถบหัวข้อโซน)</option>
+                  <option value="zone_then_category_no_header">
+                    📍 โซน ➔ 🏷️ หมวดหมู่ (ไม่แสดงแถบหัวข้อ)
+                  </option>
                   <option value="category">🏷️ ตามหมวดหมู่สินค้า (แสดงแถบหัวข้อหมวด)</option>
                   <option value="zone">📍 ตามโซนจัดวางสินค้า (แสดงแถบหัวข้อโซน)</option>
                   <option value="zone_then_category">
-                    📍 โซน ➔ 🏷️ หมวดหมู่สินค้า (แสดงแถบหัวข้อ)
+                    📍 โซน ➔ 🏷️ หมวดหมู่ (แสดงแถบหัวข้อ)
                   </option>
                 </select>
               </div>
