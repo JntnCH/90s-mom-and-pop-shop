@@ -112,7 +112,7 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
   useEffect(() => {
     setImageBlobUrl(null);
     setImageDataUrl(null);
-  }, [payload?.orderNumber, payload?.items.length, showMainCategory]);
+  }, [payload?.orderNumber, payload?.items.length, showMainCategory, exportSortMode]);
 
   const rawItemsWithDefaults = useMemo(() => {
     if (!payload?.items) return [];
@@ -611,7 +611,14 @@ export function OrderExportModal({ open, onOpenChange, payload }: OrderExportMod
 ซัพพลายเออร์: ${payload.supplierName}
 ────────────────────
 รายการสินค้า (รายการ -> จำนวน -> หน่วยนับ):
-${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity} ${it.unitName} (฿${it.total.toFixed(0)})${showMainCategory ? `\n   ${[it.zoneName, it.categoryName, it.subCategoryName].filter(Boolean).join(" › ")}` : ""}`).join("\n")}
+${sortedItems.map((it, idx) => {
+  const hierarchy = [
+    it.zoneName,
+    ...(showMainCategory ? [it.categoryName] : []),
+    it.subCategoryName,
+  ].filter(Boolean).join(" › ");
+  return `${idx + 1}. ${it.productName} ➔ ${it.quantity} ${it.unitName} (฿${it.total.toFixed(0)})${hierarchy ? `\n   ${hierarchy}` : ""}`;
+}).join("\n")}
 ────────────────────
 รวมสินค้า: ${payload.totalQuantity} ชิ้น
 ยอดเงินรวมทั้งสิ้น: ฿${payload.totalCost.toLocaleString("th-TH", { minimumFractionDigits: 2 })}
@@ -814,7 +821,7 @@ ${sortedItems.map((it, idx) => `${idx + 1}. ${it.productName} ➔ ${it.quantity}
                   </tbody>
                   <tfoot className="bg-gray-50 font-bold border-t border-gray-200 text-gray-900">
                     <tr>
-                      <td colSpan={showMainCategory ? 4 : 3} className="p-3 text-right">
+                      <td colSpan={4} className="p-3 text-right">
                         ยอดรวมทั้งสิ้น ({payload.totalQuantity} ชิ้น):
                       </td>
                       <td

@@ -782,7 +782,7 @@ export async function generateStockAlertFullBleedRichCardImage(
       ctx.fillText(`${i + 1}. ${nameText}`, cardInnerX + 36, tableY + 24);
 
       // Subtitle if category or zone
-      if (item.categoryName || item.zoneName) {
+      if (item.categoryName || item.subCategoryName || item.zoneName) {
         ctx.fillStyle = "#64748b";
         ctx.font = "20px 'Prompt', sans-serif";
         const meta = [
