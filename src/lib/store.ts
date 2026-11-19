@@ -698,15 +698,14 @@ export function generateNextPurchaseOrderNumber(
   const list = existingOrders ?? MasterStore.getPurchaseOrders();
   let maxSeq = 0;
 
+  // Keep the sequence global across dates; the date remains part of the PO number.
   for (const po of list) {
     if (!po?.orderNumber) continue;
-    const trimmed = po.orderNumber.trim();
-    if (trimmed.startsWith(prefix)) {
-      const seqStr = trimmed.slice(prefix.length);
-      const seqNum = Number.parseInt(seqStr, 10);
-      if (!Number.isNaN(seqNum) && seqNum > maxSeq) {
-        maxSeq = seqNum;
-      }
+    const match = /^PO-\d{8}-(\d+)$/.exec(po.orderNumber.trim());
+    if (!match) continue;
+    const seqNum = Number.parseInt(match[1], 10);
+    if (Number.isSafeInteger(seqNum) && seqNum > maxSeq) {
+      maxSeq = seqNum;
     }
   }
 

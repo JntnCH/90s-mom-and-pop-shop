@@ -199,7 +199,11 @@ function ScanPage() {
     start,
     stop,
     resetDeduplication,
-  } = useBarcodeScanner(handleDetected, { cooldownMs: 1000 });
+  } = useBarcodeScanner(handleDetected, {
+    cooldownMs: 1000,
+    autoStart: true,
+    facingMode: "environment",
+  });
   const scanning = status === "scanning" || status === "starting";
 
   // Generator Action Handlers
